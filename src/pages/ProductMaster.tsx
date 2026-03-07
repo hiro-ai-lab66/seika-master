@@ -255,6 +255,26 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         ));
     };
 
+    // 商品マスター全消去
+    const handleClearAll = () => {
+        if (window.confirm(`商品マスターの全${products.length}件を削除します。\nこの操作は元に戻せません。よろしいですか？`)) {
+            setProducts([]);
+        }
+    };
+
+    // 最終登録分（今日登録した商品）のみ削除
+    const handleClearLatest = () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const todayItems = products.filter(p => p.updatedAt.startsWith(today));
+        if (todayItems.length === 0) {
+            alert('本日登録された商品はありません。');
+            return;
+        }
+        if (window.confirm(`本日登録の${todayItems.length}件を削除します。よろしいですか？`)) {
+            setProducts(prev => prev.filter(p => !p.updatedAt.startsWith(today)));
+        }
+    };
+
     const filteredProducts = useMemo(() => {
         // 全角英数字を半角に、大文字を小文字に変換
         // さらにカタカナをひらがなに変換する正規化関数
@@ -325,6 +345,20 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: '#b91c1c', color: '#b91c1c' }}
                     >
                         <Upload size={16} /> 果物CSV取込
+                    </button>
+                    <button
+                        className="button-outline"
+                        onClick={handleClearLatest}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: '#f59e0b', color: '#f59e0b', fontSize: '0.8rem' }}
+                    >
+                        本日分削除
+                    </button>
+                    <button
+                        className="button-outline"
+                        onClick={handleClearAll}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: '#ef4444', color: '#ef4444', fontSize: '0.8rem' }}
+                    >
+                        全消去
                     </button>
                     <input
                         type="file"

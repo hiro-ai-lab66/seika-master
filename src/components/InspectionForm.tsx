@@ -115,7 +115,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         const typeName = type === 'veggie' ? '野菜' : '果物';
         console.log(`${type} csv selected`);
-        alert(`${typeName}CSVを読み込みました`);
+
+        // CSV再取込時は旧データを完全初期化
+        if (type === 'veggie') {
+            setAnalysisVeggies([]);
+        } else {
+            setAnalysisFruits([]);
+        }
+        setMasterResult(null);
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -196,51 +203,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                     if (items.length > 0) {
                         items.sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
-                        setForm(prev => ({
-                            ...prev,
-                            [type === 'veggie' ? 'bestVegetables' : 'bestFruits']: items
-                        }));
-
-                        // 商品マスターへの自動登録
-                        const existingProducts = loadProducts();
-                        const existingCodes = new Set(existingProducts.map(p => p.code || '').filter(c => c !== ''));
-                        let addedCount = 0;
-                        let skippedCount = 0;
-                        let excludedCount = 0;
-                        const newProducts: Product[] = [];
-
-                        items.forEach(item => {
-                            if (!item.code) return;
-                            if (item.salesQty === undefined || item.salesQty <= 0) {
-                                excludedCount++;
-                                return;
-                            }
-                            if (existingCodes.has(item.code)) {
-                                skippedCount++;
-                                return;
-                            }
-                            newProducts.push({
-                                id: crypto.randomUUID(),
-                                name: item.name,
-                                code: item.code,
-                                updatedAt: new Date().toISOString(),
-                            });
-                            existingCodes.add(item.code);
-                            addedCount++;
-                        });
-
-                        if (newProducts.length > 0) {
-                            saveProducts([...newProducts, ...existingProducts]);
+                        // 解析データを独立stateに格納（マスター登録はしない）
+                        if (type === 'veggie') {
+                            setAnalysisVeggies(items);
+                        } else {
+                            setAnalysisFruits(items);
                         }
-
-                        setMasterResult({
-                            type: typeName,
-                            added: addedCount,
-                            skipped: skippedCount,
-                            excluded: excludedCount,
-                        });
-
-                        alert(`${typeName}CSV ${items.length}件を抽出しました\nマスター登録: 新規${addedCount}件 / 重複スキップ${skippedCount}件 / 除外${excludedCount}件`);
+                        alert(`${typeName}CSV ${items.length}件を抽出しました\n※「報告を保存する」で商品マスターに登録されます`);
                     } else {
                         alert("データの抽出に失敗しました（有効なデータが0件です）。\n検出されたヘッダー: " + cleanHeaders.join(', '));
                     }
@@ -270,11 +239,68 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             return;
         }
 
-        onSave(form as InspectionEntry);
+        // 解析データを報告データに紐づけて保存
+        const entryToSave = {
+            ...form,
+            bestVegetables: analysisVeggies,
+            bestFruits: analysisFruits,
+        } as InspectionEntry;
+
+        // 商品マスターへの登録（報告時のみ）
+        const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
+        if (allAnalysisItems.length > 0) {
+            const existingProducts = loadProducts();
+            const existingCodes = new Set(existingProducts.map(p => p.code || '').filter(c => c !== ''));
+            let addedCount = 0;
+            let skippedCount = 0;
+            let excludedCount = 0;
+            const newProducts: Product[] = [];
+
+            allAnalysisItems.forEach(item => {
+                if (!item.code) return;
+                if (item.salesQty === undefined || item.salesQty <= 0) {
+                    excludedCount++;
+                    return;
+                }
+                if (existingCodes.has(item.code)) {
+                    skippedCount++;
+                    return;
+                }
+                newProducts.push({
+                    id: crypto.randomUUID(),
+                    name: item.name,
+                    code: item.code,
+                    updatedAt: new Date().toISOString(),
+                });
+                existingCodes.add(item.code);
+                addedCount++;
+            });
+
+            if (newProducts.length > 0) {
+                saveProducts([...newProducts, ...existingProducts]);
+            }
+
+            setMasterResult({
+                type: '合計',
+                added: addedCount,
+                skipped: skippedCount,
+                excluded: excludedCount,
+            });
+        }
+
+        onSave(entryToSave);
     };
 
-    const veggieItems = (form.bestVegetables || []).slice(0, 40);
-    const fruitItems = (form.bestFruits || []).slice(0, 30);
+    // 解析データ独立state
+    const [analysisVeggies, setAnalysisVeggies] = useState<BestItem[]>(() => {
+        return existingEntry?.bestVegetables || [];
+    });
+    const [analysisFruits, setAnalysisFruits] = useState<BestItem[]>(() => {
+        return existingEntry?.bestFruits || [];
+    });
+
+    const veggieItems = analysisVeggies.slice(0, 40);
+    const fruitItems = analysisFruits.slice(0, 30);
 
     // 商品マスター自動登録結果ステート
     const [masterResult, setMasterResult] = useState<{ type: string; added: number; skipped: number; excluded: number } | null>(null);
@@ -601,8 +627,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         <input type="file" accept=".csv" onChange={e => handleCsvUpload(e, 'veggie')} hidden />
                                     </label>
                                     <div className="best-list-preview">
-                                        {(form.bestVegetables || []).length > 0 ? (
-                                            <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {(form.bestVegetables || []).length}件</span>
+                                        {analysisVeggies.length > 0 ? (
+                                            <>
+                                                <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {analysisVeggies.length}件</span>
+                                                <button type="button" className="clear-btn" onClick={() => { setAnalysisVeggies([]); setMasterResult(null); }}>クリア</button>
+                                            </>
                                         ) : <span className="empty-text">データ未選択</span>}
                                     </div>
                                 </div>
@@ -613,8 +642,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         <input type="file" accept=".csv" onChange={e => handleCsvUpload(e, 'fruit')} hidden />
                                     </label>
                                     <div className="best-list-preview">
-                                        {(form.bestFruits || []).length > 0 ? (
-                                            <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {(form.bestFruits || []).length}件</span>
+                                        {analysisFruits.length > 0 ? (
+                                            <>
+                                                <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {analysisFruits.length}件</span>
+                                                <button type="button" className="clear-btn" onClick={() => { setAnalysisFruits([]); setMasterResult(null); }}>クリア</button>
+                                            </>
                                         ) : <span className="empty-text">データ未選択</span>}
                                     </div>
                                 </div>
@@ -623,13 +655,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             {/* マスター登録結果 */}
                             {masterResult && (
                                 <div className="master-result-box">
-                                    <strong>{masterResult.type}CSV 登録結果</strong>
+                                    <strong>商品マスター登録結果</strong>
                                     <ul>
                                         <li>新規登録 <span className="result-count added">{masterResult.added}件</span></li>
                                         <li>重複スキップ <span className="result-count skipped">{masterResult.skipped}件</span></li>
                                         <li>除外（売上0） <span className="result-count excluded">{masterResult.excluded}件</span></li>
                                     </ul>
                                 </div>
+                            )}
+
+                            {(analysisVeggies.length > 0 || analysisFruits.length > 0) && (
+                                <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '8px' }}>※ 「報告を保存する」で商品マスターに自動登録されます</p>
                             )}
 
                             {/* 野菜ベスト40 */}
@@ -1008,6 +1044,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .result-count.added { color: #2563eb; }
         .result-count.skipped { color: #94a3b8; }
         .result-count.excluded { color: #dc2626; }
+        /* クリアボタン */
+        .clear-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        .clear-btn:hover { background: #dc2626; }
       `}</style>
         </div>
     );
