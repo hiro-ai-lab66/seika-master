@@ -180,9 +180,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 if (row.length < Math.max(nameIdx, qtyIdx, yoyIdx, amtIdx)) continue; // 必須カラムがない場合はスキップ
 
                 const itemName = nameIdx >= 0 ? row[nameIdx] : '';
-                if (!itemName) continue;
-
                 const code = codeIdx >= 0 ? row[codeIdx] : undefined;
+
+                // 品名が空、または合計、またはコードが空の場合はスキップ
+                if (!itemName || itemName === '合計' || !code) continue;
 
                 const parseNumeric = (val: string) => {
                     if (!val) return undefined;
@@ -194,16 +195,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 const yoy = yoyIdx >= 0 ? parseNumeric(row[yoyIdx]) : undefined;
                 const amt = amtIdx >= 0 ? parseNumeric(row[amtIdx]) : undefined;
 
-                if (itemName) {
-                    items.push({
-                        name: itemName,
-                        code: code,
-                        salesQty: qty,
-                        salesYoY: yoy,
-                        salesAmt: amt,
-                        sales: amt || 0 // 後方互換性用
-                    });
-                }
+                items.push({
+                    name: itemName,
+                    code: code,
+                    salesQty: qty,
+                    salesYoY: yoy,
+                    salesAmt: amt,
+                    sales: amt || 0 // 後方互換性用
+                });
             }
 
             if (items.length > 0) {
@@ -256,9 +255,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .sort((a, b) => (b.salesYoY || 0) - (a.salesYoY || 0))
         .slice(0, 5);
 
-    const formatNum = (num: number | undefined, isPercentage = false) => {
+    const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
-        return isPercentage ? `${num}%` : num.toLocaleString();
+        if (isYoY) return num.toFixed(1); // 昨比はそのままの数値を小数第1位で表示
+        if (isAmount) return `¥${num.toLocaleString()}`; // 金額は¥マーク付き
+        return num.toLocaleString(); // 売上数はカンマ区切りのみ
     };
 
     return (
@@ -605,17 +606,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                             <div className="table-responsive">
                                                 <table className="analysis-table">
                                                     <thead>
-                                                        <tr><th>品名</th><th>売上数</th><th>売上高</th><th>昨比</th></tr>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {warningItems.length > 0 ? warningItems.map((item, idx) => (
                                                             <tr key={idx}>
+                                                                <td>{item.code}</td>
                                                                 <td className="font-bold">{item.name}</td>
                                                                 <td className="text-right">{formatNum(item.salesQty)}</td>
-                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
                                                                 <td className="text-right text-red-600 font-bold">{formatNum(item.salesYoY, true)}</td>
+                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
                                                             </tr>
-                                                        )) : <tr><td colSpan={4} className="text-center text-gray-500">該当なし</td></tr>}
+                                                        )) : <tr><td colSpan={5} className="text-center text-gray-500">該当なし</td></tr>}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -627,17 +629,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                             <div className="table-responsive">
                                                 <table className="analysis-table">
                                                     <thead>
-                                                        <tr><th>品名</th><th>売上数</th><th>売上高</th><th>昨比</th></tr>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {hotItems.length > 0 ? hotItems.map((item, idx) => (
                                                             <tr key={idx}>
+                                                                <td>{item.code}</td>
                                                                 <td className="font-bold">{item.name}</td>
                                                                 <td className="text-right">{formatNum(item.salesQty)}</td>
-                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
                                                                 <td className="text-right text-blue-600 font-bold">{formatNum(item.salesYoY, true)}</td>
+                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
                                                             </tr>
-                                                        )) : <tr><td colSpan={4} className="text-center text-gray-500">該当なし</td></tr>}
+                                                        )) : <tr><td colSpan={5} className="text-center text-gray-500">該当なし</td></tr>}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -651,7 +654,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                             <div className="table-responsive scrollable-max-h">
                                                 <table className="analysis-table full-table">
                                                     <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>昨比</th><th>売上高</th></tr>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {(form.bestVegetables || []).map((item, idx) => (
@@ -662,7 +665,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                                 <td className={`text-right ${item.salesYoY !== undefined && item.salesYoY < 80 ? 'text-red-600 font-bold' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'text-blue-600 font-bold' : ''}`}>
                                                                     {formatNum(item.salesYoY, true)}
                                                                 </td>
-                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
+                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -678,7 +681,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                             <div className="table-responsive scrollable-max-h">
                                                 <table className="analysis-table full-table">
                                                     <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>昨比</th><th>売上高</th></tr>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {(form.bestFruits || []).map((item, idx) => (
@@ -689,7 +692,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                                 <td className={`text-right ${item.salesYoY !== undefined && item.salesYoY < 80 ? 'text-red-600 font-bold' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'text-blue-600 font-bold' : ''}`}>
                                                                     {formatNum(item.salesYoY, true)}
                                                                 </td>
-                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
+                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
