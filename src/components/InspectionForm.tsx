@@ -944,6 +944,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             width: 100%;
             border-collapse: collapse;
             font-size: 0.8rem;
+            table-layout: fixed;
+        }
+        .analysis-table th, .analysis-table td {
+            padding: 6px 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
             white-space: nowrap;
         }
         .analysis-table th {
@@ -951,17 +957,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             color: #475569;
             font-weight: 600;
             text-align: left;
-            padding: 6px 8px;
             border-bottom: 1px solid #e2e8f0;
             position: sticky;
             top: 0;
             z-index: 1;
         }
         .analysis-table td {
-            padding: 6px 8px;
             border-bottom: 1px solid #f1f5f9;
             color: #334155;
         }
+        /* スマホに最適化した各列の幅指定 */
+        .analysis-table th:nth-child(1), .analysis-table td:nth-child(1) { width: 65px; } /* コード */
+        .analysis-table th:nth-child(2), .analysis-table td:nth-child(2) { width: auto; } /* 品名: 残り幅 */
+        .analysis-table th:nth-child(3), .analysis-table td:nth-child(3) { width: 45px; text-align: right; } /* 売上数 */
+        .analysis-table th:nth-child(4), .analysis-table td:nth-child(4) { width: 45px; text-align: right; } /* 前比 */
+        .analysis-table th:nth-child(5), .analysis-table td:nth-child(5) { width: 65px; text-align: right; } /* 売上高 */
+
         .analysis-table tbody tr:hover td {
             background-color: #f8fafc;
         }
