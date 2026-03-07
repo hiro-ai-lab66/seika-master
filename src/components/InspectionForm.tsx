@@ -232,23 +232,25 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         onSave(form as InspectionEntry);
     };
 
-    // 分析データ生成
-    const allItems = [
-        ...(form.bestVegetables || []).map(item => ({ ...item, category: '野菜' as const })),
-        ...(form.bestFruits || []).map(item => ({ ...item, category: '果物' as const }))
-    ];
+    // 分析データ生成 (分類ごとに分割)
+    const veggieItems = (form.bestVegetables || []).map(item => ({ ...item, category: '野菜' as const }));
+    const fruitItems = (form.bestFruits || []).map(item => ({ ...item, category: '果物' as const }));
 
-    // 要注意商品 (昨比80%未満、低い順)
-    const warningItems = [...allItems]
+    const getWarning = (items: BestItem[]) => items
         .filter(item => item.salesYoY !== undefined && item.salesYoY < 80)
         .sort((a, b) => (a.salesYoY || 0) - (b.salesYoY || 0))
-        .slice(0, 8); // 8件に増やす
+        .slice(0, 5);
 
-    // 好調商品 (昨比110%以上、高い順)
-    const hotItems = [...allItems]
+    const getHot = (items: BestItem[]) => items
         .filter(item => item.salesYoY !== undefined && item.salesYoY >= 110)
         .sort((a, b) => (b.salesYoY || 0) - (a.salesYoY || 0))
-        .slice(0, 8); // 8件に増やす
+        .slice(0, 5);
+
+    const veggieWarning = getWarning(veggieItems);
+    const fruitWarning = getWarning(fruitItems);
+    const veggieHot = getHot(veggieItems);
+    const fruitHot = getHot(fruitItems);
+    const hasAnyParsedData = veggieItems.length > 0 || fruitItems.length > 0;
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
@@ -592,68 +594,112 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             </div>
 
                             {/* 分析ダッシュボード */}
-                            {allItems.length > 0 && (
+                            {hasAnyParsedData && (
                                 <div className="csv-dashboard">
                                     <div className="dashboard-grid">
-                                        {/* 要注意商品ブロック */}
-                                        <div className="dashboard-card warning">
-                                            <h5 className="flex items-center gap-1 text-red-600"><AlertCircle size={16} /> 要注意商品 (昨比80%未満)</h5>
-                                            <div className="table-responsive">
-                                                <table className="analysis-table">
-                                                    <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {warningItems.length > 0 ? warningItems.map((item, idx) => (
-                                                            <tr key={idx}>
-                                                                <td>{item.code}</td>
-                                                                <td className="font-bold">
-                                                                    {item.category && (
-                                                                        <span className={`badge ${item.category === '野菜' ? 'badge-veggie' : 'badge-fruit'}`}>
-                                                                            {item.category}
-                                                                        </span>
-                                                                    )}
-                                                                    {item.name}
-                                                                </td>
-                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
-                                                                <td className="text-right text-red-600 font-bold">{formatNum(item.salesYoY, true)}</td>
-                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
-                                                            </tr>
-                                                        )) : <tr><td colSpan={5} className="text-center text-gray-500">該当なし</td></tr>}
-                                                    </tbody>
-                                                </table>
+                                        {/* 野菜 要注意商品ブロック */}
+                                        {veggieWarning.length > 0 && (
+                                            <div className="dashboard-card warning">
+                                                <h5 className="flex items-center gap-1 text-red-600 mb-2"><AlertCircle size={16} /> 野菜 要注意商品</h5>
+                                                <div className="cards-container">
+                                                    {veggieWarning.map((item, idx) => (
+                                                        <div key={`vw-${idx}`} className="item-card">
+                                                            <div className="item-card-header">
+                                                                <div className="item-name" title={item.name}>{item.name}</div>
+                                                                <span className="badge badge-veggie">野菜</span>
+                                                            </div>
+                                                            <div className="item-card-details">
+                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">前比: <strong className="text-red-600">{formatNum(item.salesYoY, true)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
 
-                                        {/* 好調商品ブロック */}
-                                        <div className="dashboard-card primary">
-                                            <h5 className="flex items-center gap-1 text-blue-600"><TrendingUp size={16} /> 好調商品 (昨比110%以上)</h5>
-                                            <div className="table-responsive">
-                                                <table className="analysis-table">
-                                                    <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {hotItems.length > 0 ? hotItems.map((item, idx) => (
-                                                            <tr key={idx}>
-                                                                <td>{item.code}</td>
-                                                                <td className="font-bold">
-                                                                    {item.category && (
-                                                                        <span className={`badge ${item.category === '野菜' ? 'badge-veggie' : 'badge-fruit'}`}>
-                                                                            {item.category}
-                                                                        </span>
-                                                                    )}
-                                                                    {item.name}
-                                                                </td>
-                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
-                                                                <td className="text-right text-blue-600 font-bold">{formatNum(item.salesYoY, true)}</td>
-                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
-                                                            </tr>
-                                                        )) : <tr><td colSpan={5} className="text-center text-gray-500">該当なし</td></tr>}
-                                                    </tbody>
-                                                </table>
+                                        {/* 野菜 好調商品ブロック */}
+                                        {veggieHot.length > 0 && (
+                                            <div className="dashboard-card primary">
+                                                <h5 className="flex items-center gap-1 text-blue-600 mb-2"><TrendingUp size={16} /> 野菜 好調商品</h5>
+                                                <div className="cards-container">
+                                                    {veggieHot.map((item, idx) => (
+                                                        <div key={`vh-${idx}`} className="item-card">
+                                                            <div className="item-card-header">
+                                                                <div className="item-name" title={item.name}>{item.name}</div>
+                                                                <span className="badge badge-veggie">野菜</span>
+                                                            </div>
+                                                            <div className="item-card-details">
+                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">前比: <strong className="text-blue-600">{formatNum(item.salesYoY, true)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
+
+                                        {/* 果物 要注意商品ブロック */}
+                                        {fruitWarning.length > 0 && (
+                                            <div className="dashboard-card warning">
+                                                <h5 className="flex items-center gap-1 text-red-600 mb-2"><AlertCircle size={16} /> 果物 要注意商品</h5>
+                                                <div className="cards-container">
+                                                    {fruitWarning.map((item, idx) => (
+                                                        <div key={`fw-${idx}`} className="item-card">
+                                                            <div className="item-card-header">
+                                                                <div className="item-name" title={item.name}>{item.name}</div>
+                                                                <span className="badge badge-fruit">果物</span>
+                                                            </div>
+                                                            <div className="item-card-details">
+                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">前比: <strong className="text-red-600">{formatNum(item.salesYoY, true)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 果物 好調商品ブロック */}
+                                        {fruitHot.length > 0 && (
+                                            <div className="dashboard-card primary">
+                                                <h5 className="flex items-center gap-1 text-blue-600 mb-2"><TrendingUp size={16} /> 果物 好調商品</h5>
+                                                <div className="cards-container">
+                                                    {fruitHot.map((item, idx) => (
+                                                        <div key={`fh-${idx}`} className="item-card">
+                                                            <div className="item-card-header">
+                                                                <div className="item-name" title={item.name}>{item.name}</div>
+                                                                <span className="badge badge-fruit">果物</span>
+                                                            </div>
+                                                            <div className="item-card-details">
+                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">前比: <strong className="text-blue-600">{formatNum(item.salesYoY, true)}</strong></span>
+                                                                <span className="detail-sep">/</span>
+                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* 野菜ベスト 一覧 */}
@@ -1000,6 +1046,51 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         .badge-veggie { background: #dcfce7; color: #166534; }
         .badge-fruit { background: #fef08a; color: #854d0e; }
+
+        .cards-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .item-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px 12px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .item-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .item-name {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #1e293b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 8px;
+            flex: 1;
+        }
+        .item-card-details {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px 6px;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+        .item-card-details strong {
+            color: #1e293b;
+            font-weight: 600;
+        }
+        .detail-sep {
+            color: #cbd5e1;
+            font-size: 0.70rem;
+        }
 
         .analysis-table tbody tr:hover td {
             background-color: #f8fafc;
