@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { InspectionEntry, DailyBudget, BestItem } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
 import { Upload, TrendingUp, AlertCircle } from 'lucide-react';
+import Papa from 'papaparse';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -107,26 +108,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             handleChange(field, isNaN(num) ? null : num);
         }
     };
-
-    const parseCSVLine = (line: string): string[] => {
-        const parts = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-                inQuotes = !inQuotes;
-            } else if ((char === ',' || char === '\t') && !inQuotes) {
-                parts.push(current);
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-        parts.push(current);
-        return parts.map(p => p.trim().replace(/^["']|["']$/g, ''));
-    };
-
     const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'veggie' | 'fruit') => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -149,74 +130,85 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 text = decoder.decode(arrayBuffer);
             }
 
-            const lines = text.split(/\r?\n/).filter(line => line.trim());
-            if (lines.length === 0) {
-                alert("解析に失敗しました。データが空です。");
-                return;
-            }
+            Papa.parse(text, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.data.length === 0) {
+                        alert("解析に失敗しました。データが空です。");
+                        return;
+                    }
 
-            // Header mapping (ゆらぎ吸収)
-            const header = parseCSVLine(lines[0]);
-            let codeIdx = -1, nameIdx = -1, qtyIdx = -1, yoyIdx = -1, amtIdx = -1;
+                    const headers = results.meta.fields || [];
+                    const cleanHeaders = headers.map(h => h.replace(/^[\uFEFF\u200B"'\s　]+|["'\s　]+$/g, '').normalize('NFKC'));
 
-            header.forEach((col, idx) => {
-                const normalizeCol = col.toLowerCase().replace(/\s/g, '');
-                if (['コード', '商品コード', 'janコード'].includes(normalizeCol)) codeIdx = idx;
-                else if (['名称', '商品名', '品名'].includes(normalizeCol)) nameIdx = idx;
-                else if (['売上数', '数量', '販売数', '販売数量'].includes(normalizeCol)) qtyIdx = idx;
-                else if (['売上数昨比', '売上数作比', '数量前年比', '昨年比', '数量昨比'].includes(normalizeCol)) yoyIdx = idx;
-                else if (['売上高', '金額', '販売金額'].includes(normalizeCol)) amtIdx = idx;
+                    const findKey = (keywords: string[]) => cleanHeaders.find(header =>
+                        keywords.some(keyword => header.includes(keyword))
+                    );
+
+                    const codeKey = findKey(['コード', '商品コード', 'JAN']);
+                    const nameKey = findKey(['名称', '商品名', '品名']);
+                    const yoyKey = findKey(['売上数昨比', '売上数作比', '数量前年比', '昨年比', '数量昨比', '前比']);
+                    const qtyKey = cleanHeaders.find(h =>
+                        (h.includes('売上数') || h.includes('数量') || h.includes('販売数') || h.includes('販売数量')) && h !== yoyKey
+                    );
+                    const amtKey = findKey(['売上高', '金額', '販売金額']);
+
+                    if (!nameKey) {
+                        alert("解析に失敗しました。必須列（名称など）が見つかりません。\n検出されたヘッダー: " + cleanHeaders.join(', '));
+                        return;
+                    }
+
+                    const items: BestItem[] = [];
+
+                    results.data.forEach((row: any) => {
+                        const cleanRow: Record<string, string> = {};
+                        Object.keys(row).forEach((k, i) => {
+                            if (!cleanHeaders[i]) return;
+                            cleanRow[cleanHeaders[i]] = String(row[k] || '').trim();
+                        });
+
+                        const itemName = nameKey ? cleanRow[nameKey] : '';
+                        const code = codeKey ? cleanRow[codeKey] : undefined;
+
+                        if (!itemName || itemName === '合計' || !code) return;
+
+                        const parseNumeric = (val: string | undefined) => {
+                            if (!val) return undefined;
+                            const num = parseFloat(val.replace(/[^0-9.-]/g, ''));
+                            return isNaN(num) ? undefined : num;
+                        };
+
+                        const qty = qtyKey ? parseNumeric(cleanRow[qtyKey]) : undefined;
+                        const yoy = yoyKey ? parseNumeric(cleanRow[yoyKey]) : undefined;
+                        const amt = amtKey ? parseNumeric(cleanRow[amtKey]) : undefined;
+
+                        items.push({
+                            name: itemName,
+                            code: code,
+                            salesQty: qty,
+                            salesYoY: yoy,
+                            salesAmt: amt,
+                            sales: amt || 0
+                        });
+                    });
+
+                    if (items.length > 0) {
+                        items.sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
+                        setForm(prev => ({
+                            ...prev,
+                            [type === 'veggie' ? 'bestVegetables' : 'bestFruits']: items
+                        }));
+                        alert(`${typeName}CSV ${items.length}件を抽出しました`);
+                    } else {
+                        alert("データの抽出に失敗しました（有効なデータが0件です）。\n検出されたヘッダー: " + cleanHeaders.join(', '));
+                    }
+                },
+                error: (error: any) => {
+                    console.error("CSV Parse Error:", error);
+                    alert("CSVファイルの読み込み中にエラーが発生しました。");
+                }
             });
-
-            if (nameIdx < 0) {
-                alert("解析に失敗しました。必須列（名称など）が見つかりません。");
-                return;
-            }
-
-            const items: BestItem[] = [];
-
-            for (let i = 1; i < lines.length; i++) {
-                const row = parseCSVLine(lines[i]);
-                if (row.length < Math.max(nameIdx, qtyIdx, yoyIdx, amtIdx)) continue; // 必須カラムがない場合はスキップ
-
-                const itemName = nameIdx >= 0 ? row[nameIdx] : '';
-                const code = codeIdx >= 0 ? row[codeIdx] : undefined;
-
-                // 品名が空、または合計、またはコードが空の場合はスキップ
-                if (!itemName || itemName === '合計' || !code) continue;
-
-                const parseNumeric = (val: string) => {
-                    if (!val) return undefined;
-                    const num = parseFloat(val.replace(/[^0-9.-]/g, ''));
-                    return isNaN(num) ? undefined : num;
-                };
-
-                const qty = qtyIdx >= 0 ? parseNumeric(row[qtyIdx]) : undefined;
-                const yoy = yoyIdx >= 0 ? parseNumeric(row[yoyIdx]) : undefined;
-                const amt = amtIdx >= 0 ? parseNumeric(row[amtIdx]) : undefined;
-
-                items.push({
-                    name: itemName,
-                    code: code,
-                    salesQty: qty,
-                    salesYoY: yoy,
-                    salesAmt: amt,
-                    sales: amt || 0 // 後方互換性用
-                });
-            }
-
-            if (items.length > 0) {
-                // 売上高(salesAmt)の降順でソート
-                items.sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
-
-                setForm(prev => ({
-                    ...prev,
-                    [type === 'veggie' ? 'bestVegetables' : 'bestFruits']: items
-                }));
-                alert(`${typeName}CSV ${items.length}件を抽出しました`);
-            } else {
-                alert("データの抽出に失敗しました（有効なデータが0件です）。");
-            }
         };
         reader.readAsArrayBuffer(file);
         e.target.value = '';
