@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import type { InspectionEntry, DailyBudget, BestItem } from '../types';
+import type { InspectionEntry, DailyBudget, BestItem, Product } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
 import { Upload } from 'lucide-react';
 import Papa from 'papaparse';
+import { loadProducts, saveProducts } from '../storage/products';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -234,6 +235,32 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     const veggieItems = (form.bestVegetables || []).slice(0, 40);
     const fruitItems = (form.bestFruits || []).slice(0, 30);
+
+    // 商品マスター登録用ステート
+    const [registeredCodes, setRegisteredCodes] = useState<Set<string>>(() => {
+        const products = loadProducts();
+        return new Set(products.map(p => p.code || '').filter(c => c !== ''));
+    });
+
+    const handleAddToMaster = (item: BestItem) => {
+        if (!item.code) return;
+        const products = loadProducts();
+        const alreadyExists = products.some(p => p.code === item.code);
+        if (alreadyExists) {
+            alert('この商品はすでに商品マスターに登録されています。');
+            return;
+        }
+        const newProduct: Product = {
+            id: crypto.randomUUID(),
+            name: item.name,
+            code: item.code,
+            updatedAt: new Date().toISOString(),
+        };
+        const updated = [newProduct, ...products];
+        saveProducts(updated);
+        setRegisteredCodes(prev => new Set(prev).add(item.code!));
+        alert(`「${item.name}」を商品マスターに登録しました。`);
+    };
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
@@ -589,12 +616,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                     <th>売上数</th>
                                                     <th>売上数昨比</th>
                                                     <th>売上高</th>
+                                                    <th>マスター</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {veggieItems.map((item, idx) => {
                                                     const yoy = item.salesYoY;
                                                     const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
+                                                    const isRegistered = item.code ? registeredCodes.has(item.code) : false;
+                                                    const hasSales = item.salesQty !== undefined && item.salesQty > 0;
                                                     return (
                                                         <tr key={idx} className={rowClass}>
                                                             <td className="col-code">{item.code || '-'}</td>
@@ -602,6 +632,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                             <td className="col-num">{formatNum(item.salesQty)}</td>
                                                             <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
                                                             <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
+                                                            <td className="col-action">
+                                                                {isRegistered ? (
+                                                                    <span className="master-registered">登録済</span>
+                                                                ) : hasSales ? (
+                                                                    <button type="button" className="master-add-btn" onClick={() => handleAddToMaster(item)}>追加</button>
+                                                                ) : (
+                                                                    <span className="master-disabled">登録不可</span>
+                                                                )}
+                                                            </td>
                                                         </tr>
                                                     );
                                                 })}
@@ -624,12 +663,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                     <th>売上数</th>
                                                     <th>売上数昨比</th>
                                                     <th>売上高</th>
+                                                    <th>マスター</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {fruitItems.map((item, idx) => {
                                                     const yoy = item.salesYoY;
                                                     const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
+                                                    const isRegistered = item.code ? registeredCodes.has(item.code) : false;
+                                                    const hasSales = item.salesQty !== undefined && item.salesQty > 0;
                                                     return (
                                                         <tr key={idx} className={rowClass}>
                                                             <td className="col-code">{item.code || '-'}</td>
@@ -637,6 +679,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                             <td className="col-num">{formatNum(item.salesQty)}</td>
                                                             <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
                                                             <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
+                                                            <td className="col-action">
+                                                                {isRegistered ? (
+                                                                    <span className="master-registered">登録済</span>
+                                                                ) : hasSales ? (
+                                                                    <button type="button" className="master-add-btn" onClick={() => handleAddToMaster(item)}>追加</button>
+                                                                ) : (
+                                                                    <span className="master-disabled">登録不可</span>
+                                                                )}
+                                                            </td>
                                                         </tr>
                                                     );
                                                 })}
@@ -875,12 +926,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             table-layout: fixed;
             font-size: 0.82rem;
         }
-        /* 列幅: 20% / 30% / 15% / 15% / 20% */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 20%; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 30%; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 20%; }
+        /* 列幅: 18% / 26% / 13% / 13% / 18% / 12% */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 18%; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 26%; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 13%; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 13%; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 18%; }
+        .best-table th:nth-child(6), .best-table td:nth-child(6) { width: 12%; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
@@ -911,6 +963,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             text-align: right;
             white-space: nowrap;
         }
+        .best-table .col-action {
+            text-align: center;
+            white-space: nowrap;
+        }
         /* 色分け: 行背景 */
         .best-table .row-warn td { background-color: #fef2f2; }
         .best-table .row-good td { background-color: #eff6ff; }
@@ -919,6 +975,30 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .best-table .yoy-good { color: #2563eb; font-weight: 700; }
         .best-table tbody tr:hover td {
             background-color: #f8fafc;
+        }
+        /* マスター登録ボタン */
+        .master-add-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .master-add-btn:hover {
+            background: #1d4ed8;
+        }
+        .master-registered {
+            color: #16a34a;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+        .master-disabled {
+            color: #94a3b8;
+            font-size: 0.68rem;
         }
       `}</style>
         </div>
