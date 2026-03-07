@@ -1,0 +1,344 @@
+:root {
+  /* Colors - Deep Green Theme for Freshness & Visibility */
+  --primary: #064e3b;
+  /* Emerald 900 */
+  --primary-light: #059669;
+  /* Emerald 600 */
+  --secondary: #fef3c7;
+  /* Amber 100 - High contrast background */
+  --accent: #f59e0b;
+  /* Amber 500 */
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-on-primary: #ffffff;
+  --error: #dc2626;
+  --success: #16a34a;
+
+  /* Spacing - Large for glove use */
+  --space-xs: 0.5rem;
+  /* 8px */
+  --space-sm: 0.75rem;
+  /* 12px */
+  --space-md: 1rem;
+  /* 16px */
+  --space-lg: 1.5rem;
+  /* 24px */
+  --space-xl: 2rem;
+  /* 32px */
+
+  .pop-error-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    padding: 2rem;
+    text-align: center;
+    z-index: 10;
+  }
+
+  .pop-error-overlay .error-text {
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-top: 1rem;
+    color: #fbbf24;
+  }
+
+  .btn-fix-key {
+    margin-top: 1.5rem;
+    background: #3b82f6;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 9999px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .btn-fix-key:hover {
+    background: #2563eb;
+    transform: translateY(-2px);
+  }
+
+  .pop-error-small {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80%;
+    justify-content: center;
+  }
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1),
+  0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --tap-target: 48px;
+
+  /* Typography - Large for accessibility */
+  font-family: 'Inter',
+  system-ui,
+  -apple-system,
+  sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-size: 18px;
+  /* Minimum 18px */
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Base Accessibility improvements */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  transition: transform 0.1s ease, filter 0.1s ease;
+}
+
+button:active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-lg);
+}
+
+.date-badge-outline {
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  background: rgba(6, 78, 59, 0.05);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.status-hero {
+  background: var(--primary);
+  color: white;
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 20px rgba(6, 78, 59, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  transition: background-color 0.3s;
+}
+
+.status-hero.is-negative {
+  background: var(--error);
+  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.2);
+}
+
+.hero-main .label {
+  font-size: 0.9rem;
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.hero-main .value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.hero-stats {
+  display: flex;
+  justify-content: space-between;
+  padding-top: var(--space-md);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.shortfall-card {
+  border: 2px solid var(--error);
+  background-color: #fff5f5;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.analytics-card {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.card-header-sm {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge-status {
+  background: rgba(71, 85, 105, 0.1);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+}
+
+.badge-status.is-success {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--success);
+}
+
+.progress-container {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--primary-light);
+  border-radius: 4px;
+  transition: width 0.5s ease-out;
+}
+
+.analytics-stats-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-large-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.stat-large-row .label {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.stat-label-sm {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.stat-label-footer {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: auto;
+  opacity: 0.7;
+}
+
+.analytics-value-row {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.val-item {
+  text-align: center;
+}
+
+.v-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.v-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.v-value .u {
+  font-size: 0.7rem;
+  margin-left: 2px;
+}
