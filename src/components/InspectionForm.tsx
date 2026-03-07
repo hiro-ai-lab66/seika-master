@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { InspectionEntry, DailyBudget, BestItem } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
-import { Upload, TrendingUp, AlertCircle } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import Papa from 'papaparse';
 
 interface Props {
@@ -232,24 +232,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         onSave(form as InspectionEntry);
     };
 
-    // 分析データ生成 (分類ごとに分割)
-    const veggieItems = (form.bestVegetables || []).map(item => ({ ...item, category: '野菜' as const }));
-    const fruitItems = (form.bestFruits || []).map(item => ({ ...item, category: '果物' as const }));
-
-    const getWarning = (items: BestItem[]) => items
-        .filter(item => item.salesYoY !== undefined && item.salesYoY < 80)
-        .sort((a, b) => (a.salesYoY || 0) - (b.salesYoY || 0))
-        .slice(0, 5);
-
-    const getHot = (items: BestItem[]) => items
-        .filter(item => item.salesYoY !== undefined && item.salesYoY >= 110)
-        .sort((a, b) => (b.salesYoY || 0) - (a.salesYoY || 0))
-        .slice(0, 5);
-
-    const veggieWarning = getWarning(veggieItems);
-    const fruitWarning = getWarning(fruitItems);
-    const veggieHot = getHot(veggieItems);
-    const fruitHot = getHot(fruitItems);
+    const veggieItems = (form.bestVegetables || []).slice(0, 40);
+    const fruitItems = (form.bestFruits || []).slice(0, 30);
     const hasAnyParsedData = veggieItems.length > 0 || fruitItems.length > 0;
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
@@ -596,123 +580,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             {/* 分析ダッシュボード */}
                             {hasAnyParsedData && (
                                 <div className="csv-dashboard">
-                                    <div className="dashboard-grid">
-                                        {/* 野菜 要注意商品ブロック */}
-                                        {veggieWarning.length > 0 && (
-                                            <div className="dashboard-card warning">
-                                                <h5 className="flex items-center gap-1 text-red-600 mb-2"><AlertCircle size={16} /> 野菜 要注意商品</h5>
-                                                <div className="cards-container">
-                                                    {veggieWarning.map((item, idx) => (
-                                                        <div key={`vw-${idx}`} className="item-card">
-                                                            <div className="item-card-header">
-                                                                <div className="item-name" title={item.name}>{item.name}</div>
-                                                                <span className="badge badge-veggie">野菜</span>
-                                                            </div>
-                                                            <div className="item-card-details">
-                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">前比: <strong className="text-red-600">{formatNum(item.salesYoY, true)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* 野菜 好調商品ブロック */}
-                                        {veggieHot.length > 0 && (
-                                            <div className="dashboard-card primary">
-                                                <h5 className="flex items-center gap-1 text-blue-600 mb-2"><TrendingUp size={16} /> 野菜 好調商品</h5>
-                                                <div className="cards-container">
-                                                    {veggieHot.map((item, idx) => (
-                                                        <div key={`vh-${idx}`} className="item-card">
-                                                            <div className="item-card-header">
-                                                                <div className="item-name" title={item.name}>{item.name}</div>
-                                                                <span className="badge badge-veggie">野菜</span>
-                                                            </div>
-                                                            <div className="item-card-details">
-                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">前比: <strong className="text-blue-600">{formatNum(item.salesYoY, true)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* 果物 要注意商品ブロック */}
-                                        {fruitWarning.length > 0 && (
-                                            <div className="dashboard-card warning">
-                                                <h5 className="flex items-center gap-1 text-red-600 mb-2"><AlertCircle size={16} /> 果物 要注意商品</h5>
-                                                <div className="cards-container">
-                                                    {fruitWarning.map((item, idx) => (
-                                                        <div key={`fw-${idx}`} className="item-card">
-                                                            <div className="item-card-header">
-                                                                <div className="item-name" title={item.name}>{item.name}</div>
-                                                                <span className="badge badge-fruit">果物</span>
-                                                            </div>
-                                                            <div className="item-card-details">
-                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">前比: <strong className="text-red-600">{formatNum(item.salesYoY, true)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* 果物 好調商品ブロック */}
-                                        {fruitHot.length > 0 && (
-                                            <div className="dashboard-card primary">
-                                                <h5 className="flex items-center gap-1 text-blue-600 mb-2"><TrendingUp size={16} /> 果物 好調商品</h5>
-                                                <div className="cards-container">
-                                                    {fruitHot.map((item, idx) => (
-                                                        <div key={`fh-${idx}`} className="item-card">
-                                                            <div className="item-card-header">
-                                                                <div className="item-name" title={item.name}>{item.name}</div>
-                                                                <span className="badge badge-fruit">果物</span>
-                                                            </div>
-                                                            <div className="item-card-details">
-                                                                <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">前比: <strong className="text-blue-600">{formatNum(item.salesYoY, true)}</strong></span>
-                                                                <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
                                     {/* 野菜ベスト 一覧 */}
                                     {(form.bestVegetables || []).length > 0 && (
                                         <div className="dashboard-card">
-                                            <h5 className="text-green-700">🥬 野菜ベスト分析</h5>
+                                            <h5 className="text-green-700 mb-2">🥬 野菜ベスト分析 (最大40件)</h5>
                                             <div className="table-responsive scrollable-max-h">
                                                 <table className="analysis-table full-table">
                                                     <thead>
                                                         <tr><th>コード</th><th>品名</th><th>売上数</th><th>売上数昨比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
-                                                        {(form.bestVegetables || []).map((item, idx) => (
+                                                        {(form.bestVegetables || []).slice(0, 40).map((item, idx) => (
                                                             <tr key={idx} className={item.salesYoY !== undefined && item.salesYoY < 80 ? 'bg-red-50' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'bg-blue-50' : ''}>
                                                                 <td>{item.code || '-'}</td>
                                                                 <td className="font-bold">{item.name}</td>
@@ -732,14 +610,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     {/* 果物ベスト 一覧 */}
                                     {(form.bestFruits || []).length > 0 && (
                                         <div className="dashboard-card">
-                                            <h5 className="text-orange-600">🍎 果物ベスト分析</h5>
+                                            <h5 className="text-orange-600 mt-4 mb-2">🍎 果物ベスト分析 (最大30件)</h5>
                                             <div className="table-responsive scrollable-max-h">
                                                 <table className="analysis-table full-table">
                                                     <thead>
                                                         <tr><th>コード</th><th>品名</th><th>売上数</th><th>売上数昨比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
-                                                        {(form.bestFruits || []).map((item, idx) => (
+                                                        {(form.bestFruits || []).slice(0, 30).map((item, idx) => (
                                                             <tr key={idx} className={item.salesYoY !== undefined && item.salesYoY < 80 ? 'bg-red-50' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'bg-blue-50' : ''}>
                                                                 <td>{item.code || '-'}</td>
                                                                 <td className="font-bold">{item.name}</td>
@@ -1000,8 +878,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             overflow-x: auto;
         }
         .scrollable-max-h {
-            max-height: 300px;
+            max-height: 400px; /* 最初は上位10件程が見える高さ */
             overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
         }
         .analysis-table {
             width: 100%;
@@ -1035,66 +915,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .analysis-table th:nth-child(3), .analysis-table td:nth-child(3) { width: 40px; text-align: right; } /* 売上数 */
         .analysis-table th:nth-child(4), .analysis-table td:nth-child(4) { width: 45px; text-align: right; } /* 前比 */
         .analysis-table th:nth-child(5), .analysis-table td:nth-child(5) { width: 60px; text-align: right; } /* 売上高 */
-
-        .badge {
-            display: inline-block;
-            padding: 1px 4px;
-            border-radius: 4px;
-            font-size: 0.70rem;
-            margin-right: 4px;
-            font-weight: normal;
-        }
-        .badge-veggie { background: #dcfce7; color: #166534; }
-        .badge-fruit { background: #fef08a; color: #854d0e; }
-
-        .cards-container {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .item-card {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 10px 12px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .item-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-        .item-name {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #1e293b;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding-right: 8px;
-            flex: 1;
-        }
-        .item-card-details {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: baseline;
-            gap: 4px 6px;
-            font-size: 0.85rem;
-            color: #475569;
-            line-height: 1.5;
-        }
-        .detail-item {
-            white-space: nowrap;
-        }
-        .item-card-details strong {
-            color: #1e293b;
-            font-weight: 600;
-        }
-        .detail-sep {
-            color: #cbd5e1;
-            font-size: 0.70rem;
-        }
 
         .analysis-table tbody tr:hover td {
             background-color: #f8fafc;
