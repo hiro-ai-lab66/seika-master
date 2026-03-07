@@ -233,19 +233,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     // 分析データ生成
-    const allItems = [...(form.bestVegetables || []), ...(form.bestFruits || [])];
+    const allItems = [
+        ...(form.bestVegetables || []).map(item => ({ ...item, category: '野菜' as const })),
+        ...(form.bestFruits || []).map(item => ({ ...item, category: '果物' as const }))
+    ];
 
     // 要注意商品 (昨比80%未満、低い順)
     const warningItems = [...allItems]
         .filter(item => item.salesYoY !== undefined && item.salesYoY < 80)
         .sort((a, b) => (a.salesYoY || 0) - (b.salesYoY || 0))
-        .slice(0, 5);
+        .slice(0, 8); // 8件に増やす
 
     // 好調商品 (昨比110%以上、高い順)
     const hotItems = [...allItems]
         .filter(item => item.salesYoY !== undefined && item.salesYoY >= 110)
         .sort((a, b) => (b.salesYoY || 0) - (a.salesYoY || 0))
-        .slice(0, 5);
+        .slice(0, 8); // 8件に増やす
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
@@ -604,7 +607,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                         {warningItems.length > 0 ? warningItems.map((item, idx) => (
                                                             <tr key={idx}>
                                                                 <td>{item.code}</td>
-                                                                <td className="font-bold">{item.name}</td>
+                                                                <td className="font-bold">
+                                                                    {item.category && (
+                                                                        <span className={`badge ${item.category === '野菜' ? 'badge-veggie' : 'badge-fruit'}`}>
+                                                                            {item.category}
+                                                                        </span>
+                                                                    )}
+                                                                    {item.name}
+                                                                </td>
                                                                 <td className="text-right">{formatNum(item.salesQty)}</td>
                                                                 <td className="text-right text-red-600 font-bold">{formatNum(item.salesYoY, true)}</td>
                                                                 <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
@@ -627,7 +637,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                         {hotItems.length > 0 ? hotItems.map((item, idx) => (
                                                             <tr key={idx}>
                                                                 <td>{item.code}</td>
-                                                                <td className="font-bold">{item.name}</td>
+                                                                <td className="font-bold">
+                                                                    {item.category && (
+                                                                        <span className={`badge ${item.category === '野菜' ? 'badge-veggie' : 'badge-fruit'}`}>
+                                                                            {item.category}
+                                                                        </span>
+                                                                    )}
+                                                                    {item.name}
+                                                                </td>
                                                                 <td className="text-right">{formatNum(item.salesQty)}</td>
                                                                 <td className="text-right text-blue-600 font-bold">{formatNum(item.salesYoY, true)}</td>
                                                                 <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
@@ -967,11 +984,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             color: #334155;
         }
         /* スマホに最適化した各列の幅指定 */
-        .analysis-table th:nth-child(1), .analysis-table td:nth-child(1) { width: 65px; } /* コード */
+        .analysis-table th:nth-child(1), .analysis-table td:nth-child(1) { width: 90px; } /* コード: 13桁が入るように広げる */
         .analysis-table th:nth-child(2), .analysis-table td:nth-child(2) { width: auto; } /* 品名: 残り幅 */
-        .analysis-table th:nth-child(3), .analysis-table td:nth-child(3) { width: 45px; text-align: right; } /* 売上数 */
+        .analysis-table th:nth-child(3), .analysis-table td:nth-child(3) { width: 40px; text-align: right; } /* 売上数 */
         .analysis-table th:nth-child(4), .analysis-table td:nth-child(4) { width: 45px; text-align: right; } /* 前比 */
-        .analysis-table th:nth-child(5), .analysis-table td:nth-child(5) { width: 65px; text-align: right; } /* 売上高 */
+        .analysis-table th:nth-child(5), .analysis-table td:nth-child(5) { width: 60px; text-align: right; } /* 売上高 */
+
+        .badge {
+            display: inline-block;
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-size: 0.70rem;
+            margin-right: 4px;
+            font-weight: normal;
+        }
+        .badge-veggie { background: #dcfce7; color: #166534; }
+        .badge-fruit { background: #fef08a; color: #854d0e; }
 
         .analysis-table tbody tr:hover td {
             background-color: #f8fafc;

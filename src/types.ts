@@ -20,6 +20,7 @@ export interface BestItem {
     salesQty?: number;  // 売上数
     salesYoY?: number;  // 売上数昨比
     salesAmt?: number;  // 売上高
+    category?: '野菜' | '果物';
 }
 
 /**
