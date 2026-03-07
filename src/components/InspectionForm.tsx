@@ -254,9 +254,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
-        if (isYoY) return num.toFixed(1); // 昨比はそのままの数値を小数第1位で表示
-        if (isAmount) return `¥${num.toLocaleString()}`; // 金額は¥マーク付き
-        return num.toLocaleString(); // 売上数はカンマ区切りのみ
+        if (isYoY) return `${num.toFixed(1)}%`;
+        if (isAmount) return `${num.toLocaleString()}円`;
+        return num.toLocaleString();
     };
 
     return (
@@ -611,11 +611,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                             <div className="item-card-details">
                                                                 <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
                                                                 <span className="detail-sep">/</span>
                                                                 <span className="detail-item">前比: <strong className="text-red-600">{formatNum(item.salesYoY, true)}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -637,11 +637,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                             <div className="item-card-details">
                                                                 <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
                                                                 <span className="detail-sep">/</span>
                                                                 <span className="detail-item">前比: <strong className="text-blue-600">{formatNum(item.salesYoY, true)}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -663,11 +663,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                             <div className="item-card-details">
                                                                 <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
                                                                 <span className="detail-sep">/</span>
                                                                 <span className="detail-item">前比: <strong className="text-red-600">{formatNum(item.salesYoY, true)}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -689,11 +689,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                             <div className="item-card-details">
                                                                 <span className="detail-item">コード: <strong>{item.code || '-'}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売数: <strong>{formatNum(item.salesQty)}</strong></span>
+                                                                <span className="detail-item">売上数: <strong>{formatNum(item.salesQty)}</strong></span>
                                                                 <span className="detail-sep">/</span>
                                                                 <span className="detail-item">前比: <strong className="text-blue-600">{formatNum(item.salesYoY, true)}</strong></span>
                                                                 <span className="detail-sep">/</span>
-                                                                <span className="detail-item">売上: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
+                                                                <span className="detail-item">売上高: <strong>{formatNum(item.salesAmt, false, true)}</strong></span>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -709,7 +709,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                             <div className="table-responsive scrollable-max-h">
                                                 <table className="analysis-table full-table">
                                                     <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>売上数昨比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {(form.bestVegetables || []).map((item, idx) => (
@@ -736,7 +736,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                             <div className="table-responsive scrollable-max-h">
                                                 <table className="analysis-table full-table">
                                                     <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>前比</th><th>売上高</th></tr>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>売上数昨比</th><th>売上高</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {(form.bestFruits || []).map((item, idx) => (
@@ -1030,7 +1030,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             color: #334155;
         }
         /* スマホに最適化した各列の幅指定 */
-        .analysis-table th:nth-child(1), .analysis-table td:nth-child(1) { width: 90px; } /* コード: 13桁が入るように広げる */
+        .analysis-table th:nth-child(1), .analysis-table td:nth-child(1) { width: 110px; overflow: visible; } /* コード: 13桁が入るように広げ、省略禁止 */
         .analysis-table th:nth-child(2), .analysis-table td:nth-child(2) { width: auto; } /* 品名: 残り幅 */
         .analysis-table th:nth-child(3), .analysis-table td:nth-child(3) { width: 40px; text-align: right; } /* 売上数 */
         .analysis-table th:nth-child(4), .analysis-table td:nth-child(4) { width: 45px; text-align: right; } /* 前比 */
@@ -1078,10 +1078,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .item-card-details {
             display: flex;
             flex-wrap: wrap;
-            align-items: center;
+            align-items: baseline;
             gap: 4px 6px;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             color: #475569;
+            line-height: 1.5;
+        }
+        .detail-item {
+            white-space: nowrap;
         }
         .item-card-details strong {
             color: #1e293b;
