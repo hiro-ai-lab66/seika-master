@@ -15,7 +15,11 @@ export interface ToDoItem {
 
 export interface BestItem {
     name: string;
-    sales: number;
+    sales: number;      // 既存（互換性用）
+    code?: string;      // コード
+    salesQty?: number;  // 売上数
+    salesYoY?: number;  // 売上数昨比
+    salesAmt?: number;  // 売上高
 }
 
 /**
