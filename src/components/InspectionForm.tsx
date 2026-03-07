@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { InspectionEntry, DailyBudget, BestItem } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
-import { Upload, TrendingUp } from 'lucide-react';
+import { Upload, TrendingUp, AlertCircle } from 'lucide-react';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -18,11 +18,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const targetDate = currentDate;
         const masterBudget = dailyBudgets.find(b => b.date === targetDate)?.totalBudget || 0;
 
-        // もし既存データがあっても、ターゲットの日付でなければ新規作成（App.tsxでkey指定済みのため本来は合致する）
         if (existingEntry && existingEntry.date === targetDate) {
             return {
                 ...existingEntry,
-                // マスタ予算があれば常にそれを優先する
                 totalBudget: masterBudget > 0 ? masterBudget : (existingEntry.totalBudget || 0)
             };
         }
@@ -52,28 +50,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         };
     });
 
-    // リアルタイム計算用の副作用
     useEffect(() => {
         const updateCalculations = () => {
             setForm(prev => {
                 const next = { ...prev };
                 const budget = next.totalBudget || 0;
 
-                // 12:00 calculations
                 next.forecast12 = calculateForecast(next.actual12 ?? null, next.rate12 ?? null);
                 next.diff12 = calculateGap(next.forecast12, budget);
 
-                // 17:00 calculations
                 next.forecast17 = calculateForecast(next.actual17 ?? null, next.rate17 ?? null);
                 next.diff17 = calculateGap(next.forecast17, budget);
 
-                // Final calculations
                 if (next.actualFinal !== null && next.actualFinal !== undefined) {
-                    // Final is basically 100% rate
                     const finalForecast = calculateForecast(next.actualFinal, 100);
                     next.diffFinal = calculateGap(finalForecast, budget);
 
-                    // Loss Rate calculation
                     if (next.lossAmount !== null && next.lossAmount !== undefined && next.actualFinal > 0) {
                         next.lossRate = Number(((next.lossAmount / next.actualFinal) * 100).toFixed(2));
                     } else {
@@ -84,7 +76,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     next.lossRate = 0;
                 }
 
-                // Promotion calculations (Achievement Rate)
                 const target = next.promotionTargetSales || 0;
                 if (target > 0) {
                     if (next.promotionActual12Sales !== undefined && next.promotionActual12Sales !== null) {
@@ -117,9 +108,32 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
     };
 
+    const parseCSVLine = (line: string): string[] => {
+        const parts = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if ((char === ',' || char === '\t') && !inQuotes) {
+                parts.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        parts.push(current);
+        return parts.map(p => p.trim().replace(/^["']|["']$/g, ''));
+    };
+
     const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'veggie' | 'fruit') => {
         const file = e.target.files?.[0];
         if (!file) return;
+
+        const typeName = type === 'veggie' ? '野菜' : '果物';
+        console.log(`${type} csv selected`);
+        alert(`${typeName}CSVを読み込みました`);
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -136,39 +150,73 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             }
 
             const lines = text.split(/\r?\n/).filter(line => line.trim());
-            const items: BestItem[] = [];
+            if (lines.length === 0) {
+                alert("解析に失敗しました。データが空です。");
+                return;
+            }
 
-            lines.forEach(line => {
-                const parts = [];
-                let current = '';
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                    const char = line[i];
-                    if (char === '"') {
-                        inQuotes = !inQuotes;
-                    } else if ((char === ',' || char === '\t') && !inQuotes) {
-                        parts.push(current);
-                        current = '';
-                    } else {
-                        current += char;
-                    }
-                }
-                parts.push(current);
+            // Header mapping (ゆらぎ吸収)
+            const header = parseCSVLine(lines[0]);
+            let codeIdx = -1, nameIdx = -1, qtyIdx = -1, yoyIdx = -1, amtIdx = -1;
 
-                if (parts.length >= 2) {
-                    const name = parts[0].trim().replace(/["']/g, '');
-                    const sales = parseInt(parts[1].trim().replace(/[^0-9]/g, ''));
-                    if (name && !isNaN(sales)) {
-                        items.push({ name, sales });
-                    }
-                }
+            header.forEach((col, idx) => {
+                const normalizeCol = col.toLowerCase().replace(/\s/g, '');
+                if (['コード', '商品コード', 'janコード'].includes(normalizeCol)) codeIdx = idx;
+                else if (['名称', '商品名', '品名'].includes(normalizeCol)) nameIdx = idx;
+                else if (['売上数', '数量', '販売数', '販売数量'].includes(normalizeCol)) qtyIdx = idx;
+                else if (['売上数昨比', '売上数作比', '数量前年比', '昨年比', '数量昨比'].includes(normalizeCol)) yoyIdx = idx;
+                else if (['売上高', '金額', '販売金額'].includes(normalizeCol)) amtIdx = idx;
             });
 
+            if (nameIdx < 0) {
+                alert("解析に失敗しました。必須列（名称など）が見つかりません。");
+                return;
+            }
+
+            const items: BestItem[] = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const row = parseCSVLine(lines[i]);
+                if (row.length < Math.max(nameIdx, qtyIdx, yoyIdx, amtIdx)) continue; // 必須カラムがない場合はスキップ
+
+                const itemName = nameIdx >= 0 ? row[nameIdx] : '';
+                if (!itemName) continue;
+
+                const code = codeIdx >= 0 ? row[codeIdx] : undefined;
+
+                const parseNumeric = (val: string) => {
+                    if (!val) return undefined;
+                    const num = parseFloat(val.replace(/[^0-9.-]/g, ''));
+                    return isNaN(num) ? undefined : num;
+                };
+
+                const qty = qtyIdx >= 0 ? parseNumeric(row[qtyIdx]) : undefined;
+                const yoy = yoyIdx >= 0 ? parseNumeric(row[yoyIdx]) : undefined;
+                const amt = amtIdx >= 0 ? parseNumeric(row[amtIdx]) : undefined;
+
+                if (itemName) {
+                    items.push({
+                        name: itemName,
+                        code: code,
+                        salesQty: qty,
+                        salesYoY: yoy,
+                        salesAmt: amt,
+                        sales: amt || 0 // 後方互換性用
+                    });
+                }
+            }
+
             if (items.length > 0) {
+                // 売上高(salesAmt)の降順でソート
+                items.sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
+
                 setForm(prev => ({
                     ...prev,
-                    [type === 'veggie' ? 'bestVegetables' : 'bestFruits']: items.sort((a, b) => b.sales - a.sales)
+                    [type === 'veggie' ? 'bestVegetables' : 'bestFruits']: items
                 }));
+                alert(`${typeName}CSV ${items.length}件を抽出しました`);
+            } else {
+                alert("データの抽出に失敗しました（有効なデータが0件です）。");
             }
         };
         reader.readAsArrayBuffer(file);
@@ -191,6 +239,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
 
         onSave(form as InspectionEntry);
+    };
+
+    // 分析データ生成
+    const allItems = [...(form.bestVegetables || []), ...(form.bestFruits || [])];
+
+    // 要注意商品 (昨比80%未満、低い順)
+    const warningItems = [...allItems]
+        .filter(item => item.salesYoY !== undefined && item.salesYoY < 80)
+        .sort((a, b) => (a.salesYoY || 0) - (b.salesYoY || 0))
+        .slice(0, 5);
+
+    // 好調商品 (昨比110%以上、高い順)
+    const hotItems = [...allItems]
+        .filter(item => item.salesYoY !== undefined && item.salesYoY >= 110)
+        .sort((a, b) => (b.salesYoY || 0) - (a.salesYoY || 0))
+        .slice(0, 5);
+
+    const formatNum = (num: number | undefined, isPercentage = false) => {
+        if (num === undefined || num === null) return '-';
+        return isPercentage ? `${num}%` : num.toLocaleString();
     };
 
     return (
@@ -476,6 +544,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 placeholder="0"
                             />
                         </div>
+                        <div className="form-group" style={{ gridColumn: '1 / -1', padding: '12px', background: '#ffe4e6', color: '#e11d48', fontWeight: 'bold', borderRadius: '4px', textAlign: 'center' }}>
+                            CSVデバッグ機能 反映済み
+                        </div>
                         <div className="form-group-grid">
                             <div className="form-group">
                                 <label>ロス額 (円)</label>
@@ -506,15 +577,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     </label>
                                     <div className="best-list-preview">
                                         {(form.bestVegetables || []).length > 0 ? (
-                                            <ul>
-                                                {(form.bestVegetables || []).slice(0, 3).map((item, idx) => (
-                                                    <li key={idx}>
-                                                        <TrendingUp size={12} className="text-success" />
-                                                        {item.name} (¥{item.sales.toLocaleString()})
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        ) : <p className="empty-text">データ未選択</p>}
+                                            <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {(form.bestVegetables || []).length}件</span>
+                                        ) : <span className="empty-text">データ未選択</span>}
                                     </div>
                                 </div>
                                 <div className="csv-upload-box">
@@ -525,18 +589,116 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     </label>
                                     <div className="best-list-preview">
                                         {(form.bestFruits || []).length > 0 ? (
-                                            <ul>
-                                                {(form.bestFruits || []).slice(0, 3).map((item, idx) => (
-                                                    <li key={idx}>
-                                                        <TrendingUp size={12} className="text-success" />
-                                                        {item.name} (¥{item.sales.toLocaleString()})
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        ) : <p className="empty-text">データ未選択</p>}
+                                            <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {(form.bestFruits || []).length}件</span>
+                                        ) : <span className="empty-text">データ未選択</span>}
                                     </div>
                                 </div>
                             </div>
+
+                            {/* 分析ダッシュボード */}
+                            {allItems.length > 0 && (
+                                <div className="csv-dashboard">
+                                    <div className="dashboard-grid">
+                                        {/* 要注意商品ブロック */}
+                                        <div className="dashboard-card warning">
+                                            <h5 className="flex items-center gap-1 text-red-600"><AlertCircle size={16} /> 要注意商品 (昨比80%未満)</h5>
+                                            <div className="table-responsive">
+                                                <table className="analysis-table">
+                                                    <thead>
+                                                        <tr><th>品名</th><th>売上数</th><th>売上高</th><th>昨比</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {warningItems.length > 0 ? warningItems.map((item, idx) => (
+                                                            <tr key={idx}>
+                                                                <td className="font-bold">{item.name}</td>
+                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
+                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
+                                                                <td className="text-right text-red-600 font-bold">{formatNum(item.salesYoY, true)}</td>
+                                                            </tr>
+                                                        )) : <tr><td colSpan={4} className="text-center text-gray-500">該当なし</td></tr>}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+
+                                        {/* 好調商品ブロック */}
+                                        <div className="dashboard-card primary">
+                                            <h5 className="flex items-center gap-1 text-blue-600"><TrendingUp size={16} /> 好調商品 (昨比110%以上)</h5>
+                                            <div className="table-responsive">
+                                                <table className="analysis-table">
+                                                    <thead>
+                                                        <tr><th>品名</th><th>売上数</th><th>売上高</th><th>昨比</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {hotItems.length > 0 ? hotItems.map((item, idx) => (
+                                                            <tr key={idx}>
+                                                                <td className="font-bold">{item.name}</td>
+                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
+                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
+                                                                <td className="text-right text-blue-600 font-bold">{formatNum(item.salesYoY, true)}</td>
+                                                            </tr>
+                                                        )) : <tr><td colSpan={4} className="text-center text-gray-500">該当なし</td></tr>}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 野菜ベスト 一覧 */}
+                                    {(form.bestVegetables || []).length > 0 && (
+                                        <div className="dashboard-card">
+                                            <h5 className="text-green-700">🥬 野菜ベスト分析</h5>
+                                            <div className="table-responsive scrollable-max-h">
+                                                <table className="analysis-table full-table">
+                                                    <thead>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>昨比</th><th>売上高</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {(form.bestVegetables || []).map((item, idx) => (
+                                                            <tr key={idx} className={item.salesYoY !== undefined && item.salesYoY < 80 ? 'bg-red-50' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'bg-blue-50' : ''}>
+                                                                <td>{item.code || '-'}</td>
+                                                                <td className="font-bold">{item.name}</td>
+                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
+                                                                <td className={`text-right ${item.salesYoY !== undefined && item.salesYoY < 80 ? 'text-red-600 font-bold' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'text-blue-600 font-bold' : ''}`}>
+                                                                    {formatNum(item.salesYoY, true)}
+                                                                </td>
+                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 果物ベスト 一覧 */}
+                                    {(form.bestFruits || []).length > 0 && (
+                                        <div className="dashboard-card">
+                                            <h5 className="text-orange-600">🍎 果物ベスト分析</h5>
+                                            <div className="table-responsive scrollable-max-h">
+                                                <table className="analysis-table full-table">
+                                                    <thead>
+                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>昨比</th><th>売上高</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {(form.bestFruits || []).map((item, idx) => (
+                                                            <tr key={idx} className={item.salesYoY !== undefined && item.salesYoY < 80 ? 'bg-red-50' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'bg-blue-50' : ''}>
+                                                                <td>{item.code || '-'}</td>
+                                                                <td className="font-bold">{item.name}</td>
+                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
+                                                                <td className={`text-right ${item.salesYoY !== undefined && item.salesYoY < 80 ? 'text-red-600 font-bold' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'text-blue-600 font-bold' : ''}`}>
+                                                                    {formatNum(item.salesYoY, true)}
+                                                                </td>
+                                                                <td className="text-right">¥{formatNum(item.salesAmt)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -723,23 +885,90 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         .best-list-preview {
           margin-top: 8px;
-          font-size: 0.75rem;
+          font-size: 0.85rem;
+          text-align: center;
           color: var(--text-muted);
-        }
-        .best-list-preview ul {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-        .best-list-preview li {
-          padding: 2px 0;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
         }
         .empty-text {
           color: #94a3b8;
           font-style: italic;
+        }
+        .text-success { color: #16a34a; }
+        .text-red-600 { color: #dc2626; }
+        .text-blue-600 { color: #2563eb; }
+        .text-green-700 { color: #15803d; }
+        .text-orange-600 { color: #ea580c; }
+        .bg-red-50 { background-color: #fef2f2 !important; }
+        .bg-blue-50 { background-color: #eff6ff !important; }
+        .font-bold { font-weight: bold; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .gap-1 { gap: 0.25rem; }
+        
+        /* Dashboard Styles */
+        .csv-dashboard {
+            margin-top: var(--space-lg);
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-md);
+        }
+        @media (min-width: 768px) {
+            .dashboard-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .dashboard-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: var(--radius-md);
+            padding: var(--space-sm);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .dashboard-card h5 {
+            margin: 0 0 8px 0;
+            font-size: 0.95rem;
+            border-bottom: 2px solid #f1f5f9;
+            padding-bottom: 6px;
+        }
+        .dashboard-card.warning { border-top: 3px solid #dc2626; }
+        .dashboard-card.primary { border-top: 3px solid #2563eb; }
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+        }
+        .scrollable-max-h {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .analysis-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+        .analysis-table th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 600;
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .analysis-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+        }
+        .analysis-table tbody tr:hover td {
+            background-color: #f8fafc;
         }
       `}</style>
         </div>
