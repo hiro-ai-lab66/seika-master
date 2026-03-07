@@ -234,7 +234,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     const veggieItems = (form.bestVegetables || []).slice(0, 40);
     const fruitItems = (form.bestFruits || []).slice(0, 30);
-    const hasAnyParsedData = veggieItems.length > 0 || fruitItems.length > 0;
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
@@ -577,62 +576,73 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 </div>
                             </div>
 
-                            {/* 分析ダッシュボード */}
-                            {hasAnyParsedData && (
-                                <div className="csv-dashboard">
-                                    {/* 野菜ベスト 一覧 */}
-                                    {(form.bestVegetables || []).length > 0 && (
-                                        <div className="dashboard-card">
-                                            <h5 className="text-green-700 mb-2">🥬 野菜ベスト分析 (最大40件)</h5>
-                                            <div className="table-responsive scrollable-max-h">
-                                                <table className="analysis-table full-table">
-                                                    <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>売上数昨比</th><th>売上高</th></tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {(form.bestVegetables || []).slice(0, 40).map((item, idx) => (
-                                                            <tr key={idx} className={item.salesYoY !== undefined && item.salesYoY < 80 ? 'bg-red-50' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'bg-blue-50' : ''}>
-                                                                <td>{item.code || '-'}</td>
-                                                                <td className="font-bold">{item.name}</td>
-                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
-                                                                <td className={`text-right ${item.salesYoY !== undefined && item.salesYoY < 80 ? 'text-red-600 font-bold' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'text-blue-600 font-bold' : ''}`}>
-                                                                    {formatNum(item.salesYoY, true)}
-                                                                </td>
-                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    )}
+                            {/* 野菜ベスト40 */}
+                            {veggieItems.length > 0 && (
+                                <div className="best-table-block">
+                                    <h5>🥬 野菜ベスト40</h5>
+                                    <div className="best-table-scroll">
+                                        <table className="best-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>コード</th>
+                                                    <th>品名</th>
+                                                    <th>売上数</th>
+                                                    <th>売上数昨比</th>
+                                                    <th>売上高</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {veggieItems.map((item, idx) => {
+                                                    const yoy = item.salesYoY;
+                                                    const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
+                                                    return (
+                                                        <tr key={idx} className={rowClass}>
+                                                            <td className="col-code">{item.code || '-'}</td>
+                                                            <td className="col-name">{item.name}</td>
+                                                            <td className="col-num">{formatNum(item.salesQty)}</td>
+                                                            <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
+                                                            <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
 
-                                    {/* 果物ベスト 一覧 */}
-                                    {(form.bestFruits || []).length > 0 && (
-                                        <div className="dashboard-card">
-                                            <h5 className="text-orange-600 mt-4 mb-2">🍎 果物ベスト分析 (最大30件)</h5>
-                                            <div className="table-responsive scrollable-max-h">
-                                                <table className="analysis-table full-table">
-                                                    <thead>
-                                                        <tr><th>コード</th><th>品名</th><th>売上数</th><th>売上数昨比</th><th>売上高</th></tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {(form.bestFruits || []).slice(0, 30).map((item, idx) => (
-                                                            <tr key={idx} className={item.salesYoY !== undefined && item.salesYoY < 80 ? 'bg-red-50' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'bg-blue-50' : ''}>
-                                                                <td>{item.code || '-'}</td>
-                                                                <td className="font-bold">{item.name}</td>
-                                                                <td className="text-right">{formatNum(item.salesQty)}</td>
-                                                                <td className={`text-right ${item.salesYoY !== undefined && item.salesYoY < 80 ? 'text-red-600 font-bold' : item.salesYoY !== undefined && item.salesYoY >= 110 ? 'text-blue-600 font-bold' : ''}`}>
-                                                                    {formatNum(item.salesYoY, true)}
-                                                                </td>
-                                                                <td className="text-right">{formatNum(item.salesAmt, false, true)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    )}
+                            {/* 果物ベスト30 */}
+                            {fruitItems.length > 0 && (
+                                <div className="best-table-block">
+                                    <h5>🍎 果物ベスト30</h5>
+                                    <div className="best-table-scroll">
+                                        <table className="best-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>コード</th>
+                                                    <th>品名</th>
+                                                    <th>売上数</th>
+                                                    <th>売上数昨比</th>
+                                                    <th>売上高</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {fruitItems.map((item, idx) => {
+                                                    const yoy = item.salesYoY;
+                                                    const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
+                                                    return (
+                                                        <tr key={idx} className={rowClass}>
+                                                            <td className="col-code">{item.code || '-'}</td>
+                                                            <td className="col-name">{item.name}</td>
+                                                            <td className="col-num">{formatNum(item.salesQty)}</td>
+                                                            <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
+                                                            <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -843,80 +853,71 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .items-center { align-items: center; }
         .gap-1 { gap: 0.25rem; }
         
-        /* Dashboard Styles */
-        .csv-dashboard {
-            margin-top: var(--space-lg);
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-md);
+        /* ===== ベスト分析テーブル ===== */
+        .best-table-block {
+            margin-top: 16px;
         }
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: var(--space-md);
-        }
-        @media (min-width: 768px) {
-            .dashboard-grid { grid-template-columns: 1fr 1fr; }
-        }
-        .dashboard-card {
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: var(--radius-md);
-            padding: var(--space-sm);
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .dashboard-card h5 {
+        .best-table-block h5 {
             margin: 0 0 8px 0;
-            font-size: 0.95rem;
-            border-bottom: 2px solid #f1f5f9;
-            padding-bottom: 6px;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #334155;
         }
-        .dashboard-card.warning { border-top: 3px solid #dc2626; }
-        .dashboard-card.primary { border-top: 3px solid #2563eb; }
-        .table-responsive {
-            width: 100%;
-            overflow-x: auto;
-        }
-        .scrollable-max-h {
-            max-height: 400px; /* 最初は上位10件程が見える高さ */
+        .best-table-scroll {
+            max-height: 400px;
             overflow-y: auto;
             border: 1px solid #e2e8f0;
-            border-radius: 4px;
+            border-radius: 6px;
         }
-        .analysis-table {
+        .best-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.8rem;
             table-layout: fixed;
+            font-size: 0.82rem;
         }
-        .analysis-table th, .analysis-table td {
-            padding: 6px 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .analysis-table th {
-            background: #f8fafc;
+        /* 列幅: 20% / 30% / 15% / 15% / 20% */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 20%; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 30%; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 20%; }
+        .best-table th {
+            background: #f1f5f9;
             color: #475569;
-            font-weight: 600;
+            font-weight: 700;
             text-align: left;
-            border-bottom: 1px solid #e2e8f0;
+            padding: 8px 6px;
+            border-bottom: 2px solid #cbd5e1;
             position: sticky;
             top: 0;
             z-index: 1;
         }
-        .analysis-table td {
+        .best-table td {
+            padding: 6px;
             border-bottom: 1px solid #f1f5f9;
             color: #334155;
         }
-        /* スマホに最適化した各列の幅指定 */
-        .analysis-table th:nth-child(1), .analysis-table td:nth-child(1) { width: 110px; overflow: visible; } /* コード: 13桁が入るように広げ、省略禁止 */
-        .analysis-table th:nth-child(2), .analysis-table td:nth-child(2) { width: auto; } /* 品名: 残り幅 */
-        .analysis-table th:nth-child(3), .analysis-table td:nth-child(3) { width: 40px; text-align: right; } /* 売上数 */
-        .analysis-table th:nth-child(4), .analysis-table td:nth-child(4) { width: 45px; text-align: right; } /* 前比 */
-        .analysis-table th:nth-child(5), .analysis-table td:nth-child(5) { width: 60px; text-align: right; } /* 売上高 */
-
-        .analysis-table tbody tr:hover td {
+        .best-table .col-code {
+            word-break: break-all;
+            white-space: normal;
+        }
+        .best-table .col-name {
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .best-table .col-num {
+            text-align: right;
+            white-space: nowrap;
+        }
+        /* 色分け: 行背景 */
+        .best-table .row-warn td { background-color: #fef2f2; }
+        .best-table .row-good td { background-color: #eff6ff; }
+        /* 色分け: 昨比セル文字色 */
+        .best-table .yoy-warn { color: #dc2626; font-weight: 700; }
+        .best-table .yoy-good { color: #2563eb; font-weight: 700; }
+        .best-table tbody tr:hover td {
             background-color: #f8fafc;
         }
       `}</style>
