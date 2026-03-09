@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import type { AppState } from '../types';
+import { Sparkles } from 'lucide-react';
 
 interface Props {
   state: AppState;
@@ -7,90 +8,72 @@ interface Props {
   onChangeDate: (date: string) => void;
 }
 
-/** 日別表示行 */
-interface DailyRow {
-  date: string;
-  dayOfWeek: string;
-  budget: number;
-  actual12: number | null;
-  actual17: number | null;
-  actualFinal: number | null;
-  diff: number | null;       // 最終 - 予算
-  cumSales: number;          // 累計売上
-  cumBudget: number;         // 累計予算
-  cumRatio: number | null;   // 累計予算比 (%)
-}
-
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate }) => {
-  const currentMonth = currentDate.substring(0, 7);
+  const todayBudgetEntry = state.dailyBudgets.find(b => b.date === currentDate);
+  const todayInspection = state.inspections.find(i => i.date === currentDate);
 
-  // 今月のデータを日付昇順で計算
-  const rows: DailyRow[] = useMemo(() => {
-    const monthInspections = state.inspections
-      .filter(i => i.date.startsWith(currentMonth))
-      .sort((a, b) => a.date.localeCompare(b.date));
+  // 最後に報告されたタイミングを判定
+  let currentStatus = "未報告";
+  let currentActual = 0;
 
-    let cumSales = 0;
-    let cumBudget = 0;
+  // 解析：最新の予測値と差異を取得
+  let currentPrediction: number | null = null;
+  let currentGap: number | null = null;
 
-    return monthInspections.map(i => {
-      const budgetEntry = state.dailyBudgets.find(b => b.date === i.date);
-      const budget = budgetEntry?.totalBudget || i.totalBudget || 0;
-      const finalSales = i.actualFinal ?? i.actual17 ?? i.actual12 ?? 0;
-      const diff = budget > 0 ? finalSales - budget : null;
+  // マスタ予算があればそれを優先、なければ点検入力の値を参照
+  const currentBudget = todayBudgetEntry?.totalBudget || todayInspection?.totalBudget || 0;
 
-      cumSales += finalSales;
-      cumBudget += budget;
+  if (todayInspection && currentBudget > 0) {
+    if (todayInspection.actual17 !== null && todayInspection.forecast17 !== null) {
+      currentStatus = "17:00 時点予測";
+      currentActual = todayInspection.actual17;
+      currentPrediction = todayInspection.forecast17;
+      currentGap = todayInspection.diff17;
+    } else if (todayInspection.actual12 !== null && todayInspection.forecast12 !== null) {
+      currentStatus = "12:00 時点予測";
+      currentActual = todayInspection.actual12;
+      currentPrediction = todayInspection.forecast12;
+      currentGap = todayInspection.diff12;
+    } else if (todayInspection.actualFinal !== null) {
+      currentStatus = "閉店（確定）";
+      currentActual = todayInspection.actualFinal;
+      currentPrediction = todayInspection.actualFinal;
+      currentGap = todayInspection.diffFinal;
+    }
 
-      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-      const d = new Date(i.date + 'T00:00:00');
-      const dayOfWeek = dayNames[d.getDay()];
+    // マスタ予算と差異がある場合（マスタ更新後）、差額を再計算
+    if (todayBudgetEntry && todayInspection.totalBudget !== todayBudgetEntry.totalBudget && currentPrediction !== null) {
+      currentGap = currentPrediction - todayBudgetEntry.totalBudget;
+    }
+  }
 
-      return {
-        date: i.date,
-        dayOfWeek,
-        budget,
-        actual12: i.actual12,
-        actual17: i.actual17,
-        actualFinal: i.actualFinal,
-        diff,
-        cumSales,
-        cumBudget,
-        cumRatio: cumBudget > 0 ? Math.round((cumSales / cumBudget) * 1000) / 10 : null,
-      };
-    });
-  }, [state.inspections, state.dailyBudgets, currentMonth]);
+  // --- 進捗・分析データの計算 ---
+  const currentMonth = currentDate.substring(0, 7); // "YYYY-MM"
 
-  // 月間サマリー
-  const summary = useMemo(() => {
-    const last = rows.length > 0 ? rows[rows.length - 1] : null;
-    return {
-      totalSales: last?.cumSales ?? 0,
-      totalBudget: last?.cumBudget ?? 0,
-      ratio: last?.cumRatio ?? null,
-      days: rows.length,
-    };
-  }, [rows]);
+  // 今月の目標合計
+  const monthGoal = state.dailyBudgets
+    .filter(b => b.date.startsWith(currentMonth))
+    .reduce((sum, b) => sum + b.totalBudget, 0);
 
-  const fmt = (n: number | null | undefined) =>
-    n !== null && n !== undefined ? `¥${n.toLocaleString()}` : '---';
+  // 今月の実績合計
+  const monthActual = state.inspections
+    .filter(i => i.date.startsWith(currentMonth))
+    .reduce((sum, i) => sum + (i.actualFinal || i.actual17 || i.actual12 || 0), 0);
 
-  const fmtDiff = (n: number | null) => {
-    if (n === null) return '---';
-    const sign = n > 0 ? '+' : '';
-    return `${sign}${n.toLocaleString()}`;
-  };
+  const monthProgress = monthGoal > 0 ? Math.round((monthActual / monthGoal) * 100) : 0;
 
-  const monthLabel = (() => {
-    const [y, m] = currentMonth.split('-');
-    return `${y}年${parseInt(m)}月`;
-  })();
+  // 客単価分析
+  const currentCustomers = todayInspection?.customersFinal || todayInspection?.customers17 || todayInspection?.customers12 || 0;
+  const avgSpend = (currentCustomers > 0 && currentActual > 0) ? Math.round(currentActual / currentCustomers) : null;
 
   return (
     <div className="dashboard-container">
       <header className="page-header">
         <div className="header-left">
-          <h2>定時点検 月次ダッシュボード</h2>
+          <h2>青果マスター</h2>
+          <div className="budget-tag" style={{ marginLeft: 0, marginTop: '4px' }}>
+            予算: {currentBudget > 0 ? `¥${currentBudget.toLocaleString()}` : "未入力"}
+          </div>
         </div>
         <div className="date-picker-wrapper">
           <input
@@ -102,219 +85,97 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
         </div>
       </header>
 
-      {/* 月間サマリーカード */}
-      <div className="monthly-summary">
-        <h3>{monthLabel}</h3>
-        <div className="summary-grid">
-          <div className="summary-item">
-            <div className="s-label">累計売上</div>
-            <div className="s-value">{fmt(summary.totalSales)}</div>
+      <div className={`status-hero ${(currentGap || 0) < 0 ? 'is-negative' : ''}`}>
+        <div className="hero-main">
+          <div className="label">予測最終売上 ({currentStatus})</div>
+          <div className="value">{currentPrediction !== null ? `¥${currentPrediction.toLocaleString()}` : "---"}</div>
+        </div>
+        <div className="hero-stats">
+          <div className="stat-item">
+            <div className="stat-label">現在実績</div>
+            <div className="stat-value">¥{currentActual.toLocaleString()}</div>
           </div>
-          <div className="summary-item">
-            <div className="s-label">累計予算</div>
-            <div className="s-value">{fmt(summary.totalBudget)}</div>
-          </div>
-          <div className="summary-item">
-            <div className="s-label">累計予算比</div>
-            <div className={`s-value ${summary.ratio !== null ? (summary.ratio >= 100 ? 'text-good' : 'text-warn') : ''}`}>
-              {summary.ratio !== null ? `${summary.ratio}%` : '---'}
+          <div className="stat-item">
+            <div className="stat-label">予算差額</div>
+            <div className="stat-value">
+              {currentGap !== null
+                ? `${currentGap > 0 ? '+' : ''}${currentGap.toLocaleString()}`
+                : "---"}
             </div>
-          </div>
-          <div className="summary-item">
-            <div className="s-label">登録日数</div>
-            <div className="s-value">{summary.days}<span className="s-unit">日</span></div>
           </div>
         </div>
       </div>
 
-      {/* 日別履歴テーブル */}
-      <div className="history-section">
-        <h3>日別履歴</h3>
-        {rows.length > 0 ? (
-          <div className="history-table-scroll">
-            <table className="history-table">
-              <thead>
-                <tr>
-                  <th>日付</th>
-                  <th>予算</th>
-                  <th>12時</th>
-                  <th>17時</th>
-                  <th>最終</th>
-                  <th>差異</th>
-                  <th>累計</th>
-                  <th>累計予算比</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(row => {
-                  const isToday = row.date === currentDate;
-                  const day = parseInt(row.date.split('-')[2]);
-                  return (
-                    <tr
-                      key={row.date}
-                      className={isToday ? 'row-today' : ''}
-                      onClick={() => onChangeDate(row.date)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td className="col-date">
-                        {day}日<span className={`dow ${row.dayOfWeek === '日' ? 'sun' : row.dayOfWeek === '土' ? 'sat' : ''}`}>({row.dayOfWeek})</span>
-                      </td>
-                      <td className="col-num">{fmt(row.budget)}</td>
-                      <td className="col-num">{fmt(row.actual12)}</td>
-                      <td className="col-num">{fmt(row.actual17)}</td>
-                      <td className="col-num col-final">{fmt(row.actualFinal)}</td>
-                      <td className={`col-num ${row.diff !== null ? (row.diff >= 0 ? 'text-good' : 'text-warn') : ''}`}>
-                        {fmtDiff(row.diff)}
-                      </td>
-                      <td className="col-num col-cum">{fmt(row.cumSales)}</td>
-                      <td className={`col-num ${row.cumRatio !== null ? (row.cumRatio >= 100 ? 'text-good' : 'text-warn') : ''}`}>
-                        {row.cumRatio !== null ? `${row.cumRatio}%` : '---'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {currentGap !== null && currentGap < 0 && (
+        <div className="card shortfall-card">
+          <div className="card-header text-error">⚠ 予算未達です</div>
+          <div className="card-body">
+            <div className="stat-large text-error">不足額: ¥{Math.abs(currentGap).toLocaleString()}</div>
+            <p className="description">簡易対策を検討してください。</p>
           </div>
-        ) : (
-          <p className="no-data">今月の点検データはありません</p>
-        )}
+        </div>
+      )}
+
+      <div className="info-box">
+        <Sparkles className="icon-ai" />
+        <div>
+          <p>【AIアドバイス】</p>
+          <p>現在の消化率は順調です。夕方の客数増に備え、サンふじの品出しを前倒ししましょう。</p>
+        </div>
       </div>
 
-      <style>{`
-        .monthly-summary {
-          background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
-          color: white;
-          border-radius: 12px;
-          padding: 20px;
-          margin-bottom: 20px;
-        }
-        .monthly-summary h3 {
-          margin: 0 0 16px 0;
-          font-size: 1.1rem;
-          font-weight: 700;
-          opacity: 0.9;
-        }
-        .summary-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
-        }
-        .summary-item {
-          text-align: center;
-        }
-        .s-label {
-          font-size: 0.72rem;
-          opacity: 0.75;
-          margin-bottom: 4px;
-        }
-        .s-value {
-          font-size: 1.15rem;
-          font-weight: 800;
-        }
-        .s-value.text-good { color: #86efac; }
-        .s-value.text-warn { color: #fca5a5; }
-        .s-unit {
-          font-size: 0.72rem;
-          font-weight: 400;
-          opacity: 0.7;
-          margin-left: 2px;
-        }
-        .history-section {
-          background: white;
-          border-radius: 12px;
-          padding: 16px;
-          border: 1px solid #e2e8f0;
-        }
-        .history-section h3 {
-          margin: 0 0 12px 0;
-          font-size: 1rem;
-          font-weight: 700;
-          color: #334155;
-        }
-        .history-table-scroll {
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-        }
-        .history-table {
-          width: 100%;
-          border-collapse: collapse;
-          table-layout: fixed;
-          font-size: 0.8rem;
-        }
-        .history-table th:nth-child(1), .history-table td:nth-child(1) { width: 13%; }
-        .history-table th:nth-child(2), .history-table td:nth-child(2) { width: 13%; }
-        .history-table th:nth-child(3), .history-table td:nth-child(3) { width: 11%; }
-        .history-table th:nth-child(4), .history-table td:nth-child(4) { width: 11%; }
-        .history-table th:nth-child(5), .history-table td:nth-child(5) { width: 13%; }
-        .history-table th:nth-child(6), .history-table td:nth-child(6) { width: 12%; }
-        .history-table th:nth-child(7), .history-table td:nth-child(7) { width: 14%; }
-        .history-table th:nth-child(8), .history-table td:nth-child(8) { width: 13%; }
-        .history-table th {
-          background: #f1f5f9;
-          color: #475569;
-          font-weight: 700;
-          text-align: right;
-          padding: 8px 6px;
-          border-bottom: 2px solid #cbd5e1;
-          position: sticky;
-          top: 0;
-          z-index: 1;
-          white-space: nowrap;
-        }
-        .history-table th:first-child { text-align: left; }
-        .history-table td {
-          padding: 7px 6px;
-          border-bottom: 1px solid #f1f5f9;
-          color: #334155;
-        }
-        .history-table .col-date {
-          font-weight: 700;
-          white-space: nowrap;
-        }
-        .history-table .col-num {
-          text-align: right;
-          white-space: nowrap;
-        }
-        .history-table .col-final {
-          font-weight: 700;
-        }
-        .history-table .col-cum {
-          font-weight: 600;
-          color: #1e3a5f;
-        }
-        .history-table .text-good { color: #16a34a; font-weight: 700; }
-        .history-table .text-warn { color: #dc2626; font-weight: 700; }
-        .history-table .row-today td {
-          background-color: #eff6ff;
-        }
-        .history-table tbody tr:hover td {
-          background-color: #f8fafc;
-        }
-        .history-table .dow {
-          font-weight: 400;
-          font-size: 0.7rem;
-          margin-left: 2px;
-          color: #64748b;
-        }
-        .history-table .dow.sun { color: #dc2626; }
-        .history-table .dow.sat { color: #2563eb; }
-        .no-data {
-          text-align: center;
-          color: #94a3b8;
-          font-style: italic;
-          padding: 32px 0;
-        }
-        @media (max-width: 600px) {
-          .summary-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-          }
-          .s-value { font-size: 1rem; }
-          .history-table { font-size: 0.72rem; }
-          .history-table th, .history-table td { padding: 5px 3px; }
-        }
-      `}</style>
+      <div className="analytics-grid">
+        <div className="card analytics-card">
+          <div className="card-header-sm">
+            <span>今月の予算達成状況</span>
+            <span className={`badge-status ${(monthProgress || 0) >= 100 ? 'is-success' : ''}`}>
+              {monthProgress || 0}%
+            </span>
+          </div>
+          <div className="progress-container">
+            <div className="progress-bar" style={{ width: `${Math.min(monthProgress || 0, 100)}%` }}></div>
+          </div>
+          <div className="analytics-stats-vertical">
+            <div className={`stat-large-row ${(monthActual - monthGoal) < 0 ? 'text-error' : 'text-success'}`}>
+              <span className="label">累計差異:</span>
+              <span className="value">{(monthActual - monthGoal) > 0 ? '+' : ''}{(monthActual - monthGoal).toLocaleString()}円</span>
+            </div>
+            <div className="stat-label-sm">累計実績: ¥{(monthActual || 0).toLocaleString()} / 目標: ¥{(monthGoal || 0).toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div className="card analytics-card">
+          <div className="card-header-sm">本日の客数・客単価</div>
+          <div className="analytics-value-row">
+            <div className="val-item">
+              <div className="v-label">来店客数</div>
+              <div className="v-value">{(currentCustomers || 0) > 0 ? currentCustomers : "---"} <span className="u">名</span></div>
+            </div>
+            <div className="val-item">
+              <div className="v-label">客単価</div>
+              <div className="v-value">{avgSpend ? `¥${avgSpend.toLocaleString()}` : "---"}</div>
+            </div>
+          </div>
+          <div className="stat-label-footer">※点検入力の最新データを参照</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">今後の予定</div>
+        <div className="task-preview">
+          {(state.todos || []).filter(t => !t.completed).length > 0 ? (
+            (state.todos || []).filter(t => !t.completed).slice(0, 3).map(t => (
+              <div key={t.id} className="task-preview-item">
+                <div className="dot"></div>
+                <span>{t.text}</span>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted">本日の予定はすべて完了しました</p>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 };

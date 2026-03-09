@@ -145,7 +145,7 @@ function App() {
       case 'todo':
         return <ToDoList todos={state.todos} onToggle={toggleTodo} onAdd={addTodo} />;
       case 'history':
-        return <HistorySheet inspections={state.inspections} />;
+        return <HistorySheet inspections={state.inspections} dailyBudgets={state.dailyBudgets} />;
       case 'products':
         return <ProductMaster />;
       case 'inventory':
@@ -941,63 +941,157 @@ const ToDoList = ({ todos, onToggle, onAdd }: {
   );
 };
 
-const HistorySheet = ({ inspections }: { inspections: InspectionEntry[] }) => (
-  <div className="page-container">
-    <h2>点検履歴 (定時点検表)</h2>
-    <div className="table-wrapper">
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>日付</th>
-            <th>予算</th>
-            <th>12時</th>
-            <th>17時</th>
-            <th>最終</th>
-            <th>差異</th>
-          </tr>
-        </thead>
-        <tbody>
-          {inspections.map(i => (
-            <tr key={i.id}>
-              <td>{i.date.split('-').slice(1).join('/')}</td>
-              <td>{i.totalBudget.toLocaleString()}</td>
-              <td>{i.actual12?.toLocaleString() || '-'}</td>
-              <td>{i.actual17?.toLocaleString() || '-'}</td>
-              <td>{i.actualFinal?.toLocaleString() || '-'}</td>
-              <td className={Number(i.diffFinal || 0) < 0 ? 'text-error' : 'text-success'}>
-                {i.diffFinal?.toLocaleString() || '-'}
-              </td>
+const HistorySheet = ({ inspections, dailyBudgets }: { inspections: InspectionEntry[]; dailyBudgets: DailyBudget[] }) => {
+  const sorted = [...inspections].sort((a, b) => a.date.localeCompare(b.date));
+  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const fmtK = (n: number | null | undefined) => {
+    if (n === null || n === undefined) return '-';
+    return Math.round(n / 1000).toLocaleString();
+  };
+
+  let cumSales = 0;
+  let cumBudget = 0;
+
+  const rows = sorted.map(i => {
+    const budgetEntry = dailyBudgets.find(b => b.date === i.date);
+    const budget = budgetEntry?.totalBudget || i.totalBudget || 0;
+    const finalSales = i.actualFinal ?? i.actual17 ?? i.actual12 ?? 0;
+    const diff = budget > 0 ? finalSales - budget : null;
+    cumSales += finalSales;
+    cumBudget += budget;
+    const cumRatio = cumBudget > 0 ? Math.round((cumSales / cumBudget) * 1000) / 10 : null;
+    const cumDiff = cumSales - cumBudget;
+    const d = new Date(i.date + 'T00:00:00');
+    const dow = dayNames[d.getDay()];
+    const day = `${parseInt(i.date.split('-')[1])}/${parseInt(i.date.split('-')[2])}`;
+    return { id: i.id, day, dow, budget, actual12: i.actual12, actual17: i.actual17, actualFinal: i.actualFinal, diff, cumSales, cumBudget, cumRatio, cumDiff };
+  });
+
+  const totalSales = cumSales;
+  const totalBudget = cumBudget;
+  const totalRatio = totalBudget > 0 ? Math.round((totalSales / totalBudget) * 1000) / 10 : null;
+
+  return (
+    <div className="page-container">
+      <h2>点検履歴 (定時点検表)</h2>
+
+      {/* 月間サマリー */}
+      <div className="hist-summary">
+        <div className="hist-s-item">
+          <span className="hist-s-label">累計売上</span>
+          <span className="hist-s-val">{fmtK(totalSales)}千円</span>
+        </div>
+        <div className="hist-s-item">
+          <span className="hist-s-label">累計予算</span>
+          <span className="hist-s-val">{fmtK(totalBudget)}千円</span>
+        </div>
+        <div className="hist-s-item">
+          <span className="hist-s-label">予算比</span>
+          <span className={`hist-s-val ${totalRatio !== null ? (totalRatio >= 100 ? 'good' : 'warn') : ''}`}>{totalRatio !== null ? `${totalRatio}%` : '-'}</span>
+        </div>
+        <div className="hist-s-item">
+          <span className="hist-s-label">登録日数</span>
+          <span className="hist-s-val">{rows.length}日</span>
+        </div>
+      </div>
+
+      <div className="hist-table-wrap">
+        <table className="hist-table">
+          <thead>
+            <tr>
+              <th>日付</th>
+              <th>予算</th>
+              <th>12時</th>
+              <th>17時</th>
+              <th>最終</th>
+              <th>差異</th>
+              <th>累計</th>
+              <th>累予算比</th>
+              <th>累差額</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.id}>
+                <td className="ht-date">{r.day}<span className={`ht-dow ${r.dow === '日' ? 'sun' : r.dow === '土' ? 'sat' : ''}`}>({r.dow})</span></td>
+                <td className="ht-num">{fmtK(r.budget)}</td>
+                <td className="ht-num">{fmtK(r.actual12)}</td>
+                <td className="ht-num">{fmtK(r.actual17)}</td>
+                <td className="ht-num ht-bold">{fmtK(r.actualFinal)}</td>
+                <td className={`ht-num ${r.diff !== null ? (r.diff >= 0 ? 'ht-good' : 'ht-warn') : ''}`}>{r.diff !== null ? fmtK(r.diff) : '-'}</td>
+                <td className="ht-num ht-cum">{fmtK(r.cumSales)}</td>
+                <td className={`ht-num ${r.cumRatio !== null ? (r.cumRatio >= 100 ? 'ht-good' : 'ht-warn') : ''}`}>{r.cumRatio !== null ? `${r.cumRatio}%` : '-'}</td>
+                <td className={`ht-num ${r.cumDiff >= 0 ? 'ht-good' : 'ht-warn'}`}>{fmtK(r.cumDiff)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>※ 金額は千円単位で表示しています</p>
+      <style>{`
+        .hist-summary {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 10px;
+          background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+          color: white;
+          border-radius: 10px;
+          padding: 14px;
+          margin-bottom: 16px;
+        }
+        .hist-s-item { text-align: center; }
+        .hist-s-label { display: block; font-size: 0.68rem; opacity: 0.7; margin-bottom: 2px; }
+        .hist-s-val { font-size: 1rem; font-weight: 800; }
+        .hist-s-val.good { color: #86efac; }
+        .hist-s-val.warn { color: #fca5a5; }
+        .hist-table-wrap {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          background: white;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+        }
+        .hist-table {
+          min-width: 700px;
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.78rem;
+        }
+        .hist-table th {
+          background: #f1f5f9;
+          color: #475569;
+          font-weight: 700;
+          text-align: right;
+          padding: 8px 8px;
+          border-bottom: 2px solid #cbd5e1;
+          white-space: nowrap;
+          position: sticky;
+          top: 0;
+          z-index: 1;
+        }
+        .hist-table th:first-child { text-align: left; }
+        .hist-table td {
+          padding: 6px 8px;
+          border-bottom: 1px solid #f1f5f9;
+          color: #334155;
+        }
+        .ht-date { font-weight: 700; white-space: nowrap; }
+        .ht-dow { font-weight: 400; font-size: 0.68rem; margin-left: 2px; color: #64748b; }
+        .ht-dow.sun { color: #dc2626; }
+        .ht-dow.sat { color: #2563eb; }
+        .ht-num { text-align: right; white-space: nowrap; }
+        .ht-bold { font-weight: 700; }
+        .ht-cum { font-weight: 600; color: #1e3a5f; }
+        .ht-good { color: #16a34a; font-weight: 700; }
+        .ht-warn { color: #dc2626; font-weight: 700; }
+        .hist-table tbody tr:hover td { background-color: #f8fafc; }
+        @media (max-width: 600px) {
+          .hist-summary { grid-template-columns: repeat(2, 1fr); }
+          .hist-s-val { font-size: 0.88rem; }
+        }
+      `}</style>
     </div>
-    <style>{`
-      .table-wrapper {
-        overflow-x: auto;
-        background: white;
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow);
-      }
-      .history-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.9rem;
-      }
-      .history-table th, .history-table td {
-        padding: var(--space-md);
-        text-align: right;
-        border-bottom: 1px solid #f1f5f9;
-      }
-      .history-table th {
-        background: #f8fafc;
-        color: var(--text-muted);
-        font-weight: 700;
-      }
-      .text-error { color: var(--error); }
-      .text-success { color: var(--success); }
-    `}</style>
-  </div>
-);
+  );
+};
 
 export default App;
