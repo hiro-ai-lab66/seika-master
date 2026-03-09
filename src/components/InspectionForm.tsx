@@ -109,6 +109,21 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             handleChange(field, isNaN(num) ? null : num);
         }
     };
+    // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
+    const calcJAN13 = (rawCode: string): string => {
+        const digits = rawCode.replace(/[^0-9]/g, '');
+        if (digits.length === 0) return rawCode;
+        if (digits.length >= 13) return digits; // 既に13桁以上はそのまま
+        const padded = digits.padStart(12, '0');
+        let sum = 0;
+        for (let i = 0; i < 12; i++) {
+            const weight = i % 2 === 0 ? 1 : 3;
+            sum += parseInt(padded[i], 10) * weight;
+        }
+        const cd = (10 - (sum % 10)) % 10;
+        return digits + cd.toString();
+    };
+
     const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'veggie' | 'fruit') => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -177,9 +192,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         });
 
                         const itemName = nameKey ? cleanRow[nameKey] : '';
-                        const code = codeKey ? cleanRow[codeKey] : undefined;
+                        const rawCode = codeKey ? cleanRow[codeKey] : undefined;
 
-                        if (!itemName || itemName === '合計' || !code) return;
+                        if (!itemName || itemName === '合計' || !rawCode) return;
+
+                        // チェックデジット付きコードを生成
+                        const code = calcJAN13(rawCode);
 
                         const parseNumeric = (val: string | undefined) => {
                             if (!val) return undefined;
