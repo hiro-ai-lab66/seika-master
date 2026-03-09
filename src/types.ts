@@ -32,6 +32,11 @@ export type DailySalesRecord = {
     salesYoY?: number;
     salesAmt: number;
     department: '野菜' | '果物';
+    // AI分析用（将来拡張）
+    weather?: string;         // 天候（例: 晴れ, 曇り, 雨）
+    temp_band?: string;       // 気温帯（例: 寒い, 涼しい, 暖かい, 暑い）
+    customer_count?: number;  // その日の来店客数
+    avg_price?: number;       // その日の客単価
 };
 
 /**
