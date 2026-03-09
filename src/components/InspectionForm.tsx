@@ -4,7 +4,7 @@ import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculat
 import { Upload } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
-import { upsertDailySales } from '../storage/dailySales';
+import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dailySales';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -330,6 +330,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             });
         }
 
+        // AI分析用メタデータをdaily_salesに反映
+        const allDailySales = loadDailySales();
+        const updatedSales = allDailySales.map(r => {
+            if (r.date !== currentDate) return r;
+            return {
+                ...r,
+                weather: aiWeather || undefined,
+                temp_band: aiTempBand || undefined,
+                customer_count: aiCustomerCount ? parseInt(aiCustomerCount) : undefined,
+                avg_price: aiAvgPrice ? parseInt(aiAvgPrice) : undefined,
+            };
+        });
+        saveDailySales(updatedSales);
+
         onSave(entryToSave);
     };
 
@@ -346,6 +360,24 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     // 商品マスター自動登録結果ステート
     const [masterResult, setMasterResult] = useState<{ type: string; added: number; skipped: number; excluded: number } | null>(null);
+
+    // AI分析用メタデータ
+    const [aiWeather, setAiWeather] = useState<string>('');
+    const [aiTempBand, setAiTempBand] = useState<string>('');
+    const [aiCustomerCount, setAiCustomerCount] = useState<string>('');
+    const [aiAvgPrice, setAiAvgPrice] = useState<string>('');
+
+    // 既存daily_salesから値をロード
+    useEffect(() => {
+        const existing = loadDailySales().filter(r => r.date === currentDate);
+        if (existing.length > 0) {
+            const first = existing[0];
+            setAiWeather(first.weather || '');
+            setAiTempBand(first.temp_band || '');
+            setAiCustomerCount(first.customer_count !== undefined ? String(first.customer_count) : '');
+            setAiAvgPrice(first.avg_price !== undefined ? String(first.avg_price) : '');
+        }
+    }, [currentDate]);
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
@@ -655,6 +687,41 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>ロス率 (%)</label>
                                 <div className="read-only-display">
                                     {form.lossRate !== null && form.lossRate !== undefined ? `${form.lossRate}%` : "0.00%"}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* AI分析用入力 */}
+                        <div className="ai-meta-section">
+                            <h4>📊 AI分析用データ</h4>
+                            <div className="ai-meta-grid">
+                                <div className="ai-meta-item">
+                                    <label>天候</label>
+                                    <select value={aiWeather} onChange={e => setAiWeather(e.target.value)}>
+                                        <option value="">未選択</option>
+                                        <option value="晴れ">☀️ 晴れ</option>
+                                        <option value="曇り">☁️ 曇り</option>
+                                        <option value="雨">🌧️ 雨</option>
+                                        <option value="雪">❄️ 雪</option>
+                                    </select>
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>気温帯</label>
+                                    <select value={aiTempBand} onChange={e => setAiTempBand(e.target.value)}>
+                                        <option value="">未選択</option>
+                                        <option value="寒い">🥶 寒い</option>
+                                        <option value="涼しい">🌿 涼しい</option>
+                                        <option value="暖かい">🌤️ 暖かい</option>
+                                        <option value="暑い">🔥 暑い</option>
+                                    </select>
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>客数</label>
+                                    <input type="number" inputMode="numeric" placeholder="0" value={aiCustomerCount} onChange={e => setAiCustomerCount(e.target.value)} />
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>客単価 (円)</label>
+                                    <input type="number" inputMode="numeric" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(e.target.value)} />
                                 </div>
                             </div>
                         </div>
@@ -1099,6 +1166,40 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             margin-left: 8px;
         }
         .clear-btn:hover { background: #dc2626; }
+        /* AI分析用メタデータ */
+        .ai-meta-section {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 14px;
+            margin-top: 4px;
+        }
+        .ai-meta-section h4 {
+            margin: 0 0 10px 0;
+            font-size: 0.92rem;
+            color: #0369a1;
+        }
+        .ai-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .ai-meta-item label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #475569;
+            margin-bottom: 4px;
+        }
+        .ai-meta-item select,
+        .ai-meta-item input[type="number"] {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.88rem;
+            background: white;
+        }
       `}</style>
         </div>
     );
