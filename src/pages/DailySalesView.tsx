@@ -1,12 +1,35 @@
 import React, { useState, useMemo } from 'react';
-import type { DailySalesRecord } from '../types';
+import type { DailySalesRecord, InspectionEntry, DailyBudget } from '../types';
 import { loadDailySales, getAvailableDates } from '../storage/dailySales';
 
-export const DailySalesView: React.FC = () => {
+interface Props {
+    inspections: InspectionEntry[];
+    dailyBudgets: DailyBudget[];
+}
+
+export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) => {
     const allRecords = useMemo(() => loadDailySales(), []);
-    const dates = useMemo(() => getAvailableDates(), [allRecords]);
+
+    // 点検データとCSVデータの両方から日付を収集
+    const dates = useMemo(() => {
+        const csvDates = getAvailableDates();
+        const inspDates = inspections.map(i => i.date);
+        const all = [...new Set([...csvDates, ...inspDates])];
+        return all.sort((a, b) => b.localeCompare(a));
+    }, [allRecords, inspections]);
+
     const [selectedDate, setSelectedDate] = useState<string>(dates[0] || '');
 
+    // 選択日の点検データ
+    const inspection = useMemo(() => {
+        return inspections.find(i => i.date === selectedDate);
+    }, [inspections, selectedDate]);
+
+    const budgetEntry = useMemo(() => {
+        return dailyBudgets.find(b => b.date === selectedDate);
+    }, [dailyBudgets, selectedDate]);
+
+    // 選択日のCSVレコード
     const records = useMemo(() => {
         if (!selectedDate) return [];
         return allRecords
@@ -17,7 +40,34 @@ export const DailySalesView: React.FC = () => {
     const veggies = records.filter(r => r.department === '野菜');
     const fruits = records.filter(r => r.department === '果物');
 
-    const fmtK = (n: number) => Math.round(n / 1000).toLocaleString();
+    // 全体サマリー計算
+    const summary = useMemo(() => {
+        if (!inspection) return null;
+        const budget = budgetEntry?.totalBudget || inspection.totalBudget || 0;
+        const actual = inspection.actualFinal ?? inspection.actual17 ?? inspection.actual12 ?? 0;
+        const customers = inspection.customersFinal ?? inspection.customers17 ?? inspection.customers12 ?? 0;
+        const avgSpend = customers > 0 && actual > 0 ? Math.round(actual / customers) : null;
+        const diff = budget > 0 ? actual - budget : null;
+        return {
+            budget,
+            actual12: inspection.actual12,
+            actual17: inspection.actual17,
+            actualFinal: inspection.actualFinal,
+            customers,
+            avgSpend,
+            diff,
+        };
+    }, [inspection, budgetEntry]);
+
+    const fmtK = (n: number | null | undefined) => {
+        if (n === null || n === undefined) return '-';
+        return Math.round(n / 1000).toLocaleString();
+    };
+
+    const fmtYen = (n: number | null | undefined) => {
+        if (n === null || n === undefined) return '-';
+        return `¥${n.toLocaleString()}`;
+    };
 
     const renderTable = (items: DailySalesRecord[], label: string, emoji: string) => {
         if (items.length === 0) return null;
@@ -48,7 +98,7 @@ export const DailySalesView: React.FC = () => {
                                         <td className="ds-name">{r.name}</td>
                                         <td className="ds-num">{r.salesQty.toLocaleString()}</td>
                                         <td className={`ds-num ${yoyClass}`}>{r.salesYoY !== undefined ? `${r.salesYoY.toFixed(1)}%` : '-'}</td>
-                                        <td className="ds-num">{fmtK(r.salesAmt)}千円</td>
+                                        <td className="ds-num">{fmtK(r.salesAmt)}千</td>
                                     </tr>
                                 );
                             })}
@@ -58,7 +108,7 @@ export const DailySalesView: React.FC = () => {
                                 <td colSpan={2} className="ds-foot-label">合計</td>
                                 <td className="ds-num ds-foot">{totalQty.toLocaleString()}</td>
                                 <td className="ds-num ds-foot">-</td>
-                                <td className="ds-num ds-foot">{fmtK(totalAmt)}千円</td>
+                                <td className="ds-num ds-foot">{fmtK(totalAmt)}千</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -67,12 +117,20 @@ export const DailySalesView: React.FC = () => {
         );
     };
 
+    const dateLabel = selectedDate ? (() => {
+        const [, m, d] = selectedDate.split('-');
+        const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+        const dt = new Date(selectedDate + 'T00:00:00');
+        const dow = dayNames[dt.getDay()];
+        return `${parseInt(m)}/${parseInt(d)}(${dow})`;
+    })() : '';
+
     return (
         <div className="page-container">
-            <h2>売上履歴（CSV蓄積データ）</h2>
+            <h2>売上履歴</h2>
 
             <div className="ds-date-select">
-                <label>日付選択：</label>
+                <label>日付：</label>
                 <select value={selectedDate} onChange={e => setSelectedDate(e.target.value)}>
                     {dates.length === 0 && <option value="">データなし</option>}
                     {dates.map(d => {
@@ -83,15 +141,61 @@ export const DailySalesView: React.FC = () => {
                 <span className="ds-count">全{dates.length}日分</span>
             </div>
 
-            {selectedDate && records.length > 0 ? (
+            {selectedDate && (
                 <>
-                    {renderTable(veggies, '野菜', '🥬')}
-                    {renderTable(fruits, '果物', '🍎')}
+                    {/* 全体サマリーカード */}
+                    <div className="ds-summary-card">
+                        <h3>{dateLabel} の実績</h3>
+                        {summary ? (
+                            <div className="ds-summary-grid">
+                                <div className="ds-s-item">
+                                    <span className="ds-s-label">予算</span>
+                                    <span className="ds-s-val">{fmtYen(summary.budget)}</span>
+                                </div>
+                                <div className="ds-s-item">
+                                    <span className="ds-s-label">12時</span>
+                                    <span className="ds-s-val">{fmtYen(summary.actual12)}</span>
+                                </div>
+                                <div className="ds-s-item">
+                                    <span className="ds-s-label">17時</span>
+                                    <span className="ds-s-val">{fmtYen(summary.actual17)}</span>
+                                </div>
+                                <div className="ds-s-item">
+                                    <span className="ds-s-label">最終</span>
+                                    <span className="ds-s-val ds-s-final">{fmtYen(summary.actualFinal)}</span>
+                                </div>
+                                <div className="ds-s-item">
+                                    <span className="ds-s-label">客数</span>
+                                    <span className="ds-s-val">{summary.customers > 0 ? `${summary.customers}名` : '-'}</span>
+                                </div>
+                                <div className="ds-s-item">
+                                    <span className="ds-s-label">客単価</span>
+                                    <span className="ds-s-val">{summary.avgSpend ? fmtYen(summary.avgSpend) : '-'}</span>
+                                </div>
+                                <div className="ds-s-item ds-s-wide">
+                                    <span className="ds-s-label">差異</span>
+                                    <span className={`ds-s-val ${summary.diff !== null ? (summary.diff >= 0 ? 'ds-s-good' : 'ds-s-warn') : ''}`}>
+                                        {summary.diff !== null ? `${summary.diff > 0 ? '+' : ''}${summary.diff.toLocaleString()}円` : '-'}
+                                    </span>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="ds-no-insp">点検データなし</p>
+                        )}
+                    </div>
+
+                    {/* 野菜CSV */}
+                    {renderTable(veggies, '野菜ベスト', '🥬')}
+
+                    {/* 果物CSV */}
+                    {renderTable(fruits, '果物ベスト', '🍎')}
+
+                    {veggies.length === 0 && fruits.length === 0 && (
+                        <p style={{ textAlign: 'center', color: '#94a3b8', padding: '16px 0', fontSize: '0.85rem' }}>
+                            この日のCSVデータはありません
+                        </p>
+                    )}
                 </>
-            ) : (
-                <p style={{ textAlign: 'center', color: '#94a3b8', padding: '32px 0' }}>
-                    {selectedDate ? 'この日付のデータはありません' : 'CSVデータがまだ蓄積されていません'}
-                </p>
             )}
 
             <style>{`
@@ -113,6 +217,35 @@ export const DailySalesView: React.FC = () => {
                     font-weight: 600;
                 }
                 .ds-count { font-size: 0.75rem; color: #94a3b8; }
+
+                /* 全体サマリーカード */
+                .ds-summary-card {
+                    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+                    color: white;
+                    border-radius: 12px;
+                    padding: 18px;
+                }
+                .ds-summary-card h3 {
+                    margin: 0 0 14px 0;
+                    font-size: 1rem;
+                    font-weight: 700;
+                    opacity: 0.9;
+                }
+                .ds-summary-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 10px;
+                }
+                .ds-s-item { text-align: center; }
+                .ds-s-wide { grid-column: 1 / -1; }
+                .ds-s-label { display: block; font-size: 0.68rem; opacity: 0.7; margin-bottom: 2px; }
+                .ds-s-val { font-size: 0.95rem; font-weight: 800; }
+                .ds-s-final { font-size: 1.1rem; color: #fbbf24; }
+                .ds-s-good { color: #86efac; }
+                .ds-s-warn { color: #fca5a5; }
+                .ds-no-insp { text-align: center; opacity: 0.6; font-size: 0.85rem; margin: 8px 0 0; }
+
+                /* CSVテーブルブロック */
                 .ds-block {
                     background: white;
                     border-radius: 10px;
@@ -152,6 +285,10 @@ export const DailySalesView: React.FC = () => {
                 .ds-warn { color: #dc2626; font-weight: 700; }
                 .ds-foot-label { font-weight: 700; color: #1e3a5f; text-align: left; }
                 .ds-foot { font-weight: 700; color: #1e3a5f; border-top: 2px solid #cbd5e1; }
+                @media (max-width: 400px) {
+                    .ds-summary-grid { grid-template-columns: repeat(2, 1fr); }
+                    .ds-s-val { font-size: 0.85rem; }
+                }
             `}</style>
         </div>
     );
