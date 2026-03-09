@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import type { InspectionEntry, DailyBudget, BestItem, Product } from '../types';
+import type { InspectionEntry, DailyBudget, BestItem, Product, DailySalesRecord } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
 import { Upload } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
+import { upsertDailySales } from '../storage/dailySales';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -227,7 +228,23 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         } else {
                             setAnalysisFruits(items);
                         }
-                        alert(`${typeName}CSV ${items.length}件を抽出しました\n※「報告を保存する」で商品マスターに登録されます`);
+
+                        // daily_salesへ蓄積保存
+                        const dept: '野菜' | '果物' = type === 'veggie' ? '野菜' : '果物';
+                        const salesRecords: DailySalesRecord[] = items
+                            .filter(it => it.code && (it.salesQty ?? 0) > 0)
+                            .map(it => ({
+                                date: currentDate,
+                                code: it.code!,
+                                name: it.name,
+                                salesQty: it.salesQty ?? 0,
+                                salesYoY: it.salesYoY,
+                                salesAmt: it.salesAmt ?? 0,
+                                department: dept,
+                            }));
+                        upsertDailySales(currentDate, dept, salesRecords);
+
+                        alert(`${typeName}CSV ${items.length}件を抽出しました（${salesRecords.length}件を売上履歴に保存）\n※「報告を保存する」で商品マスターに登録されます`);
                     } else {
                         alert("データの抽出に失敗しました（有効なデータが0件です）。\n検出されたヘッダー: " + cleanHeaders.join(', '));
                     }
@@ -264,15 +281,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             bestFruits: analysisFruits,
         } as InspectionEntry;
 
-        // 商品マスターへの登録（報告時のみ）
+        // 商品マスターへの登録（報告時のみ・累計更新）
         const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
         if (allAnalysisItems.length > 0) {
             const existingProducts = loadProducts();
-            const existingCodes = new Set(existingProducts.map(p => p.code || '').filter(c => c !== ''));
+            const productMap = new Map<string, Product>();
+            existingProducts.forEach(p => { if (p.code) productMap.set(p.code, p); });
             let addedCount = 0;
-            let skippedCount = 0;
+            let updatedCount = 0;
             let excludedCount = 0;
-            const newProducts: Product[] = [];
 
             allAnalysisItems.forEach(item => {
                 if (!item.code) return;
@@ -280,28 +297,35 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     excludedCount++;
                     return;
                 }
-                if (existingCodes.has(item.code)) {
-                    skippedCount++;
-                    return;
+                const existing = productMap.get(item.code);
+                if (existing) {
+                    // 累計更新
+                    existing.totalSalesQty = (existing.totalSalesQty || 0) + (item.salesQty || 0);
+                    existing.totalSalesAmt = (existing.totalSalesAmt || 0) + (item.salesAmt || 0);
+                    existing.updatedAt = new Date().toISOString();
+                    updatedCount++;
+                } else {
+                    // 新規登録
+                    const newProduct: Product = {
+                        id: crypto.randomUUID(),
+                        name: item.name,
+                        code: item.code,
+                        updatedAt: new Date().toISOString(),
+                        firstRegistered: new Date().toISOString(),
+                        totalSalesQty: item.salesQty || 0,
+                        totalSalesAmt: item.salesAmt || 0,
+                    };
+                    productMap.set(item.code, newProduct);
+                    addedCount++;
                 }
-                newProducts.push({
-                    id: crypto.randomUUID(),
-                    name: item.name,
-                    code: item.code,
-                    updatedAt: new Date().toISOString(),
-                });
-                existingCodes.add(item.code);
-                addedCount++;
             });
 
-            if (newProducts.length > 0) {
-                saveProducts([...newProducts, ...existingProducts]);
-            }
+            saveProducts(Array.from(productMap.values()));
 
             setMasterResult({
                 type: '合計',
                 added: addedCount,
-                skipped: skippedCount,
+                skipped: updatedCount,
                 excluded: excludedCount,
             });
         }
@@ -676,7 +700,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     <strong>商品マスター登録結果</strong>
                                     <ul>
                                         <li>新規登録 <span className="result-count added">{masterResult.added}件</span></li>
-                                        <li>重複スキップ <span className="result-count skipped">{masterResult.skipped}件</span></li>
+                                        <li>累計更新 <span className="result-count skipped">{masterResult.skipped}件</span></li>
                                         <li>除外（売上0） <span className="result-count excluded">{masterResult.excluded}件</span></li>
                                     </ul>
                                 </div>

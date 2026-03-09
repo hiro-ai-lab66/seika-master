@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, Plus, FileText, Calculator, Send, Palette, Printer, Download, AlertCircle, Package, Boxes, Trash2 } from 'lucide-react';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, Plus, FileText, Calculator, Send, Palette, Printer, Download, AlertCircle, Package, Boxes, Trash2, BarChart3 } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
 import './App.css';
@@ -9,11 +9,12 @@ import { BudgetSettings } from './components/BudgetSettings';
 import { generatePopImage } from './services/aiService';
 import { ProductMaster } from './pages/ProductMaster';
 import { Inventory } from './pages/Inventory';
+import { DailySalesView } from './pages/DailySalesView';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales'>('dashboard');
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -150,6 +151,8 @@ function App() {
         return <ProductMaster />;
       case 'inventory':
         return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} />;
+      case 'dailySales':
+        return <DailySalesView />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
     }
@@ -221,6 +224,7 @@ function App() {
           { id: 'ai', icon: Sparkles, label: 'AI支援' },
           { id: 'todo', icon: CheckSquare, label: 'ToDo' },
           { id: 'history', icon: FileText, label: '履歴' },
+          { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
         ].map(tab => (
           <button
             key={tab.id}

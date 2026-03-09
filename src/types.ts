@@ -23,6 +23,17 @@ export interface BestItem {
     category?: '野菜' | '果物';
 }
 
+/** 日次売上レコード（1商品1日分） */
+export type DailySalesRecord = {
+    date: string;           // YYYY-MM-DD
+    code: string;           // JAN13チェックデジット付き
+    name: string;
+    salesQty: number;
+    salesYoY?: number;
+    salesAmt: number;
+    department: '野菜' | '果物';
+};
+
 /**
  * テーブルA：「定時点検表」の1行分を定義
  */
@@ -103,6 +114,10 @@ export type Product = {
     inventoryTarget?: boolean;
     area?: 'backyard' | 'fridge';
     updatedAt: string;
+    // 累計フィールド（AI分析用）
+    totalSalesQty?: number;
+    totalSalesAmt?: number;
+    firstRegistered?: string;
 };
 
 export type InventoryType = 'mid' | 'monthend';
