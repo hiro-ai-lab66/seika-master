@@ -78,21 +78,28 @@ p.description {
   height: 84px;
   background-color: var(--surface);
   display: flex;
-  justify-content: space-around;
-  align-items: center;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-top: 1px solid #e2e8f0;
   padding-bottom: env(safe-area-inset-bottom);
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
   z-index: 20;
+  scrollbar-width: none;
+}
+
+.bottom-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-item {
-  flex: 1;
+  min-width: 64px;
+  flex: 0 0 auto;
   flex-direction: column;
   height: 100%;
   gap: 4px;
   color: var(--text-muted);
   transition: all 0.2s ease;
+  padding: 0 4px;
 }
 
 .nav-item span {
