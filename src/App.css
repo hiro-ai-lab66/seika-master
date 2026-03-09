@@ -2,8 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  max-width: 600px;
-  /* Mobile focused centered view */
+  /* 全端末統一UI: 幅制限なし */
   margin: 0 auto;
   position: relative;
   background: var(--background);
@@ -74,10 +73,8 @@ p.description {
 .bottom-nav {
   position: fixed;
   bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   width: 100%;
-  max-width: 600px;
   height: 84px;
   background-color: var(--surface);
   display: flex;
