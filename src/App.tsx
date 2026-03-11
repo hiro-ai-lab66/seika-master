@@ -152,7 +152,7 @@ function App() {
       case 'inventory':
         return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} />;
       case 'dailySales':
-        return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} />;
+        return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} onOpenPopGem={openPopGem} />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
     }

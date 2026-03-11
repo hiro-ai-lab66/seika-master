@@ -5,9 +5,10 @@ import { loadDailySales, saveDailySales } from '../storage/dailySales';
 interface Props {
     inspections: InspectionEntry[];
     dailyBudgets: DailyBudget[];
+    onOpenPopGem?: () => void;
 }
 
-export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) => {
+export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onOpenPopGem }) => {
     const [allRecords, setAllRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
 
     // 点検データとCSVデータの両方から日付を収集
@@ -83,6 +84,40 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) =
         return { budget, actual12: inspection.actual12, actual17: inspection.actual17, actualFinal: inspection.actualFinal, customers, avgSpend, diff };
     }, [inspection, budgetEntry]);
 
+    // CSV合計サマリー計算
+    const csvSummary = useMemo(() => {
+        const veggieTotal = veggies.reduce((s, r) => s + r.salesAmt, 0);
+        const fruitTotal = fruits.reduce((s, r) => s + r.salesAmt, 0);
+        const csvTotal = veggieTotal + fruitTotal;
+        const actualFinal = inspection?.actualFinal ?? null;
+        const diff = actualFinal !== null && csvTotal > 0 ? actualFinal - csvTotal : null;
+
+        let diffRate: number | null = null;
+        let diffStatus: '正常' | '注意' | '要確認' | null = null;
+        let diffStatusClass = '';
+        let diffMessage = '';
+
+        if (actualFinal !== null && actualFinal > 0 && diff !== null) {
+            diffRate = (diff / actualFinal) * 100;
+            const absRate = Math.abs(diffRate);
+            if (absRate <= 1) {
+                diffStatus = '正常';
+                diffStatusClass = 'ds-csv-diff-good';
+                diffMessage = 'CSVと実績の整合は良好です';
+            } else if (absRate <= 3) {
+                diffStatus = '注意';
+                diffStatusClass = 'ds-csv-diff-notice';
+                diffMessage = '差額率がやや大きいです。登録漏れや入力差異を確認してください';
+            } else {
+                diffStatus = '要確認';
+                diffStatusClass = 'ds-csv-diff-warn';
+                diffMessage = '差額率が大きいです。CSVと実績の照合を優先してください';
+            }
+        }
+
+        return { veggieTotal, fruitTotal, csvTotal, actualFinal, diff, diffRate, diffStatus, diffStatusClass, diffMessage, hasData: records.length > 0 };
+    }, [veggies, fruits, records, inspection]);
+
     const fmtK = (n: number | null | undefined) => {
         if (n === null || n === undefined) return '-';
         return Math.round(n / 1000).toLocaleString();
@@ -127,6 +162,108 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) =
             </div>
         );
     };
+
+    // --- 月間累計サマリー（選択日の月） ---
+    const monthlySummary = useMemo(() => {
+        if (!selectedDate) return null;
+
+        const currentMonth = selectedDate.substring(0, 7); // YYYY-MM
+
+        // 月間のCSVデータを抽出
+        const monthRecords = allRecords.filter(r => r.date.startsWith(currentMonth));
+        const veggieTotal = monthRecords.filter(r => r.department === '野菜').reduce((s, r) => s + r.salesAmt, 0);
+        const fruitTotal = monthRecords.filter(r => r.department === '果物').reduce((s, r) => s + r.salesAmt, 0);
+        const csvTotal = veggieTotal + fruitTotal;
+
+        // 月間の点検データを抽出
+        const monthInspections = inspections.filter(i => i.date.startsWith(currentMonth));
+        const actualTotal = monthInspections.reduce((s, i) => s + (i.actualFinal || 0), 0);
+
+        const diff = actualTotal > 0 && csvTotal > 0 ? actualTotal - csvTotal : null;
+
+        let diffRate: number | null = null;
+        let diffStatus: '正常' | '注意' | '要確認' | null = null;
+        let diffStatusClass = '';
+
+        if (actualTotal > 0 && diff !== null) {
+            diffRate = (diff / actualTotal) * 100;
+            const absRate = Math.abs(diffRate);
+            if (absRate <= 1) {
+                diffStatus = '正常';
+                diffStatusClass = 'ds-csv-diff-good';
+            } else if (absRate <= 3) {
+                diffStatus = '注意';
+                diffStatusClass = 'ds-csv-diff-notice';
+            } else {
+                diffStatus = '要確認';
+                diffStatusClass = 'ds-csv-diff-warn';
+            }
+        }
+
+        return {
+            month: currentMonth.replace('-', '年') + '月',
+            veggieTotal,
+            fruitTotal,
+            csvTotal,
+            actualTotal,
+            diff,
+            diffRate,
+            diffStatus,
+            diffStatusClass,
+            hasData: monthRecords.length > 0 || actualTotal > 0
+        };
+    }, [selectedDate, allRecords, inspections]);
+
+    // --- 月間推移グラフ用データ ---
+    const chartData = useMemo(() => {
+        if (!selectedDate) return { data: [], maxVal: 0 };
+        const currentMonth = selectedDate.substring(0, 7);
+        // 月の全日付を集める
+        const daysInMonth = new Date(parseInt(currentMonth.split('-')[0]), parseInt(currentMonth.split('-')[1]), 0).getDate();
+
+        const data = [];
+        let maxVal = 0;
+
+        for (let i = 1; i <= daysInMonth; i++) {
+            const dateStr = `${currentMonth}-${String(i).padStart(2, '0')}`;
+
+            // CSVデータ
+            const dRecords = allRecords.filter(r => r.date === dateStr);
+            const csvTotal = dRecords.reduce((s, r) => s + r.salesAmt, 0);
+
+            // 実績データ
+            const dInsp = inspections.find(ins => ins.date === dateStr);
+            const actualFinal = dInsp?.actualFinal || 0;
+
+            if (csvTotal > maxVal) maxVal = csvTotal;
+            if (actualFinal > maxVal) maxVal = actualFinal;
+
+            let diffRate: number | null = null;
+            let statusClass = '';
+
+            if (actualFinal > 0 && csvTotal > 0) {
+                const diff = actualFinal - csvTotal;
+                diffRate = (diff / actualFinal) * 100;
+                const absRate = Math.abs(diffRate);
+                if (absRate <= 1) statusClass = 'ds-csv-diff-good';
+                else if (absRate <= 3) statusClass = 'ds-csv-diff-notice';
+                else statusClass = 'ds-csv-diff-warn';
+            }
+
+            // データがある日のみ追加
+            if (csvTotal > 0 || actualFinal > 0) {
+                data.push({
+                    date: String(i),
+                    csvTotal,
+                    actualFinal,
+                    diffRate,
+                    statusClass
+                });
+            }
+        }
+
+        return { data, maxVal };
+    }, [selectedDate, allRecords, inspections]);
 
     const dateLabel = selectedDate ? (() => {
         const [, m, d] = selectedDate.split('-');
@@ -173,6 +310,133 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) =
                             </div>
                         ) : (<p className="ds-no-insp">点検データなし</p>)}
                     </div>
+
+                    {/* CSV合計サマリー */}
+                    <div className="ds-csv-card">
+                        <h3>📊 CSV売上合計</h3>
+                        {csvSummary.hasData ? (
+                            <div className="ds-csv-grid">
+                                <div className="ds-csv-item">
+                                    <span className="ds-csv-label">🥬 野菜CSV合計</span>
+                                    <span className="ds-csv-val">{fmtYen(csvSummary.veggieTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item">
+                                    <span className="ds-csv-label">🍎 果物CSV合計</span>
+                                    <span className="ds-csv-val">{fmtYen(csvSummary.fruitTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item ds-csv-wide">
+                                    <span className="ds-csv-label">CSV合計（野菜＋果物）</span>
+                                    <span className="ds-csv-val ds-csv-total">{fmtYen(csvSummary.csvTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item ds-csv-wide">
+                                    <span className="ds-csv-label">差額（最終実績 − CSV合計）</span>
+                                    <span className={`ds-csv-val ${csvSummary.diff !== null ? (csvSummary.diff >= 0 ? 'ds-csv-diff-good' : 'ds-csv-diff-warn') : ''}`}>
+                                        {csvSummary.diff !== null ? `${csvSummary.diff > 0 ? '+' : ''}${csvSummary.diff.toLocaleString()}円` : '最終実績なし'}
+                                    </span>
+                                </div>
+                                <div className="ds-csv-item ds-csv-wide">
+                                    <span className="ds-csv-label">差額率（差額 ÷ 最終実績）</span>
+                                    <span className={`ds-csv-val ${csvSummary.diffStatusClass}`}>
+                                        {csvSummary.diffRate !== null
+                                            ? `${csvSummary.diffRate > 0 ? '+' : ''}${csvSummary.diffRate.toFixed(1)}% （${csvSummary.diffStatus}）`
+                                            : '最終実績なし'}
+                                    </span>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="ds-csv-nodata">この日のCSVデータはありません</p>
+                        )}
+                        {csvSummary.diffMessage && (
+                            <div className={`ds-csv-msg ${csvSummary.diffStatusClass === 'ds-csv-diff-warn' ? 'ds-msg-warn' : ''}`}>
+                                <span>
+                                    {csvSummary.diffStatus === '正常' ? '✅' : csvSummary.diffStatus === '注意' ? '⚠️' : '🚨'}{' '}
+                                    {csvSummary.diffMessage}
+                                </span>
+                                {csvSummary.diffRate !== null && Math.abs(csvSummary.diffRate) > 1 && onOpenPopGem && (
+                                    <button
+                                        className={`ds-pop-btn ${Math.abs(csvSummary.diffRate) > 3 ? 'ds-pop-btn-emph' : ''}`}
+                                        onClick={() => onOpenPopGem()}
+                                    >
+                                        ✨ 対策POPを作成
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 月間累計サマリー */}
+                    {monthlySummary && monthlySummary.hasData && (
+                        <div className="ds-monthly-card">
+                            <h3>📅 {monthlySummary.month} 累計サマリー</h3>
+                            <div className="ds-csv-grid">
+                                <div className="ds-csv-item">
+                                    <span className="ds-csv-label">🥬 野菜CSV累計</span>
+                                    <span className="ds-csv-val">{fmtYen(monthlySummary.veggieTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item">
+                                    <span className="ds-csv-label">🍎 果物CSV累計</span>
+                                    <span className="ds-csv-val">{fmtYen(monthlySummary.fruitTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item">
+                                    <span className="ds-csv-label">CSV総累計</span>
+                                    <span className="ds-csv-val ds-csv-total">{fmtYen(monthlySummary.csvTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item">
+                                    <span className="ds-csv-label">最終実績累計</span>
+                                    <span className="ds-csv-val ds-s-final">{fmtYen(monthlySummary.actualTotal)}</span>
+                                </div>
+                                <div className="ds-csv-item ds-csv-wide">
+                                    <span className="ds-csv-label">累計差額率（差額 ÷ 最終実績）</span>
+                                    <span className={`ds-csv-val ${monthlySummary.diffStatusClass}`}>
+                                        {monthlySummary.diffRate !== null
+                                            ? `${monthlySummary.diffRate > 0 ? '+' : ''}${monthlySummary.diffRate.toFixed(1)}% （${monthlySummary.diffStatus}）`
+                                            : '計算不可'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 月間推移グラフ */}
+                    {chartData.data.length > 0 && (
+                        <div className="ds-chart-card">
+                            <h3>📈 {monthlySummary?.month} 日別推移</h3>
+                            <div className="ds-chart-legend">
+                                <span className="ds-legend-item"><span className="ds-lg-box ds-lg-actual"></span> 最終実績</span>
+                                <span className="ds-legend-item"><span className="ds-lg-box ds-lg-csv"></span> CSV合計</span>
+                            </div>
+                            <div className="ds-chart-scroll">
+                                <div className="ds-chart">
+                                    {chartData.data.map(d => {
+                                        const actualHt = chartData.maxVal > 0 ? (d.actualFinal / chartData.maxVal) * 100 : 0;
+                                        const csvHt = chartData.maxVal > 0 ? (d.csvTotal / chartData.maxVal) * 100 : 0;
+                                        return (
+                                            <div key={d.date} className="ds-chart-col">
+                                                <div className="ds-bars">
+                                                    <div className="ds-bar-wrap">
+                                                        <div className="ds-b-val" style={{ opacity: d.actualFinal > 0 ? 1 : 0 }}>{fmtK(d.actualFinal)}</div>
+                                                        <div className="ds-b ds-b-actual" style={{ height: `${actualHt}%` }}></div>
+                                                    </div>
+                                                    <div className="ds-bar-wrap">
+                                                        <div className="ds-b-val" style={{ opacity: d.csvTotal > 0 ? 1 : 0 }}>{fmtK(d.csvTotal)}</div>
+                                                        <div className="ds-b ds-b-csv" style={{ height: `${csvHt}%` }}></div>
+                                                    </div>
+                                                </div>
+                                                <div className="ds-chart-lbl">{d.date}日</div>
+                                                <div className="ds-chart-diff">
+                                                    {d.diffRate !== null ? (
+                                                        <span className={`ds-lbl-tag ${d.statusClass}`}>
+                                                            {d.diffRate > 0 ? '+' : ''}{d.diffRate.toFixed(1)}%
+                                                        </span>
+                                                    ) : <span className="ds-lbl-tag ds-lbl-none">-</span>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* 天候・気温帯・客数・客単価入力 */}
                     <div className="ds-meta-form">
@@ -238,6 +502,57 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) =
                 .ds-s-warn { color: #fca5a5; }
                 .ds-no-insp { text-align: center; opacity: 0.6; font-size: 0.85rem; margin: 8px 0 0; }
 
+                /* CSV合計カード */
+                .ds-csv-card { background: linear-gradient(135deg, #14532d 0%, #16a34a 100%); color: white; border-radius: 12px; padding: 18px; }
+                .ds-csv-card h3 { margin: 0 0 14px 0; font-size: 1rem; font-weight: 700; opacity: 0.9; }
+                .ds-csv-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                .ds-csv-item { text-align: center; }
+                .ds-csv-wide { grid-column: 1 / -1; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.2); margin-top: 2px; }
+                .ds-csv-label { display: block; font-size: 0.68rem; opacity: 0.75; margin-bottom: 2px; }
+                .ds-csv-val { font-size: 0.95rem; font-weight: 800; }
+                .ds-csv-total { font-size: 1.1rem; color: #bbf7d0; }
+                .ds-csv-diff-good { color: #86efac; font-weight: 800; }
+                .ds-csv-diff-notice { color: #fde047; font-weight: 800; }
+                .ds-csv-diff-warn { color: #fca5a5; font-weight: 800; }
+                .ds-csv-nodata { text-align: center; opacity: 0.6; font-size: 0.85rem; margin: 8px 0 0; }
+                .ds-csv-msg { margin-top: 12px; padding: 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 700; display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.2); }
+                .ds-csv-msg.ds-msg-warn { background: rgba(220, 38, 38, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); }
+                
+                .ds-pop-btn {
+                    align-self: flex-start;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    background: #f8fafc;
+                    color: #0f172a;
+                    border: 1px solid #cbd5e1;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-size: 0.85rem;
+                    font-weight: 800;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .ds-pop-btn:hover { background: #f1f5f9; }
+                .ds-pop-btn-emph {
+                    background: #ef4444;
+                    color: white;
+                    border: none;
+                    box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
+                    animation: pulse-red 2s infinite;
+                }
+                .ds-pop-btn-emph:hover { background: #dc2626; }
+                
+                @keyframes pulse-red {
+                    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+                    70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+                    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+                }
+
+                /* 月間累計カード */
+                .ds-monthly-card { background: linear-gradient(135deg, #475569 0%, #1e293b 100%); color: white; border-radius: 12px; padding: 18px; margin-top: 16px; margin-bottom: 24px; }
+                .ds-monthly-card h3 { margin: 0 0 14px 0; font-size: 1rem; font-weight: 700; opacity: 0.9; }
+
                 /* 環境情報フォーム */
                 .ds-meta-form {
                     background: white;
@@ -285,6 +600,28 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) =
                     cursor: pointer;
                 }
                 .ds-meta-save:active { background: #1d4ed8; }
+
+                /* 日別グラフ */
+                .ds-chart-card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 18px; margin-bottom: 24px; overflow: hidden; }
+                .ds-chart-card h3 { margin: 0 0 10px 0; font-size: 1rem; color: #334155; }
+                .ds-chart-legend { display: flex; gap: 12px; font-size: 0.75rem; color: #475569; margin-bottom: 16px; font-weight: 600; }
+                .ds-legend-item { display: flex; align-items: center; gap: 4px; }
+                .ds-lg-box { width: 12px; height: 12px; border-radius: 2px; }
+                .ds-lg-actual { background: #60a5fa; }
+                .ds-lg-csv { background: #34d399; }
+                .ds-chart-scroll { overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+                .ds-chart { display: flex; align-items: flex-end; gap: 12px; height: 200px; padding-top: 20px; min-width: max-content; }
+                .ds-chart-col { display: flex; flex-direction: column; align-items: center; width: 44px; height: 100%; justify-content: flex-end; }
+                .ds-bars { display: flex; gap: 2px; height: 120px; align-items: flex-end; width: 100%; justify-content: center; }
+                .ds-bar-wrap { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; width: 16px; }
+                .ds-b-val { font-size: 0.6rem; color: #64748b; margin-bottom: 4px; transform: rotate(-45deg); transform-origin: left bottom; white-space: nowrap; font-weight: 600; width: 10px; }
+                .ds-b { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; transition: height 0.3s ease; }
+                .ds-b-actual { background: #93c5fd; }
+                .ds-b-csv { background: #6ee7b7; }
+                .ds-chart-lbl { font-size: 0.75rem; font-weight: 700; color: #475569; margin-top: 8px; margin-bottom: 4px; }
+                .ds-chart-diff { display: flex; justify-content: center; width: 100%; }
+                .ds-lbl-tag { font-size: 0.68rem; padding: 2px 4px; border-radius: 4px; font-weight: 700; color: #1e293b; background: #e2e8f0; white-space: nowrap; }
+                .ds-lbl-none { background: transparent; color: #cbd5e1; }
 
                 .ds-block { background: white; border-radius: 10px; border: 1px solid #e2e8f0; padding: 14px; }
                 .ds-block h4 { margin: 0 0 10px 0; font-size: 0.95rem; color: #334155; }

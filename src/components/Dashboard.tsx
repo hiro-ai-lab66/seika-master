@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { AppState } from '../types';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, RefreshCw } from 'lucide-react';
+import { generateAiAdvice } from '../utils/aiAdvice';
+import { loadDailySales } from '../storage/dailySales';
 
 interface Props {
   state: AppState;
@@ -66,6 +68,59 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
   const currentCustomers = todayInspection?.customersFinal || todayInspection?.customers17 || todayInspection?.customers12 || 0;
   const avgSpend = (currentCustomers > 0 && currentActual > 0) ? Math.round(currentActual / currentCustomers) : null;
 
+  // --- AIアドバイス生成 ---
+  const buildAdvice = useCallback(() => {
+    // daily_salesから天候・気温帯・CSV値を取得
+    const dailySales = loadDailySales().filter(r => r.date === currentDate);
+    const weather = dailySales.length > 0 ? (dailySales[0].weather || '') : '';
+    const tempBand = dailySales.length > 0 ? (dailySales[0].temp_band || '') : '';
+
+    // CSV合計と実績差額の計算
+    const csvTotal = dailySales.reduce((sum, r) => sum + r.salesAmt, 0);
+    const actualFinal = todayInspection?.actualFinal ?? null;
+    let csvDiffRate: number | null = null;
+    let csvDiffStatus: '正常' | '注意' | '要確認' | null = null;
+
+    if (actualFinal !== null && actualFinal > 0 && csvTotal > 0) {
+      const diff = actualFinal - csvTotal;
+      csvDiffRate = (diff / actualFinal) * 100;
+      const absRate = Math.abs(csvDiffRate);
+      if (absRate <= 3) csvDiffStatus = '正常';
+      else if (absRate <= 5) csvDiffStatus = '注意';
+      else csvDiffStatus = '要確認';
+    }
+
+    return generateAiAdvice({
+      budget: currentBudget,
+      actual: currentActual,
+      diff: currentGap,
+      budgetRatio: todayInspection?.accBudgetRatio ?? null,
+      customers: currentCustomers,
+      avgSpend,
+      weather,
+      tempBand,
+      csvDiffRate,
+      csvDiffStatus
+    });
+  }, [currentDate, currentBudget, currentActual, currentGap, currentCustomers, avgSpend, todayInspection]);
+
+  const [adviceText, setAdviceText] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // 日付やデータ変更時に自動更新
+  useEffect(() => {
+    setAdviceText(buildAdvice());
+  }, [buildAdvice]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    // 少しだけアニメーション感を出す
+    setTimeout(() => {
+      setAdviceText(buildAdvice());
+      setIsRefreshing(false);
+    }, 400);
+  };
+
   return (
     <div className="dashboard-container">
       <header className="page-header">
@@ -116,11 +171,22 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
         </div>
       )}
 
-      <div className="info-box">
+      <div className="info-box ai-advice-box">
         <Sparkles className="icon-ai" />
-        <div>
-          <p>【AIアドバイス】</p>
-          <p>現在の消化率は順調です。夕方の客数増に備え、サンふじの品出しを前倒ししましょう。</p>
+        <div className="ai-advice-content">
+          <div className="ai-advice-header">
+            <p className="ai-advice-title">【AIアドバイス】</p>
+            <button
+              className="ai-refresh-btn"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="AIアドバイスを更新"
+            >
+              <RefreshCw size={14} className={isRefreshing ? 'spin' : ''} />
+              <span>更新</span>
+            </button>
+          </div>
+          <p className="ai-advice-text">{adviceText}</p>
         </div>
       </div>
 
