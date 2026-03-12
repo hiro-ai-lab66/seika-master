@@ -1,18 +1,28 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Save, CheckCircle, RefreshCw } from 'lucide-react';
-import type { SellfloorRecord } from '../types';
+import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { uploadSellfloorPhoto } from '../services/storageService';
+
+// To fetch dummy data quickly for now, reuse the same mock data as PopibraryList
+// In a real app, this should come via props from `state.popData`
+const MOCK_POPS: PopItem[] = [
+  { id: "pop-001", title: "春キャベツ特売", categoryLarge: "野菜", categorySmall: "葉物", season: "春", usage: "定番平台", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Cabbage+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "価格を大きくし、鮮度感を出すキャッチコピーに変更。前年比120%達成。", createdAt: new Date().toISOString() },
+  { id: "pop-002", title: "新玉ねぎ レシピ付き", categoryLarge: "野菜", categorySmall: "土物", season: "春", usage: "エンド", size: "B5", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Onion+Recipe+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "食べ方提案を入れることで、まとめ買いが増加。", createdAt: new Date().toISOString() },
+  { id: "pop-003", title: "厳選いちご ギフト用", categoryLarge: "果物", categorySmall: "いちご", season: "冬", usage: "平台一番地", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Strawberry+Gift+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "ギフト用途を強調し、高単価商品の売行きが改善。", createdAt: new Date().toISOString() }
+];
 
 interface SellfloorRecordFormProps {
   onSave: (record: SellfloorRecord) => void;
   currentDate: string;
+  onBack?: () => void;
 }
 
-export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave, currentDate }) => {
+export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave, currentDate, onBack }) => {
   const [product, setProduct] = useState('');
   const [location, setLocation] = useState('');
   const [comment, setComment] = useState('');
+  const [selectedPopId, setSelectedPopId] = useState<string>('');
   
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -48,6 +58,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
     }
     setPhotoPreview(null);
     setSaveSuccess(false);
+    setSelectedPopId('');
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
     }
@@ -72,7 +83,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
             location,
             comment,
             photoUrl,
-            popId: '', // Empty for now as requested
+            popId: selectedPopId,
             createdAt: new Date().toISOString()
         };
         
@@ -91,9 +102,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
 
   return (
     <div className="page-container" style={{ maxWidth: '600px', margin: '0 auto', paddingBottom: '80px' }}>
-      <div className="page-header" style={{ marginBottom: '20px' }}>
-        <h2>売場記録</h2>
-        <span className="date-badge-outline">{currentDate}</span>
+      <div className="page-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>記録を作成</h2>
+        {onBack && (
+          <button 
+             onClick={onBack}
+             style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}
+          >
+            キャンセル
+          </button>
+        )}
       </div>
 
       <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: 'var(--shadow-md)' }}>
@@ -208,6 +226,31 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
             rows={3}
             style={{ width: '100%', resize: 'vertical' }}
           />
+        </div>
+
+        {/* POP Selection */}
+        <div style={{ marginBottom: '28px' }}>
+          <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+             <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>POP連携 (任意)</span>
+          </label>
+          <div style={{ appearance: 'none', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+             <select 
+                value={selectedPopId}
+                onChange={(e) => setSelectedPopId(e.target.value)}
+                style={{ width: '100%', padding: '12px', border: 'none', backgroundColor: 'transparent', fontSize: '0.9rem', color: 'var(--text-main)', appearance: 'none', outline: 'none' }}
+             >
+                <option value="">-- 使用したPOPを選択 --</option>
+                {MOCK_POPS.map(pop => (
+                    <option key={pop.id} value={pop.id}>{pop.title} ({pop.size})</option>
+                ))}
+             </select>
+          </div>
+          {selectedPopId && (
+              <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <ImageIcon size={24} color="#166534" />
+                  <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>POPibraryから連携されました</span>
+              </div>
+          )}
         </div>
 
         {/* Action Button */}

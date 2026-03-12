@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, Plus, FileText, Calculator, Send, Palette, Printer, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera } from 'lucide-react';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
 import './App.css';
@@ -11,14 +11,25 @@ import { ProductMaster } from './pages/ProductMaster';
 import { Inventory } from './pages/Inventory';
 import { DailySalesView } from './pages/DailySalesView';
 import { SellfloorRecordForm } from './pages/SellfloorRecordForm';
+import { SellfloorRecordList } from './pages/SellfloorRecordList';
+import { SellfloorRecordDetail } from './pages/SellfloorRecordDetail';
+import { PopibraryList } from './pages/PopibraryList';
+import { PopDetail } from './pages/PopDetail';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary'>('dashboard');
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
+  
+  // Sub-routing state for sellfloor and popibrary
+  const [sellfloorView, setSellfloorView] = useState<'list' | 'form' | 'detail'>('list');
+  const [selectedSellfloorRecord, setSelectedSellfloorRecord] = useState<SellfloorRecord | null>(null);
+  
+  const [popibraryView, setPopibraryView] = useState<'list' | 'detail'>('list');
+  const [selectedPop, setSelectedPop] = useState<import('./types').PopItem | null>(null);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -110,7 +121,7 @@ function App() {
       ...prev,
       sellfloorRecords: [...(prev.sellfloorRecords || []), record]
     }));
-    setActiveTab('dashboard');
+    setSellfloorView('list');
     showToast('売場記録を保存しました');
   };
 
@@ -165,7 +176,42 @@ function App() {
       case 'dailySales':
         return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} onOpenPopGem={openPopGem} />;
       case 'sellfloor':
-        return <SellfloorRecordForm onSave={saveSellfloorRecord} currentDate={currentDate} />;
+        if (sellfloorView === 'form') {
+           return <SellfloorRecordForm onSave={saveSellfloorRecord} currentDate={currentDate} onBack={() => setSellfloorView('list')} />;
+        }
+        if (sellfloorView === 'detail' && selectedSellfloorRecord) {
+           const attachedPop = state.popData?.find(p => p.id === selectedSellfloorRecord.popId) || 
+                               // Fallback to MOCK_POPS logic if state doesn't have it (since we hardcoded MOCK_POPS in form for now)
+                               [
+                                { id: "pop-001", title: "春キャベツ特売", categoryLarge: "野菜", categorySmall: "葉物", season: "春", usage: "定番平台", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Cabbage+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "価格を大きくし、鮮度感を出すキャッチコピーに変更。前年比120%達成。", createdAt: new Date().toISOString() },
+                                { id: "pop-002", title: "新玉ねぎ レシピ付き", categoryLarge: "野菜", categorySmall: "土物", season: "春", usage: "エンド", size: "B5", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Onion+Recipe+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "食べ方提案を入れることで、まとめ買いが増加。", createdAt: new Date().toISOString() },
+                                { id: "pop-003", title: "厳選いちご ギフト用", categoryLarge: "果物", categorySmall: "いちご", season: "冬", usage: "平台一番地", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Strawberry+Gift+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "ギフト用途を強調し、高単価商品の売行きが改善。", createdAt: new Date().toISOString() }
+                               ].find(p => p.id === selectedSellfloorRecord.popId);
+                               
+           return <SellfloorRecordDetail 
+                    record={selectedSellfloorRecord} 
+                    attachedPop={attachedPop} 
+                    onBack={() => setSellfloorView('list')} 
+                    onViewPop={(pop) => {
+                        setSelectedPop(pop);
+                        setPopibraryView('detail');
+                        setActiveTab('popibrary');
+                    }}
+                  />;
+        }
+        return <SellfloorRecordList 
+                 records={state.sellfloorRecords || []} 
+                 onNewRecord={() => setSellfloorView('form')} 
+                 onSelectRecord={(r) => { setSelectedSellfloorRecord(r); setSellfloorView('detail'); }} 
+               />;
+      case 'popibrary':
+        if (popibraryView === 'detail' && selectedPop) {
+           return <PopDetail pop={selectedPop} onBack={() => setPopibraryView('list')} />;
+        }
+        return <PopibraryList 
+                 savedPops={state.popData || []} 
+                 onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
+               />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
     }
@@ -239,11 +285,16 @@ function App() {
           { id: 'history', icon: FileText, label: '履歴' },
           { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
           { id: 'sellfloor', icon: Camera, label: '売場記録' },
+          { id: 'popibrary', icon: Library, label: 'POPibrary' },
         ].map(tab => (
           <button
             key={tab.id}
             className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => {
+                setActiveTab(tab.id as any);
+                if (tab.id === 'sellfloor') setSellfloorView('list');
+                if (tab.id === 'popibrary') setPopibraryView('list');
+            }}
           >
             {/* @ts-ignore */}
             <tab.icon size={28} />

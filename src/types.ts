@@ -136,6 +136,20 @@ export interface SellfloorRecord {
     createdAt: string;
 }
 
+export interface PopItem {
+    id: string; // popIdと共通
+    title: string;
+    categoryLarge: string;
+    categorySmall: string;
+    season: string;
+    usage: string;
+    size: string;
+    thumbUrl: string;
+    pdfUrl: string;
+    improvementComment: string;
+    createdAt: string;
+}
+
 export type InventoryType = 'mid' | 'monthend';
 
 export type InventoryItem = {
@@ -159,6 +173,7 @@ export interface AppState {
     inspections: InspectionEntry[];
     dailyBudgets: DailyBudget[];
     sellfloorRecords?: SellfloorRecord[];
+    popData?: PopItem[];
     chirashiImage?: string;
     chirashiDate?: string;
 }
