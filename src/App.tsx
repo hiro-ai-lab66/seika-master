@@ -154,7 +154,6 @@ function App() {
       ...prev,
       sellfloorRecords: [...(prev.sellfloorRecords || []), record]
     }));
-    setSellfloorView('list');
     showToast('売場記録を保存しました');
   };
 

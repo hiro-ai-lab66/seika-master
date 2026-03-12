@@ -91,7 +91,8 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
         setSaveSuccess(true);
         setTimeout(() => {
             clearForm();
-        }, 2000);
+            if (onBack) onBack();
+        }, 1500);
     } catch (error) {
         console.error("Failed to save sellfloor record", error);
         alert("保存に失敗しました");
