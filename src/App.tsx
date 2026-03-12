@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, Plus, FileText, Calculator, Send, Palette, Printer, Download, AlertCircle, Package, Boxes, Trash2, BarChart3 } from 'lucide-react';
-import type { AppState, InspectionEntry, ToDoItem, DailyBudget } from './types';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, Plus, FileText, Calculator, Send, Palette, Printer, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera } from 'lucide-react';
+import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
 import './App.css';
 import { Dashboard } from './components/Dashboard';
@@ -10,11 +10,12 @@ import { generatePopImage } from './services/aiService';
 import { ProductMaster } from './pages/ProductMaster';
 import { Inventory } from './pages/Inventory';
 import { DailySalesView } from './pages/DailySalesView';
+import { SellfloorRecordForm } from './pages/SellfloorRecordForm';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor'>('dashboard');
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -77,7 +78,8 @@ function App() {
       sales: [],
       todos: [],
       inspections: [],
-      dailyBudgets: []
+      dailyBudgets: [],
+      sellfloorRecords: []
     };
   });
 
@@ -101,6 +103,15 @@ function App() {
 
   const saveBudgets = (budgets: DailyBudget[]) => {
     setState(prev => ({ ...prev, dailyBudgets: budgets }));
+  };
+
+  const saveSellfloorRecord = (record: SellfloorRecord) => {
+    setState(prev => ({
+      ...prev,
+      sellfloorRecords: [...(prev.sellfloorRecords || []), record]
+    }));
+    setActiveTab('dashboard');
+    showToast('売場記録を保存しました');
   };
 
   const toggleTodo = (id: string) => {
@@ -153,6 +164,8 @@ function App() {
         return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} />;
       case 'dailySales':
         return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} onOpenPopGem={openPopGem} />;
+      case 'sellfloor':
+        return <SellfloorRecordForm onSave={saveSellfloorRecord} currentDate={currentDate} />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
     }
@@ -225,6 +238,7 @@ function App() {
           { id: 'todo', icon: CheckSquare, label: 'ToDo' },
           { id: 'history', icon: FileText, label: '履歴' },
           { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
+          { id: 'sellfloor', icon: Camera, label: '売場記録' },
         ].map(tab => (
           <button
             key={tab.id}

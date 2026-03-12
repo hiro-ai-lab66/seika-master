@@ -125,6 +125,17 @@ export type Product = {
     firstRegistered?: string;
 };
 
+export interface SellfloorRecord {
+    id: string;
+    date: string;
+    product: string;
+    location: string;
+    photoUrl: string;
+    comment: string;
+    popId: string;
+    createdAt: string;
+}
+
 export type InventoryType = 'mid' | 'monthend';
 
 export type InventoryItem = {
@@ -147,6 +158,7 @@ export interface AppState {
     todos: ToDoItem[];
     inspections: InspectionEntry[];
     dailyBudgets: DailyBudget[];
+    sellfloorRecords?: SellfloorRecord[];
     chirashiImage?: string;
     chirashiDate?: string;
 }
