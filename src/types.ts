@@ -150,6 +150,17 @@ export interface PopItem {
     createdAt: string;
 }
 
+export interface AIAnalysisResult {
+    analysisId: string;
+    recordId: string; // SellfloorRecord.id
+    analyzedAt: string;
+    summary: string;
+    positives: string[];
+    concerns: string[];
+    suggestions: string[];
+    version: string;
+}
+
 export type InventoryType = 'mid' | 'monthend';
 
 export type InventoryItem = {
@@ -174,6 +185,7 @@ export interface AppState {
     dailyBudgets: DailyBudget[];
     sellfloorRecords?: SellfloorRecord[];
     popData?: PopItem[];
+    aiAnalysisHistory?: AIAnalysisResult[];
     chirashiImage?: string;
     chirashiDate?: string;
 }

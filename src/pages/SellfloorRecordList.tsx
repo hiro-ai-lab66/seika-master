@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { Search, MapPin, Camera, Image as ImageIcon } from 'lucide-react';
+import { Search, MapPin, Camera, Image as ImageIcon, Sparkles } from 'lucide-react';
 import type { SellfloorRecord } from '../types';
 
 interface SellfloorRecordListProps {
   records: SellfloorRecord[];
   onSelectRecord: (record: SellfloorRecord) => void;
   onNewRecord: () => void;
+  onViewAiHistory?: () => void;
+  aiHistoryCount?: number;
 }
 
-export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ records, onSelectRecord, onNewRecord }) => {
+export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ records, onSelectRecord, onNewRecord, onViewAiHistory, aiHistoryCount = 0 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredRecords = records.filter(record => 
@@ -25,12 +27,24 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ record
             <h2>売場記録</h2>
             <span className="date-badge-outline">{filteredRecords.length}件</span>
         </div>
-        <button 
-            onClick={onNewRecord}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '99px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}
-        >
-            <Camera size={18} /> 記録する
-        </button>
+        
+        <div style={{ display: 'flex', gap: '8px' }}>
+            {onViewAiHistory && aiHistoryCount > 0 && (
+                <button 
+                  onClick={onViewAiHistory}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'white', color: 'var(--primary)', border: '1px solid var(--primary)', padding: '10px 16px', borderRadius: '99px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}
+                >
+                    <Sparkles size={18} /> 履歴 ({aiHistoryCount})
+                </button>
+            )}
+            
+            <button 
+                onClick={onNewRecord}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '99px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}
+            >
+                <Camera size={18} /> 記録する
+            </button>
+        </div>
       </div>
 
       <div style={{ background: 'white', padding: '16px', borderRadius: '12px', boxShadow: 'var(--shadow-sm)', marginBottom: '20px' }}>

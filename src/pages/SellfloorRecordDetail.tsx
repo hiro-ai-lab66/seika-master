@@ -1,16 +1,43 @@
-import React from 'react';
-import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight } from 'lucide-react';
-import type { SellfloorRecord, PopItem } from '../types';
+import React, { useState } from 'react';
+import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
+import type { SellfloorRecord, PopItem, AIAnalysisResult, InspectionEntry } from '../types';
+import { generateSellfloorAnalysis } from '../services/aiAnalysisService';
 
 interface SellfloorRecordDetailProps {
   record: SellfloorRecord;
   attachedPop?: PopItem;
+  existingAnalysis?: AIAnalysisResult;
+  dailyData?: InspectionEntry;
+  onSaveAnalysis?: (result: AIAnalysisResult) => void;
   onBack: () => void;
   onViewPop?: (pop: PopItem) => void;
 }
 
-export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({ record, attachedPop, onBack, onViewPop }) => {
+export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({ 
+  record, 
+  attachedPop, 
+  existingAnalysis,
+  dailyData,
+  onSaveAnalysis,
+  onBack, 
+  onViewPop 
+}) => {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const createdDate = new Date(record.createdAt);
+
+  const handleAnalyze = async () => {
+      if (!onSaveAnalysis) return;
+      setIsAnalyzing(true);
+      try {
+          const result = await generateSellfloorAnalysis(record, attachedPop, dailyData);
+          onSaveAnalysis(result);
+      } catch (e) {
+          console.error("AI Analysis failed", e);
+          alert("分析の実行に失敗しました。");
+      } finally {
+          setIsAnalyzing(false);
+      }
+  };
 
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
@@ -59,12 +86,93 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({ re
                 </span>
             </div>
 
-            {/* Comment Section */}
+           {/* Comment Section */}
             <div style={{ marginBottom: '32px' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>コメント・所感</h3>
                 <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                     {record.comment || <span style={{ color: 'var(--text-muted)' }}>コメントは入力されていません。</span>}
                 </div>
+            </div>
+
+            {/* AI Analysis Section */}
+            <div style={{ marginBottom: '32px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <Sparkles size={20} color="var(--accent)" />
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>AI分析</h3>
+                </div>
+
+                {existingAnalysis ? (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                        <div style={{ backgroundColor: '#f1f5f9', padding: '12px 16px', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>分析完了 ({new Date(existingAnalysis.analyzedAt).toLocaleString('ja-JP')})</span>
+                            <span>{existingAnalysis.version}</span>
+                        </div>
+                        <div style={{ padding: '20px' }}>
+                            <div style={{ marginBottom: '20px' }}>
+                                <div style={{ fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>総評</div>
+                                <div style={{ fontSize: '0.95rem', lineHeight: 1.6, color: 'var(--text-main)' }}>{existingAnalysis.summary}</div>
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                                <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#166534', fontWeight: 700, marginBottom: '8px' }}>
+                                        <CheckCircle2 size={16} /> 良い点
+                                    </div>
+                                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.9rem', color: '#14532d', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {existingAnalysis.positives.map((p, i) => <li key={i}>{p}</li>)}
+                                    </ul>
+                                </div>
+                                <div style={{ backgroundColor: '#fef2f2', padding: '16px', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#991b1b', fontWeight: 700, marginBottom: '8px' }}>
+                                        <AlertCircle size={16} /> 気になる点
+                                    </div>
+                                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.9rem', color: '#7f1d1d', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {existingAnalysis.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div style={{ backgroundColor: '#f8fafc', borderLeft: '4px solid var(--accent)', padding: '16px', borderRadius: '0 8px 8px 0' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)', fontWeight: 700, marginBottom: '8px' }}>
+                                    <Sparkles size={16} color="var(--accent)" /> 改善提案
+                                </div>
+                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {existingAnalysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '12px', padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', textAlign: 'center' }}>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '400px' }}>
+                            この売場写真やコメント、紐付けられたPOP・実績データを元にAIが分析を行い、改善のヒントを提案します。
+                        </div>
+                        <button
+                            onClick={handleAnalyze}
+                            disabled={isAnalyzing}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '8px', 
+                                backgroundColor: isAnalyzing ? '#94a3b8' : 'var(--accent)', 
+                                color: 'white', border: 'none', padding: '12px 24px', 
+                                borderRadius: '99px', fontSize: '1rem', fontWeight: 600, 
+                                cursor: isAnalyzing ? 'not-allowed' : 'pointer',
+                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            {isAnalyzing ? (
+                                <>
+                                    <div className="spinner-sparkle" style={{ width: '18px', height: '18px' }}></div>
+                                    分析中...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles size={20} /> 分析を実行する
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Attached POP Section */}

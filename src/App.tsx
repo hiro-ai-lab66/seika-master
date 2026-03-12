@@ -15,6 +15,8 @@ import { SellfloorRecordList } from './pages/SellfloorRecordList';
 import { SellfloorRecordDetail } from './pages/SellfloorRecordDetail';
 import { PopibraryList } from './pages/PopibraryList';
 import { PopDetail } from './pages/PopDetail';
+import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
+import type { AIAnalysisResult } from './types';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 
@@ -25,7 +27,7 @@ function App() {
   const [toastMsg, setToastMsg] = useState('');
   
   // Sub-routing state for sellfloor and popibrary
-  const [sellfloorView, setSellfloorView] = useState<'list' | 'form' | 'detail'>('list');
+  const [sellfloorView, setSellfloorView] = useState<'list' | 'form' | 'detail' | 'ai-history'>('list');
   const [selectedSellfloorRecord, setSelectedSellfloorRecord] = useState<SellfloorRecord | null>(null);
   
   const [popibraryView, setPopibraryView] = useState<'list' | 'detail'>('list');
@@ -125,6 +127,14 @@ function App() {
     showToast('売場記録を保存しました');
   };
 
+  const saveAiAnalysis = (result: AIAnalysisResult) => {
+    setState(prev => ({
+      ...prev,
+      aiAnalysisHistory: [...(prev.aiAnalysisHistory || []), result]
+    }));
+    showToast('AI分析結果を保存しました');
+  };
+
   const toggleTodo = (id: string) => {
     setState(prev => ({
       ...prev,
@@ -175,9 +185,20 @@ function App() {
         return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} />;
       case 'dailySales':
         return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} onOpenPopGem={openPopGem} />;
-      case 'sellfloor':
+       case 'sellfloor':
         if (sellfloorView === 'form') {
            return <SellfloorRecordForm onSave={saveSellfloorRecord} currentDate={currentDate} onBack={() => setSellfloorView('list')} />;
+        }
+        if (sellfloorView === 'ai-history') {
+           return <AIAnalysisHistoryList 
+                    history={state.aiAnalysisHistory || []} 
+                    records={state.sellfloorRecords || []} 
+                    onSelectAnalysis={(record) => {
+                       setSelectedSellfloorRecord(record);
+                       setSellfloorView('detail');
+                    }}
+                    onBack={() => setSellfloorView('list')}
+                  />;
         }
         if (sellfloorView === 'detail' && selectedSellfloorRecord) {
            const attachedPop = state.popData?.find(p => p.id === selectedSellfloorRecord.popId) || 
@@ -188,9 +209,15 @@ function App() {
                                 { id: "pop-003", title: "厳選いちご ギフト用", categoryLarge: "果物", categorySmall: "いちご", season: "冬", usage: "平台一番地", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Strawberry+Gift+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "ギフト用途を強調し、高単価商品の売行きが改善。", createdAt: new Date().toISOString() }
                                ].find(p => p.id === selectedSellfloorRecord.popId);
                                
+           const existingAnalysis = state.aiAnalysisHistory?.find(a => a.recordId === selectedSellfloorRecord.id);
+           const dailyData = state.inspections.find(i => i.date === selectedSellfloorRecord.date);
+
            return <SellfloorRecordDetail 
                     record={selectedSellfloorRecord} 
                     attachedPop={attachedPop} 
+                    existingAnalysis={existingAnalysis}
+                    dailyData={dailyData}
+                    onSaveAnalysis={saveAiAnalysis}
                     onBack={() => setSellfloorView('list')} 
                     onViewPop={(pop) => {
                         setSelectedPop(pop);
@@ -203,6 +230,8 @@ function App() {
                  records={state.sellfloorRecords || []} 
                  onNewRecord={() => setSellfloorView('form')} 
                  onSelectRecord={(r) => { setSelectedSellfloorRecord(r); setSellfloorView('detail'); }} 
+                 onViewAiHistory={() => setSellfloorView('ai-history')}
+                 aiHistoryCount={state.aiAnalysisHistory?.length || 0}
                />;
       case 'popibrary':
         if (popibraryView === 'detail' && selectedPop) {
