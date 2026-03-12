@@ -14,9 +14,9 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ record
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredRecords = records.filter(record => 
-    record.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    record.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    record.comment.toLowerCase().includes(searchQuery.toLowerCase())
+    (record.product || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (record.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (record.comment || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (

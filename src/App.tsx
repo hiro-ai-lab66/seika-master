@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
+import type { ReactNode } from 'react';
 import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
@@ -19,6 +20,31 @@ import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import type { AIAnalysisResult } from './types';
 
 const STORAGE_KEY = 'seika_master_data_v2';
+
+class ErrorBoundary extends Component<{children: ReactNode, fallback?: ReactNode}, {hasError: boolean, error: any}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, info: any) {
+    console.error("ErrorBoundary caught an error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div style={{ padding: '20px', color: 'red', backgroundColor: '#fef2f2', margin: '20px', borderRadius: '12px' }}>
+          <h2>予期せぬエラーが発生しました</h2>
+          <p>{this.state.error?.toString()}</p>
+          <button onClick={() => window.location.reload()} style={{ marginTop: '12px', padding: '8px 16px', background: 'var(--primary)', color: 'white', borderRadius: '8px', border: 'none' }}>画面をリロード</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary'>('dashboard');
@@ -97,7 +123,12 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error("Failed to save state to localStorage", e);
+      // QuotaExceededError is common if saving large base64 strings
+    }
   }, [state]);
 
   const saveInspection = (entry: InspectionEntry) => {
@@ -279,7 +310,9 @@ function App() {
       </header>
 
       <main className="app-content">
-        {renderContent()}
+        <ErrorBoundary>
+          {renderContent()}
+        </ErrorBoundary>
       </main>
 
       {toastMsg && (
