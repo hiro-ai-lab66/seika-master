@@ -102,7 +102,7 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                 </div>
 
                 {existingAnalysis ? (
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                    <div key="analysis-result" style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
                         <div style={{ backgroundColor: '#f1f5f9', padding: '12px 16px', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
                             <span>分析完了 ({new Date(existingAnalysis.analyzedAt).toLocaleString('ja-JP')})</span>
                             <span>{existingAnalysis.version}</span>
@@ -143,7 +143,7 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                         </div>
                     </div>
                 ) : (
-                    <div style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '12px', padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', textAlign: 'center' }}>
+                    <div key="analysis-prompt" style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '12px', padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', textAlign: 'center' }}>
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '400px' }}>
                             この売場写真やコメント、紐付けられたPOP・実績データを元にAIが分析を行い、改善のヒントを提案します。
                         </div>
