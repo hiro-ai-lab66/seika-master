@@ -1,7 +1,7 @@
 import type { MarketInfo, MarketAttachment } from '../types';
 
 // IMPORTANT: Replace this with your actual Google Client ID from Google Cloud Console
-const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const CLIENT_ID = '72089301039-j85kplp28j0onjhjtp4ipkvhog43288a.apps.googleusercontent.com';
 const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
 
 let tokenClient: any = null;
@@ -52,7 +52,8 @@ export const loginToGmail = () => {
     if (!tokenClient) {
         throw new Error('GIS client not initialized');
     }
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+    // 'select_account' forces the account picker, 'consent' ensures they see the scope confirmation
+    tokenClient.requestAccessToken({ prompt: 'select_account consent' });
 };
 
 /**
