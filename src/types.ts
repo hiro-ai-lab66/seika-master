@@ -152,6 +152,30 @@ export interface PopItem {
     createdAt: string;
 }
 
+export interface MarketAttachment {
+    filename: string;
+    mimeType: string;
+    data?: string; // Base64 data if needed
+    fileId?: string;
+}
+
+export interface MarketInfo {
+    id: string; // Gmail message ID
+    subject: string;
+    sender: string;
+    receivedAt: string;
+    summary: string;
+    analysis: {
+        points: string[];
+        highPrices: string[];
+        lowPrices: string[];
+        salesHints: string[];
+        notices: string[];
+    };
+    attachments: MarketAttachment[];
+    externalLink?: string;
+}
+
 export interface AIAnalysisResult {
     analysisId: string;
     recordId: string; // SellfloorRecord.id
@@ -188,6 +212,7 @@ export interface AppState {
     sellfloorRecords?: SellfloorRecord[];
     popData?: PopItem[];
     aiAnalysisHistory?: AIAnalysisResult[];
+    marketHistory?: MarketInfo[];
     chirashiImage?: string;
     chirashiDate?: string;
 }

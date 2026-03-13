@@ -1,6 +1,6 @@
 import { useState, useEffect, Component } from 'react';
 import type { ReactNode } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library } from 'lucide-react';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
 import './App.css';
@@ -17,8 +17,10 @@ import { SellfloorRecordDetail } from './pages/SellfloorRecordDetail';
 import { PopibraryList } from './pages/PopibraryList';
 import { PopDetail } from './pages/PopDetail';
 import { PopLibraryForm } from './pages/PopLibraryForm';
+import { MarketInfoList } from './pages/MarketInfoList';
+import { MarketInfoDetail } from './pages/MarketInfoDetail';
 import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
-import type { AIAnalysisResult } from './types';
+import type { AIAnalysisResult, MarketInfo } from './types';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 
@@ -48,7 +50,7 @@ class ErrorBoundary extends Component<{children: ReactNode, fallback?: ReactNode
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market'>('dashboard');
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -59,6 +61,9 @@ function App() {
   
   const [popibraryView, setPopibraryView] = useState<'list' | 'detail' | 'form'>('list');
   const [selectedPop, setSelectedPop] = useState<import('./types').PopItem | null>(null);
+  
+  const [marketView, setMarketView] = useState<'list' | 'detail'>('list');
+  const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(null);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -185,6 +190,17 @@ function App() {
     showToast('売場記録を削除しました');
   };
 
+  const updateMarketInfo = (updated: MarketInfo) => {
+    setState(prev => ({
+      ...prev,
+      marketHistory: (prev.marketHistory || []).map(m => m.id === updated.id ? updated : m)
+    }));
+  };
+
+  const saveMarketHistory = (history: MarketInfo[]) => {
+    setState(prev => ({ ...prev, marketHistory: history }));
+  };
+
   const toggleTodo = (id: string) => {
     setState(prev => ({
       ...prev,
@@ -296,6 +312,22 @@ function App() {
                  onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
                  onAddPop={() => setPopibraryView('form')}
                />;
+      case 'market':
+        if (marketView === 'detail' && selectedMarket) {
+            return <MarketInfoDetail 
+                        market={selectedMarket} 
+                        onBack={() => setMarketView('list')} 
+                        onUpdateMarket={(updated) => {
+                            updateMarketInfo(updated);
+                            setSelectedMarket(updated);
+                        }}
+                    />;
+        }
+        return <MarketInfoList 
+                    savedMarketHistory={state.marketHistory || []}
+                    onSelectMarket={(m) => { setSelectedMarket(m); setMarketView('detail'); }}
+                    onSyncComplete={saveMarketHistory}
+                />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
     }
@@ -372,6 +404,7 @@ function App() {
           { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
           { id: 'sellfloor', icon: Camera, label: '売場記録' },
           { id: 'popibrary', icon: Library, label: 'POPibrary' },
+          { id: 'market', icon: TrendingUp, label: '相場情報' },
         ].map(tab => (
           <button
             key={tab.id}
@@ -380,6 +413,7 @@ function App() {
                 setActiveTab(tab.id as any);
                 if (tab.id === 'sellfloor') setSellfloorView('list');
                 if (tab.id === 'popibrary') setPopibraryView('list');
+                if (tab.id === 'market') setMarketView('list');
             }}
           >
             {/* @ts-ignore */}
