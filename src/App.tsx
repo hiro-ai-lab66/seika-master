@@ -16,6 +16,7 @@ import { SellfloorRecordList } from './pages/SellfloorRecordList';
 import { SellfloorRecordDetail } from './pages/SellfloorRecordDetail';
 import { PopibraryList } from './pages/PopibraryList';
 import { PopDetail } from './pages/PopDetail';
+import { PopLibraryForm } from './pages/PopLibraryForm';
 import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import type { AIAnalysisResult } from './types';
 
@@ -56,7 +57,7 @@ function App() {
   const [sellfloorView, setSellfloorView] = useState<'list' | 'form' | 'detail' | 'ai-history'>('list');
   const [selectedSellfloorRecord, setSelectedSellfloorRecord] = useState<SellfloorRecord | null>(null);
   
-  const [popibraryView, setPopibraryView] = useState<'list' | 'detail'>('list');
+  const [popibraryView, setPopibraryView] = useState<'list' | 'detail' | 'form'>('list');
   const [selectedPop, setSelectedPop] = useState<import('./types').PopItem | null>(null);
 
   const showToast = (msg: string) => {
@@ -163,6 +164,14 @@ function App() {
       aiAnalysisHistory: [...(prev.aiAnalysisHistory || []), result]
     }));
     showToast('AI分析結果を保存しました');
+  };
+
+  const savePop = (pop: import('./types').PopItem) => {
+    setState(prev => ({
+      ...prev,
+      popData: [...(prev.popData || []), pop]
+    }));
+    showToast('POPを保存しました');
   };
 
   const deleteSellfloorRecord = (id: string) => {
@@ -276,12 +285,16 @@ function App() {
                  aiHistoryCount={state.aiAnalysisHistory?.length || 0}
                />;
       case 'popibrary':
+        if (popibraryView === 'form') {
+           return <PopLibraryForm onSave={savePop} onBack={() => setPopibraryView('list')} />;
+        }
         if (popibraryView === 'detail' && selectedPop) {
            return <PopDetail pop={selectedPop} onBack={() => setPopibraryView('list')} />;
         }
         return <PopibraryList 
                  savedPops={state.popData || []} 
                  onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
+                 onAddPop={() => setPopibraryView('form')}
                />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;

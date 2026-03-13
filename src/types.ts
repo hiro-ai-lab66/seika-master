@@ -147,6 +147,8 @@ export interface PopItem {
     thumbUrl: string;
     pdfUrl: string;
     improvementComment: string;
+    recommendedLocation?: string;
+    tags?: string[];
     createdAt: string;
 }
 

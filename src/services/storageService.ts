@@ -47,3 +47,13 @@ export const uploadSellfloorPhoto = async (file: File): Promise<string> => {
     reader.readAsDataURL(file);
   });
 };
+export const uploadGenericFile = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      resolve(e.target?.result as string);
+    };
+    reader.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
+    reader.readAsDataURL(file);
+  });
+};

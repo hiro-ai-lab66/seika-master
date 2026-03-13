@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Tag, MessageCircle } from 'lucide-react';
+import { Search, Tag, MessageCircle, Plus } from 'lucide-react';
 import type { PopItem } from '../types';
 
 // Dummy POP data for initial display and testing
@@ -47,10 +47,11 @@ const DUMMY_POPS: PopItem[] = [
 
 interface PopibraryListProps {
   onSelectPop: (pop: PopItem) => void;
+  onAddPop: () => void;
   savedPops?: PopItem[];
 }
 
-export const PopibraryList: React.FC<PopibraryListProps> = ({ onSelectPop, savedPops = [] }) => {
+export const PopibraryList: React.FC<PopibraryListProps> = ({ onSelectPop, onAddPop, savedPops = [] }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'すべて' | '野菜' | '果物'>('すべて');
 
@@ -70,9 +71,22 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({ onSelectPop, saved
 
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
-      <div className="page-header" style={{ marginBottom: '20px' }}>
-        <h2>POPibrary</h2>
-        <span className="date-badge-outline">{filteredPops.length}件</span>
+      <div className="page-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h2 style={{ margin: 0 }}>POPibrary</h2>
+          <span className="date-badge-outline">{filteredPops.length}件</span>
+        </div>
+        <button 
+          onClick={onAddPop}
+          style={{ 
+            display: 'flex', alignItems: 'center', gap: '6px', 
+            backgroundColor: 'var(--primary)', color: 'white', border: 'none', 
+            padding: '8px 16px', borderRadius: '8px', fontSize: '0.9rem', 
+            fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' 
+          }}
+        >
+          <Plus size={18} /> 追加
+        </button>
       </div>
       
       {/* Search and Filter */}

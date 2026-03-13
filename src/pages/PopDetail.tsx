@@ -39,6 +39,9 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
                 <span className="tag-badge"><Tag size={14}/> {pop.categorySmall}</span>
                 <span className="tag-badge"><Tag size={14}/> サイズ: {pop.size}</span>
                 <span className="tag-badge"><Calendar size={14}/> {pop.season}</span>
+                {pop.tags && pop.tags.map(tag => (
+                    <span key={tag} className="tag-badge" style={{ backgroundColor: '#e0e7ff', color: 'var(--primary)' }}># {tag}</span>
+                ))}
             </div>
 
             {/* Insight / Improvement Section */}
