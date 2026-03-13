@@ -165,6 +165,17 @@ function App() {
     showToast('AI分析結果を保存しました');
   };
 
+  const deleteSellfloorRecord = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      sellfloorRecords: (prev.sellfloorRecords || []).filter(r => r.id !== id),
+      aiAnalysisHistory: (prev.aiAnalysisHistory || []).filter(a => a.recordId !== id)
+    }));
+    setSellfloorView('list');
+    setSelectedSellfloorRecord(null);
+    showToast('売場記録を削除しました');
+  };
+
   const toggleTodo = (id: string) => {
     setState(prev => ({
       ...prev,
@@ -248,6 +259,7 @@ function App() {
                     existingAnalysis={existingAnalysis}
                     dailyData={dailyData}
                     onSaveAnalysis={saveAiAnalysis}
+                    onDeleteRecord={deleteSellfloorRecord}
                     onBack={() => setSellfloorView('list')} 
                     onViewPop={(pop) => {
                         setSelectedPop(pop);

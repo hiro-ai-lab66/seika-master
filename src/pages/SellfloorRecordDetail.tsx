@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2, Trash2, MoreVertical, Edit } from 'lucide-react';
 import type { SellfloorRecord, PopItem, AIAnalysisResult, InspectionEntry } from '../types';
 import { generateSellfloorAnalysis } from '../services/aiAnalysisService';
 
@@ -9,6 +9,7 @@ interface SellfloorRecordDetailProps {
   existingAnalysis?: AIAnalysisResult;
   dailyData?: InspectionEntry;
   onSaveAnalysis?: (result: AIAnalysisResult) => void;
+  onDeleteRecord?: (id: string) => void;
   onBack: () => void;
   onViewPop?: (pop: PopItem) => void;
 }
@@ -19,10 +20,12 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
   existingAnalysis,
   dailyData,
   onSaveAnalysis,
+  onDeleteRecord,
   onBack, 
   onViewPop 
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const createdDate = new Date(record.createdAt);
 
   const handleAnalyze = async () => {
@@ -39,15 +42,74 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
       }
   };
 
+  const handleDelete = () => {
+    if (window.confirm('この売場記録を削除しますか？')) {
+        if (onDeleteRecord) {
+            onDeleteRecord(record.id);
+        }
+    }
+  };
+
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
       
-      <button 
-        onClick={onBack}
-        style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 600, fontSize: '0.9rem', marginBottom: '16px', cursor: 'pointer', padding: '8px 0' }}
-      >
-        <ArrowLeft size={18} /> もどる
-      </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', position: 'relative' }}>
+          <button 
+            onClick={onBack}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', padding: '8px 0' }}
+          >
+            <ArrowLeft size={18} /> もどる
+          </button>
+
+          <div style={{ position: 'relative' }}>
+            <button 
+                onClick={() => setShowMenu(!showMenu)}
+                style={{ 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                    width: '36px', height: '36px', background: 'none', border: '1px solid #e2e8f0', 
+                    borderRadius: '8px', cursor: 'pointer', color: 'var(--text-main)' 
+                }}
+            >
+                <MoreVertical size={20} />
+            </button>
+
+            {showMenu && (
+                <>
+                    <div 
+                        onClick={() => setShowMenu(false)} 
+                        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+                    />
+                    <div style={{ 
+                        position: 'absolute', top: '42px', right: 0, width: '140px', 
+                        backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', 
+                        boxShadow: 'var(--shadow-lg)', zIndex: 100, overflow: 'hidden' 
+                    }}>
+                        <button 
+                            onClick={() => { setShowMenu(false); alert("編集機能は今後のアップデートで追加予定です。"); }}
+                            style={{ 
+                                display: 'flex', alignItems: 'center', gap: '8px', width: '100%', 
+                                padding: '12px 16px', border: 'none', background: 'none', 
+                                textAlign: 'left', fontSize: '0.9rem', cursor: 'pointer', color: 'var(--text-main)' 
+                            }}
+                        >
+                            <Edit size={16} /> 編集
+                        </button>
+                        <button 
+                            onClick={() => { setShowMenu(false); handleDelete(); }}
+                            style={{ 
+                                display: 'flex', alignItems: 'center', gap: '8px', width: '100%', 
+                                padding: '12px 16px', border: 'none', background: 'none', 
+                                textAlign: 'left', fontSize: '0.9rem', cursor: 'pointer', color: '#dc2626',
+                                borderTop: '1px solid #f1f5f9'
+                            }}
+                        >
+                            <Trash2 size={16} /> 削除
+                        </button>
+                    </div>
+                </>
+            )}
+          </div>
+      </div>
 
       <div style={{ background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
         
