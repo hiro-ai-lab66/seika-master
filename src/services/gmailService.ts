@@ -1,7 +1,6 @@
 import type { MarketInfo, MarketAttachment } from '../types';
 
-// IMPORTANT: Replace this with your actual Google Client ID from Google Cloud Console
-const CLIENT_ID = '72089301039-j85kplp28j0onjhjtp4ipkvhog43288a.apps.googleusercontent.com';
+const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
 
 let tokenClient: any = null;
@@ -12,7 +11,7 @@ let accessToken: string | null = null;
  */
 export const loadGisScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {
-        if (window.hasOwnProperty('google')) {
+        if ((window as any).google?.accounts?.oauth2) {
             resolve();
             return;
         }
@@ -20,7 +19,13 @@ export const loadGisScript = (): Promise<void> => {
         script.src = 'https://accounts.google.com/gsi/client';
         script.async = true;
         script.defer = true;
-        script.onload = () => resolve();
+        script.onload = () => {
+            if ((window as any).google?.accounts?.oauth2) {
+                resolve();
+                return;
+            }
+            reject(new Error('Google Identity Services did not initialize'));
+        };
         script.onerror = (err) => reject(err);
         document.head.appendChild(script);
     });
@@ -30,8 +35,16 @@ export const loadGisScript = (): Promise<void> => {
  * Initialize the OAuth2 token client
  */
 export const initTokenClient = (onTokenResponse: (resp: any) => void) => {
-    // @ts-ignore
-    tokenClient = google.accounts.oauth2.initTokenClient({
+    if (!CLIENT_ID) {
+        throw new Error('Missing VITE_GOOGLE_CLIENT_ID');
+    }
+
+    const googleAccounts = (window as any).google?.accounts?.oauth2;
+    if (!googleAccounts?.initTokenClient) {
+        throw new Error('Google Identity Services is not loaded');
+    }
+
+    tokenClient = googleAccounts.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
         callback: (resp: any) => {
