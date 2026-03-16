@@ -8,6 +8,56 @@ let accessToken: string | null = null;
 
 export const hasGmailAccessToken = (): boolean => Boolean(accessToken);
 
+const decodeBase64Url = (value: string): string => {
+    try {
+        const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+        const binary = atob(normalized);
+        const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+        return new TextDecoder('utf-8').decode(bytes);
+    } catch (error) {
+        console.error('Failed to decode Gmail body', error);
+        return '';
+    }
+};
+
+const stripHtml = (value: string): string => value
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const extractBodyText = (payload: any): string => {
+    const texts: string[] = [];
+
+    const visitPart = (part: any) => {
+        if (!part) return;
+
+        if (part.mimeType === 'text/plain' && part.body?.data) {
+            texts.push(decodeBase64Url(part.body.data));
+        } else if (part.mimeType === 'text/html' && part.body?.data) {
+            texts.push(stripHtml(decodeBase64Url(part.body.data)));
+        }
+
+        if (Array.isArray(part.parts)) {
+            part.parts.forEach(visitPart);
+        }
+    };
+
+    visitPart(payload);
+
+    if (texts.length === 0 && payload?.body?.data) {
+        texts.push(decodeBase64Url(payload.body.data));
+    }
+
+    return texts
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+};
+
 /**
  * Load the Google Identity Services script
  */
@@ -111,6 +161,8 @@ export const fetchMarketEmails = async (labelName: string = '相場情報'): Pro
             const subject = headers.find((h: any) => h.name === 'Subject')?.value || 'No Subject';
             const from = headers.find((h: any) => h.name === 'From')?.value || 'Unknown';
             const date = headers.find((h: any) => h.name === 'Date')?.value || new Date().toISOString();
+            const snippet = detail.snippet || '';
+            const bodyText = extractBodyText(detail.payload);
 
             // Extract attachments meta
             const attachments: MarketAttachment[] = [];
@@ -135,6 +187,8 @@ export const fetchMarketEmails = async (labelName: string = '相場情報'): Pro
                 subject,
                 sender: from,
                 receivedAt: new Date(date).toISOString(),
+                snippet,
+                bodyText,
                 summary: '未分析',
                 analysis: {
                     points: [],

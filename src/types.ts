@@ -164,6 +164,8 @@ export interface MarketInfo {
     subject: string;
     sender: string;
     receivedAt: string;
+    snippet?: string;
+    bodyText?: string;
     summary: string;
     analysis: {
         points: string[];

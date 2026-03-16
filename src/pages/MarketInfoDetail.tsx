@@ -17,7 +17,16 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     try {
-        let combinedText = `件名: ${market.subject}\n`;
+        let combinedText = `件名: ${market.subject}\n送信者: ${market.sender}\n`;
+        if (market.snippet) {
+            combinedText += `要約: ${market.snippet}\n`;
+        }
+        if (market.bodyText) {
+            combinedText += `本文:\n${market.bodyText}\n`;
+        }
+        if (market.attachments.length > 0) {
+            combinedText += `添付ファイル: ${market.attachments.map(att => att.filename).join(', ')}\n`;
+        }
         
         // Fetch and parse each attachment
         for (const att of market.attachments) {
