@@ -64,6 +64,7 @@ function App() {
   
   const [marketView, setMarketView] = useState<'list' | 'detail'>('list');
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(null);
+  const [isMarketAuthenticated, setIsMarketAuthenticated] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -316,7 +317,10 @@ function App() {
         if (marketView === 'detail' && selectedMarket) {
             return <MarketInfoDetail 
                         market={selectedMarket} 
-                        onBack={() => setMarketView('list')} 
+                        onBack={() => {
+                            setSelectedMarket(null);
+                            setMarketView('list');
+                        }} 
                         onUpdateMarket={(updated) => {
                             updateMarketInfo(updated);
                             setSelectedMarket(updated);
@@ -327,6 +331,8 @@ function App() {
                     savedMarketHistory={state.marketHistory || []}
                     onSelectMarket={(m) => { setSelectedMarket(m); setMarketView('detail'); }}
                     onSyncComplete={saveMarketHistory}
+                    isAuthenticated={isMarketAuthenticated}
+                    onAuthChange={setIsMarketAuthenticated}
                 />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;

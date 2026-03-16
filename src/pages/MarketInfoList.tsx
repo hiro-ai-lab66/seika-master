@@ -1,28 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, RefreshCw, ChevronRight, FileText, ShieldAlert, CheckCircle } from 'lucide-react';
-import { loadGisScript, initTokenClient, loginToGmail, fetchMarketEmails } from '../services/gmailService';
+import { loadGisScript, initTokenClient, loginToGmail, fetchMarketEmails, hasGmailAccessToken } from '../services/gmailService';
 import type { MarketInfo } from '../types';
 
 interface MarketInfoListProps {
   onSelectMarket: (market: MarketInfo) => void;
   savedMarketHistory?: MarketInfo[];
   onSyncComplete?: (newMarkets: MarketInfo[]) => void;
+  isAuthenticated: boolean;
+  onAuthChange: (isAuthenticated: boolean) => void;
 }
 
-export const MarketInfoList: React.FC<MarketInfoListProps> = ({ onSelectMarket, savedMarketHistory = [], onSyncComplete }) => {
+export const MarketInfoList: React.FC<MarketInfoListProps> = ({
+  onSelectMarket,
+  savedMarketHistory = [],
+  onSyncComplete,
+  isAuthenticated,
+  onAuthChange
+}) => {
   const [isGisLoaded, setIsGisLoaded] = useState(false);
-  const [isAuth, setIsAuth] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markets, setMarkets] = useState<MarketInfo[]>(savedMarketHistory);
 
   useEffect(() => {
+    setMarkets(savedMarketHistory);
+  }, [savedMarketHistory]);
+
+  useEffect(() => {
     loadGisScript()
       .then(() => {
           setIsGisLoaded(true);
+          if (hasGmailAccessToken()) {
+              onAuthChange(true);
+          }
           initTokenClient((resp) => {
               if (resp.access_token) {
-                  setIsAuth(true);
+                  onAuthChange(true);
                   handleFetch();
               }
           });
@@ -31,7 +45,7 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({ onSelectMarket, 
           console.error('Failed to load GIS script', err);
           setError('Google APIの読み込みに失敗しました');
       });
-  }, []);
+  }, [onAuthChange]);
 
   const handleLogin = () => {
     try {
@@ -47,15 +61,13 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({ onSelectMarket, 
     try {
         const fetched = await fetchMarketEmails('相場情報');
         // Merge with existing history (by ID)
-        const existingIds = new Set(markets.map(m => m.id));
-        const newOnes = fetched.filter(f => !existingIds.has(f.id));
-        
-        const updated = [...newOnes, ...markets].sort((a, b) => 
-            new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
+        const fetchedIds = new Set(fetched.map(m => m.id));
+        const updated = [...fetched, ...markets.filter(m => !fetchedIds.has(m.id))].sort(
+            (a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
         );
-        
+
         setMarkets(updated);
-        if (onSyncComplete && newOnes.length > 0) {
+        if (onSyncComplete) {
             onSyncComplete(updated);
         }
     } catch (e: any) {
@@ -76,7 +88,7 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({ onSelectMarket, 
             </p>
         </div>
         
-        {isAuth && (
+        {isAuthenticated && (
             <button 
                 onClick={handleFetch}
                 disabled={isFetching}
@@ -93,7 +105,7 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({ onSelectMarket, 
         )}
       </div>
 
-      {!isAuth ? (
+      {!isAuthenticated ? (
           <div style={{ 
               background: 'white', borderRadius: '16px', padding: '40px 24px', textAlign: 'center', 
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px',

@@ -6,6 +6,8 @@ const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
 let tokenClient: any = null;
 let accessToken: string | null = null;
 
+export const hasGmailAccessToken = (): boolean => Boolean(accessToken);
+
 /**
  * Load the Google Identity Services script
  */
