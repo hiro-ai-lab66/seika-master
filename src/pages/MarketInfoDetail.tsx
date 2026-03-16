@@ -13,6 +13,47 @@ interface MarketInfoDetailProps {
 export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBack, onUpdateMarket }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  const priorityCards = [
+    {
+      key: 'high',
+      label: '高値注意',
+      accentClass: 'danger',
+      icon: TrendingUp,
+      body: market.analysis.highPrices[0] || '高値警戒の品目はまだ抽出されていません。'
+    },
+    {
+      key: 'low',
+      label: '安値活用',
+      accentClass: 'success',
+      icon: TrendingDown,
+      body: market.analysis.lowPrices[0] || '活用しやすい安値品目はまだ抽出されていません。'
+    },
+    {
+      key: 'notice',
+      label: '入荷注意',
+      accentClass: 'info',
+      icon: AlertTriangle,
+      body: market.analysis.notices[0] || market.analysis.points[0] || '入荷に関する注意点はまだありません。'
+    },
+    {
+      key: 'hint',
+      label: '売場提案',
+      accentClass: 'warning',
+      icon: Lightbulb,
+      body: market.analysis.salesHints[0] || '売場提案はまだ生成されていません。'
+    }
+  ];
+
+  const briefingLines = [
+    priorityCards[0].body,
+    priorityCards[1].body,
+    priorityCards[3].body
+  ].filter(Boolean);
+
+  const morningBrief = briefingLines.length > 0
+    ? `朝礼共有: ${briefingLines.slice(0, 3).join(' / ')}`
+    : '';
+
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     try {
@@ -111,6 +152,34 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
                   </div>
               ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                      <div className="priority-card-grid">
+                          {priorityCards.map(card => {
+                              const Icon = card.icon;
+                              return (
+                                  <div key={card.key} className={`priority-card ${card.accentClass}`}>
+                                      <div className="priority-card-head">
+                                          <span className="priority-card-icon">
+                                              <Icon size={16} />
+                                          </span>
+                                          <span className="priority-card-label">{card.label}</span>
+                                      </div>
+                                      <p className="priority-card-body">{card.body}</p>
+                                  </div>
+                              );
+                          })}
+                      </div>
+
+                      {morningBrief && (
+                          <div className="briefing-card">
+                              <h3 style={{ margin: '0 0 8px 0', fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <Sparkles size={16} color="var(--accent)" /> 朝礼用ひと言まとめ
+                              </h3>
+                              <p style={{ margin: 0, color: '#334155', lineHeight: 1.6, fontSize: '0.92rem', fontWeight: 600 }}>
+                                  {morningBrief}
+                              </p>
+                          </div>
+                      )}
+
                       {/* Summary */}
                       <div style={{ backgroundColor: '#eff6ff', borderLeft: '4px solid var(--primary)', padding: '16px', borderRadius: '0 8px 8px 0' }}>
                           <h3 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -170,6 +239,50 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
       </div>
 
       <style>{`
+        .priority-card-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .priority-card {
+            border-radius: 14px;
+            border: 1px solid #e2e8f0;
+            padding: 14px;
+            box-shadow: var(--shadow-sm);
+        }
+        .priority-card-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .priority-card-icon {
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.7);
+        }
+        .priority-card-label {
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+        }
+        .priority-card-body {
+            margin: 0;
+            font-size: 0.92rem;
+            font-weight: 700;
+            line-height: 1.5;
+            color: var(--text-main);
+        }
+        .briefing-card {
+            background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+            border: 1px solid #fed7aa;
+            border-radius: 12px;
+            padding: 16px;
+        }
         .analysis-card {
             background: #fff;
             border: 1px solid #e2e8f0;
@@ -197,6 +310,16 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
         .analysis-card.success { background-color: #f0fdf4; border-color: #dcfce7; }
         .analysis-card.warning { background-color: #fffbeb; border-color: #fef3c7; }
         .analysis-card.info { background-color: #f0f9ff; border-color: #e0f2fe; }
+        .priority-card.danger { background-color: #fff5f5; border-color: #fecaca; }
+        .priority-card.success { background-color: #f0fdf4; border-color: #bbf7d0; }
+        .priority-card.warning { background-color: #fffbeb; border-color: #fde68a; }
+        .priority-card.info { background-color: #eff6ff; border-color: #bfdbfe; }
+
+        @media (max-width: 640px) {
+            .priority-card-grid {
+                grid-template-columns: 1fr;
+            }
+        }
         
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
