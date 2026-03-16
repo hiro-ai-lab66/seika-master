@@ -7,6 +7,8 @@ interface MarketInfoAnalysisProps {
   onBack: () => void;
 }
 
+const extractLead = (text: string) => text.split('：')[0].trim();
+
 const priorityToneStyles = {
   danger: { backgroundColor: '#fff5f5', borderColor: '#fecaca' },
   success: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
@@ -139,14 +141,15 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
     }
   ];
 
-  const briefingLines = [
-    priorityCards[0].body,
-    priorityCards[1].body,
-    priorityCards[3].body
+  const morningBriefSegments = [
+    market.analysis.highPrices[0] ? `${extractLead(market.analysis.highPrices[0])}は高値注意` : '',
+    market.analysis.lowPrices[0] ? `${extractLead(market.analysis.lowPrices[0])}は安定活用` : '',
+    market.analysis.notices[0] || '',
+    market.analysis.salesHints[0] || ''
   ].filter(Boolean);
 
-  const morningBrief = briefingLines.length > 0
-    ? `朝礼共有: ${briefingLines.slice(0, 3).join(' / ')}`
+  const morningBrief = morningBriefSegments.length > 0
+    ? `${morningBriefSegments.slice(0, 3).join('、')}。`
     : '';
 
   return (
@@ -175,22 +178,27 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
         </div>
 
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {morningBrief && (
+            <div style={{ background: 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)', border: '1px solid #fed7aa', borderRadius: '14px', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sparkles size={16} color="var(--accent)" /> 朝礼用ひとこと
+                </h3>
+                <span style={{ fontSize: '0.72rem', color: '#9a3412', background: '#ffedd5', borderRadius: '999px', padding: '4px 8px', fontWeight: 700, flexShrink: 0 }}>
+                  コピー向け
+                </span>
+              </div>
+              <p style={{ margin: 0, color: '#334155', lineHeight: 1.7, fontSize: '0.98rem', fontWeight: 700, wordBreak: 'break-word' }}>
+                {morningBrief}
+              </p>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
             {priorityCards.map((card) => (
               <PriorityCard key={card.key} label={card.label} body={card.body} tone={card.tone} icon={card.icon} />
             ))}
           </div>
-
-          {morningBrief && (
-            <div style={{ background: 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)', border: '1px solid #fed7aa', borderRadius: '12px', padding: '16px' }}>
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Sparkles size={16} color="var(--accent)" /> 朝礼用ひと言まとめ
-              </h3>
-              <p style={{ margin: 0, color: '#334155', lineHeight: 1.6, fontSize: '0.92rem', fontWeight: 600 }}>
-                {morningBrief}
-              </p>
-            </div>
-          )}
 
           <div style={{ backgroundColor: '#eff6ff', borderLeft: '4px solid var(--primary)', padding: '16px', borderRadius: '0 8px 8px 0' }}>
             <h3 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px' }}>
