@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowLeft, Sparkles, AlertTriangle, TrendingUp, TrendingDown, Lightbulb, Info, ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, Sparkles, AlertTriangle, TrendingUp, TrendingDown, Lightbulb, Info, ExternalLink, Copy } from 'lucide-react';
 import type { MarketInfo } from '../types';
 
 interface MarketInfoAnalysisProps {
@@ -110,6 +110,8 @@ const AnalysisCard = ({
 );
 
 export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, onBack }) => {
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
   const priorityCards = [
     {
       key: 'high',
@@ -152,6 +154,19 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
     ? `${morningBriefSegments.slice(0, 3).join('、')}。`
     : '';
 
+  const handleCopyMorningBrief = async () => {
+    if (!morningBrief) return;
+    try {
+      await navigator.clipboard.writeText(morningBrief);
+      setCopyFeedback('コピーしました');
+    } catch (error) {
+      console.error('Failed to copy morning brief', error);
+      setCopyFeedback('コピーに失敗しました');
+    } finally {
+      window.setTimeout(() => setCopyFeedback(null), 1800);
+    }
+  };
+
   return (
     <div className="page-container" style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>
       <button
@@ -180,17 +195,43 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {morningBrief && (
             <div style={{ background: 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)', border: '1px solid #fed7aa', borderRadius: '14px', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={16} color="var(--accent)" /> 朝礼用ひとこと
-                </h3>
-                <span style={{ fontSize: '0.72rem', color: '#9a3412', background: '#ffedd5', borderRadius: '999px', padding: '4px 8px', fontWeight: 700, flexShrink: 0 }}>
-                  コピー向け
-                </span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={16} color="var(--accent)" /> 朝礼用ひとこと
+                  </h3>
+                  <span style={{ fontSize: '0.72rem', color: '#9a3412', background: '#ffedd5', borderRadius: '999px', padding: '4px 8px', fontWeight: 700, flexShrink: 0 }}>
+                    コピー向け
+                  </span>
+                </div>
+                <button
+                  onClick={handleCopyMorningBrief}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: '#ea580c',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '999px',
+                    padding: '10px 14px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    minHeight: '40px'
+                  }}
+                >
+                  <Copy size={16} /> 朝礼コピー
+                </button>
               </div>
               <p style={{ margin: 0, color: '#334155', lineHeight: 1.7, fontSize: '0.98rem', fontWeight: 700, wordBreak: 'break-word' }}>
                 {morningBrief}
               </p>
+              {copyFeedback && (
+                <div style={{ marginTop: '10px', fontSize: '0.82rem', fontWeight: 700, color: copyFeedback === 'コピーしました' ? '#166534' : '#b91c1c' }}>
+                  {copyFeedback}
+                </div>
+              )}
             </div>
           )}
 
