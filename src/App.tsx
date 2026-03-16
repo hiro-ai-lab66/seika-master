@@ -220,6 +220,19 @@ function App() {
     setState(prev => ({ ...prev, todos: [...prev.todos, newItem] }));
   };
 
+  const getContentKey = () => {
+    switch (activeTab) {
+      case 'sellfloor':
+        return `sellfloor:${sellfloorView}:${selectedSellfloorRecord?.id || 'none'}`;
+      case 'popibrary':
+        return `popibrary:${popibraryView}:${selectedPop?.id || 'none'}`;
+      case 'market':
+        return `market:${marketView}:${selectedMarket?.id || 'none'}`;
+      default:
+        return activeTab;
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -372,7 +385,7 @@ function App() {
       </header>
 
       <main className="app-content">
-        <ErrorBoundary>
+        <ErrorBoundary key={getContentKey()}>
           {renderContent()}
         </ErrorBoundary>
       </main>
