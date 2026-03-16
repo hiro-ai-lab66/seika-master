@@ -19,6 +19,7 @@ import { PopDetail } from './pages/PopDetail';
 import { PopLibraryForm } from './pages/PopLibraryForm';
 import { MarketInfoList } from './pages/MarketInfoList';
 import { MarketInfoDetail } from './pages/MarketInfoDetail';
+import { MarketInfoAnalysis } from './pages/MarketInfoAnalysis';
 import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import type { AIAnalysisResult, MarketInfo } from './types';
 
@@ -62,7 +63,7 @@ function App() {
   const [popibraryView, setPopibraryView] = useState<'list' | 'detail' | 'form'>('list');
   const [selectedPop, setSelectedPop] = useState<import('./types').PopItem | null>(null);
   
-  const [marketView, setMarketView] = useState<'list' | 'detail'>('list');
+  const [marketView, setMarketView] = useState<'list' | 'detail' | 'analysis'>('list');
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(null);
   const [isMarketAuthenticated, setIsMarketAuthenticated] = useState(false);
 
@@ -327,6 +328,12 @@ function App() {
                  onAddPop={() => setPopibraryView('form')}
                />;
       case 'market':
+        if (marketView === 'analysis' && selectedMarket) {
+            return <MarketInfoAnalysis
+                        market={selectedMarket}
+                        onBack={() => setMarketView('detail')}
+                    />;
+        }
         if (marketView === 'detail' && selectedMarket) {
             return <MarketInfoDetail 
                         market={selectedMarket} 
@@ -337,6 +344,10 @@ function App() {
                         onUpdateMarket={(updated) => {
                             updateMarketInfo(updated);
                             setSelectedMarket(updated);
+                        }}
+                        onViewAnalysis={(updated) => {
+                            setSelectedMarket(updated);
+                            setMarketView('analysis');
                         }}
                     />;
         }
