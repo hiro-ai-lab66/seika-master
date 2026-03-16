@@ -10,6 +10,106 @@ interface MarketInfoDetailProps {
   onUpdateMarket: (updated: MarketInfo) => void;
 }
 
+const priorityToneStyles = {
+  danger: { backgroundColor: '#fff5f5', borderColor: '#fecaca' },
+  success: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+  warning: { backgroundColor: '#fffbeb', borderColor: '#fde68a' },
+  info: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }
+} as const;
+
+const analysisToneStyles = {
+  danger: { backgroundColor: '#fef2f2', borderColor: '#fee2e2' },
+  success: { backgroundColor: '#f0fdf4', borderColor: '#dcfce7' },
+  warning: { backgroundColor: '#fffbeb', borderColor: '#fef3c7' },
+  info: { backgroundColor: '#f0f9ff', borderColor: '#e0f2fe' }
+} as const;
+
+const baseAnalysisCardStyle: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e2e8f0',
+  borderRadius: '12px',
+  padding: '16px'
+};
+
+const baseListStyle: React.CSSProperties = {
+  margin: 0,
+  paddingLeft: '20px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '8px'
+};
+
+const baseListItemStyle: React.CSSProperties = {
+  fontSize: '0.9rem',
+  color: 'var(--text-main)',
+  lineHeight: 1.4
+};
+
+const PriorityCard = ({
+  label,
+  body,
+  tone,
+  icon: Icon
+}: {
+  label: string;
+  body: string;
+  tone: keyof typeof priorityToneStyles;
+  icon: React.ComponentType<{ size?: number }>;
+}) => (
+  <div
+    style={{
+      borderRadius: '14px',
+      border: '1px solid #e2e8f0',
+      padding: '14px',
+      boxShadow: 'var(--shadow-sm)',
+      ...priorityToneStyles[tone]
+    }}
+  >
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+      <span
+        style={{
+          width: '30px',
+          height: '30px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '999px',
+          background: 'rgba(255,255,255,0.7)'
+        }}
+      >
+        <Icon size={16} />
+      </span>
+      <span style={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.04em' }}>{label}</span>
+    </div>
+    <p style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, lineHeight: 1.5, color: 'var(--text-main)' }}>{body}</p>
+  </div>
+);
+
+const AnalysisCard = ({
+  title,
+  items,
+  tone,
+  titleColor,
+  icon: Icon
+}: {
+  title: string;
+  items: string[];
+  tone?: keyof typeof analysisToneStyles;
+  titleColor: string;
+  icon: React.ComponentType<{ size?: number }>;
+}) => (
+  <div style={{ ...baseAnalysisCardStyle, ...(tone ? analysisToneStyles[tone] : {}) }}>
+    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: 700, color: titleColor, display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <Icon size={18} /> {title}
+    </h4>
+    <ul style={baseListStyle}>
+      {items.map((item, index) => (
+        <li key={`${title}-${index}`} style={baseListItemStyle}>{item}</li>
+      ))}
+    </ul>
+  </div>
+);
+
 export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBack, onUpdateMarket }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -17,28 +117,28 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
     {
       key: 'high',
       label: '高値注意',
-      accentClass: 'danger',
+      tone: 'danger' as const,
       icon: TrendingUp,
       body: market.analysis.highPrices[0] || '高値警戒の品目はまだ抽出されていません。'
     },
     {
       key: 'low',
       label: '安値活用',
-      accentClass: 'success',
+      tone: 'success' as const,
       icon: TrendingDown,
       body: market.analysis.lowPrices[0] || '活用しやすい安値品目はまだ抽出されていません。'
     },
     {
       key: 'notice',
       label: '入荷注意',
-      accentClass: 'info',
+      tone: 'info' as const,
       icon: AlertTriangle,
       body: market.analysis.notices[0] || market.analysis.points[0] || '入荷に関する注意点はまだありません。'
     },
     {
       key: 'hint',
       label: '売場提案',
-      accentClass: 'warning',
+      tone: 'warning' as const,
       icon: Lightbulb,
       body: market.analysis.salesHints[0] || '売場提案はまだ生成されていません。'
     }
@@ -147,30 +247,21 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
                             boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.5)'
                         }}
                       >
-                          {isAnalyzing ? <><RefreshCw size={20} className="spin" /> 解析中...</> : <><Sparkles size={20} /> AI分析を実行</>}
+                          {isAnalyzing ? <><RefreshCw size={20} /> 解析中...</> : <><Sparkles size={20} /> AI分析を実行</>}
                       </button>
                   </div>
               ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                      <div className="priority-card-grid">
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                           {priorityCards.map(card => {
-                              const Icon = card.icon;
                               return (
-                                  <div key={card.key} className={`priority-card ${card.accentClass}`}>
-                                      <div className="priority-card-head">
-                                          <span className="priority-card-icon">
-                                              <Icon size={16} />
-                                          </span>
-                                          <span className="priority-card-label">{card.label}</span>
-                                      </div>
-                                      <p className="priority-card-body">{card.body}</p>
-                                  </div>
+                                  <PriorityCard key={card.key} label={card.label} body={card.body} tone={card.tone} icon={card.icon} />
                               );
                           })}
                       </div>
 
                       {morningBrief && (
-                          <div className="briefing-card">
+                          <div style={{ background: 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)', border: '1px solid #fed7aa', borderRadius: '12px', padding: '16px' }}>
                               <h3 style={{ margin: '0 0 8px 0', fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   <Sparkles size={16} color="var(--accent)" /> 朝礼用ひと言まとめ
                               </h3>
@@ -192,138 +283,50 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
 
                       {/* Analysis Grid */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-                          {/* Points */}
-                          <div className="analysis-card">
-                              <h4 style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                 <Info size={18} /> 本日の相場ポイント
-                              </h4>
-                              <ul>{market.analysis.points.map((p, i) => <li key={i}>{p}</li>)}</ul>
+                          <AnalysisCard
+                            title="本日の相場ポイント"
+                            items={market.analysis.points}
+                            titleColor="var(--primary)"
+                            icon={Info}
+                          />
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+                              <AnalysisCard
+                                title="高値注意商品"
+                                items={market.analysis.highPrices}
+                                tone="danger"
+                                titleColor="#dc2626"
+                                icon={TrendingUp}
+                              />
+                              <AnalysisCard
+                                title="安値活用商品"
+                                items={market.analysis.lowPrices}
+                                tone="success"
+                                titleColor="#16a34a"
+                                icon={TrendingDown}
+                              />
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                              {/* High Prices */}
-                              <div className="analysis-card danger">
-                                  <h4 style={{ color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                     <TrendingUp size={18} /> 高値注意商品
-                                  </h4>
-                                  <ul>{market.analysis.highPrices.map((p, i) => <li key={i}>{p}</li>)}</ul>
-                              </div>
-                              {/* Low Prices */}
-                              <div className="analysis-card success">
-                                  <h4 style={{ color: '#16a34a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                     <TrendingDown size={18} /> 安値活用商品
-                                  </h4>
-                                  <ul>{market.analysis.lowPrices.map((p, i) => <li key={i}>{p}</li>)}</ul>
-                              </div>
-                          </div>
+                          <AnalysisCard
+                            title="売場づくりのヒント"
+                            items={market.analysis.salesHints}
+                            tone="warning"
+                            titleColor="#ca8a04"
+                            icon={Lightbulb}
+                          />
 
-                          {/* Hints */}
-                          <div className="analysis-card warning">
-                              <h4 style={{ color: '#ca8a04', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                 <Lightbulb size={18} /> 売場づくりのヒント
-                              </h4>
-                              <ul>{market.analysis.salesHints.map((p, i) => <li key={i}>{p}</li>)}</ul>
-                          </div>
-
-                          {/* Notices */}
-                          <div className="analysis-card info">
-                              <h4 style={{ color: '#2563eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                 <AlertTriangle size={18} /> 発注・展開上の注意点
-                              </h4>
-                              <ul>{market.analysis.notices.map((p, i) => <li key={i}>{p}</li>)}</ul>
-                          </div>
+                          <AnalysisCard
+                            title="発注・展開上の注意点"
+                            items={market.analysis.notices}
+                            tone="info"
+                            titleColor="#2563eb"
+                            icon={AlertTriangle}
+                          />
                       </div>
                   </div>
               )}
           </div>
       </div>
-
-      <style>{`
-        .priority-card-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-        }
-        .priority-card {
-            border-radius: 14px;
-            border: 1px solid #e2e8f0;
-            padding: 14px;
-            box-shadow: var(--shadow-sm);
-        }
-        .priority-card-head {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-        .priority-card-icon {
-            width: 30px;
-            height: 30px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.7);
-        }
-        .priority-card-label {
-            font-size: 0.82rem;
-            font-weight: 800;
-            letter-spacing: 0.04em;
-        }
-        .priority-card-body {
-            margin: 0;
-            font-size: 0.92rem;
-            font-weight: 700;
-            line-height: 1.5;
-            color: var(--text-main);
-        }
-        .briefing-card {
-            background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
-            border: 1px solid #fed7aa;
-            border-radius: 12px;
-            padding: 16px;
-        }
-        .analysis-card {
-            background: #fff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 16px;
-        }
-        .analysis-card h4 {
-            margin: 0 0 12px 0;
-            font-size: 0.95rem;
-            font-weight: 700;
-        }
-        .analysis-card ul {
-            margin: 0;
-            padding-left: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .analysis-card li {
-            font-size: 0.9rem;
-            color: var(--text-main);
-            line-height: 1.4;
-        }
-        .analysis-card.danger { background-color: #fef2f2; border-color: #fee2e2; }
-        .analysis-card.success { background-color: #f0fdf4; border-color: #dcfce7; }
-        .analysis-card.warning { background-color: #fffbeb; border-color: #fef3c7; }
-        .analysis-card.info { background-color: #f0f9ff; border-color: #e0f2fe; }
-        .priority-card.danger { background-color: #fff5f5; border-color: #fecaca; }
-        .priority-card.success { background-color: #f0fdf4; border-color: #bbf7d0; }
-        .priority-card.warning { background-color: #fffbeb; border-color: #fde68a; }
-        .priority-card.info { background-color: #eff6ff; border-color: #bfdbfe; }
-
-        @media (max-width: 640px) {
-            .priority-card-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 };
