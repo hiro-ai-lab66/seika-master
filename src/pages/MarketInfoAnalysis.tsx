@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Sparkles, AlertTriangle, TrendingUp, TrendingDown, Lightbulb, Info, ExternalLink, Copy } from 'lucide-react';
-import type { MarketInfo } from '../types';
+import type { MarketInfo, MarketPriceComparison } from '../types';
+import { buildMajorProduceComparisons } from '../services/marketParser';
 
 interface MarketInfoAnalysisProps {
   market: MarketInfo;
+  marketHistory: MarketInfo[];
   onBack: () => void;
 }
 
@@ -109,8 +111,38 @@ const AnalysisCard = ({
   </div>
 );
 
-export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, onBack }) => {
+const formatPrice = (value?: number) => value === undefined ? '-' : `¥${value.toLocaleString()}`;
+
+const findPreviousMarket = (market: MarketInfo, history: MarketInfo[]) => {
+  const targetDate = new Date(market.receivedAt);
+  const sorted = [...history]
+    .filter(item => item.id !== market.id && new Date(item.receivedAt).getTime() < targetDate.getTime())
+    .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+
+  if (sorted.length === 0) return null;
+
+  const targetDay = targetDate.toISOString().slice(0, 10);
+  const previousDay = sorted.find(item => item.receivedAt.slice(0, 10) !== targetDay);
+  return previousDay || sorted[0];
+};
+
+const comparisonTone = (status: MarketPriceComparison['status']) => {
+  switch (status) {
+    case 'up':
+      return '#dc2626';
+    case 'down':
+      return '#16a34a';
+    case 'flat':
+      return '#475569';
+    default:
+      return '#94a3b8';
+  }
+};
+
+export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, marketHistory, onBack }) => {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const previousMarket = findPreviousMarket(market, marketHistory);
+  const majorComparisons = buildMajorProduceComparisons(market, previousMarket);
 
   const priorityCards = [
     {
@@ -248,6 +280,56 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
             <p style={{ margin: 0, fontSize: '1rem', color: '#1e3a8a', lineHeight: 1.6, fontWeight: 500 }}>
               {market.summary}
             </p>
+          </div>
+
+          <div style={{ ...baseAnalysisCardStyle, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)' }}>主要品目価格比較</h3>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                比較基準: {previousMarket ? new Date(previousMarket.receivedAt).toLocaleDateString('ja-JP') : '比較対象なし'}
+              </div>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', color: '#475569', fontSize: '0.8rem' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>品目名</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>今日価格</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>単位 / 規格</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>昨日価格</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>差額</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>判定</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {majorComparisons.length > 0 ? majorComparisons.map((comparison) => (
+                    <tr key={`${comparison.itemName}-${comparison.currentSpec}-${comparison.currentUnit}`} style={{ borderTop: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                        {comparison.itemName}
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{comparison.category}</div>
+                      </td>
+                      <td style={{ padding: '12px', fontWeight: 700 }}>{formatPrice(comparison.currentPrice)}</td>
+                      <td style={{ padding: '12px', color: '#475569' }}>{comparison.currentUnit} / {comparison.currentSpec}</td>
+                      <td style={{ padding: '12px', color: '#475569' }}>{formatPrice(comparison.previousPrice)}</td>
+                      <td style={{ padding: '12px', color: comparison.difference !== undefined ? comparisonTone(comparison.status) : '#94a3b8', fontWeight: 700 }}>
+                        {comparison.difference !== undefined ? `${comparison.difference > 0 ? '+' : ''}${comparison.difference.toLocaleString()}` : '-'}
+                      </td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: '999px', background: '#f8fafc', color: comparisonTone(comparison.status), fontSize: '0.78rem', fontWeight: 700 }}>
+                          {comparison.comparisonLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '16px 12px', color: 'var(--text-muted)' }}>
+                        主要品目の価格を十分に抽出できませんでした。本文や添付内の価格表記を確認してください。
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>

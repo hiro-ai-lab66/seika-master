@@ -39,7 +39,7 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
             }
         }
         
-        const result = await analyzeMarketContent(combinedText, market.subject);
+        const result = await analyzeMarketContent(combinedText, market.subject, market.receivedAt);
         
         const updated: MarketInfo = {
             ...market,

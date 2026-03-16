@@ -159,6 +159,27 @@ export interface MarketAttachment {
     fileId?: string;
 }
 
+export interface MarketPriceEntry {
+    itemName: string;
+    category: '野菜' | '果物';
+    price: number;
+    unit: string;
+    spec: string;
+    sourceText: string;
+}
+
+export interface MarketPriceComparison {
+    itemName: string;
+    category: '野菜' | '果物';
+    currentPrice: number;
+    currentUnit: string;
+    currentSpec: string;
+    previousPrice?: number;
+    difference?: number;
+    status: 'up' | 'down' | 'flat' | 'no-comparison';
+    comparisonLabel: string;
+}
+
 export interface MarketInfo {
     id: string; // Gmail message ID
     subject: string;
@@ -173,6 +194,7 @@ export interface MarketInfo {
         lowPrices: string[];
         salesHints: string[];
         notices: string[];
+        majorProducePrices?: MarketPriceEntry[];
     };
     attachments: MarketAttachment[];
     externalLink?: string;

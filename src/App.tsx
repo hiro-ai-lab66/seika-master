@@ -331,6 +331,7 @@ function App() {
         if (marketView === 'analysis' && selectedMarket) {
             return <MarketInfoAnalysis
                         market={selectedMarket}
+                        marketHistory={state.marketHistory || []}
                         onBack={() => setMarketView('detail')}
                     />;
         }

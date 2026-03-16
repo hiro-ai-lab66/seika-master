@@ -1,39 +1,98 @@
 import * as XLSX from 'xlsx';
 import * as pdfjs from 'pdfjs-dist';
+import type { MarketInfo, MarketPriceComparison, MarketPriceEntry } from '../types';
 
 type ProduceDefinition = {
     name: string;
     aliases: string[];
+    category: '野菜' | '果物';
 };
 
 // Configure PDF.js worker using a CDN for the worker script
 // This is often easier in a range of environments than managing it locally
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-const PRODUCE_DEFINITIONS: ProduceDefinition[] = [
-    { name: '白菜', aliases: ['白菜', 'はくさい'] },
-    { name: 'キャベツ', aliases: ['キャベツ'] },
-    { name: 'レタス', aliases: ['レタス'] },
-    { name: 'ほうれん草', aliases: ['ほうれん草', 'ホウレン草'] },
-    { name: '小松菜', aliases: ['小松菜'] },
-    { name: '大根', aliases: ['大根'] },
-    { name: 'にんじん', aliases: ['にんじん', '人参'] },
-    { name: '玉ねぎ', aliases: ['玉ねぎ', 'たまねぎ'] },
-    { name: 'じゃがいも', aliases: ['じゃがいも', '馬鈴薯'] },
-    { name: 'きゅうり', aliases: ['きゅうり', '胡瓜'] },
-    { name: 'トマト', aliases: ['トマト'] },
-    { name: 'ミニトマト', aliases: ['ミニトマト'] },
-    { name: 'なす', aliases: ['なす', '茄子'] },
-    { name: 'ピーマン', aliases: ['ピーマン'] },
-    { name: 'ブロッコリー', aliases: ['ブロッコリー'] },
-    { name: 'ねぎ', aliases: ['ねぎ', '長ねぎ', '白ねぎ'] },
-    { name: 'しいたけ', aliases: ['しいたけ', '椎茸'] },
-    { name: 'いちご', aliases: ['いちご', '苺'] },
-    { name: 'みかん', aliases: ['みかん', '蜜柑'] },
-    { name: 'りんご', aliases: ['りんご', '林檎'] },
-    { name: 'バナナ', aliases: ['バナナ'] },
-    { name: 'ぶどう', aliases: ['ぶどう', '葡萄'] }
+const VEGETABLE_MASTER: ProduceDefinition[] = [
+    { name: '白菜', aliases: ['白菜', 'はくさい'], category: '野菜' },
+    { name: 'キャベツ', aliases: ['キャベツ'], category: '野菜' },
+    { name: '大根', aliases: ['大根'], category: '野菜' },
+    { name: 'レタス', aliases: ['レタス'], category: '野菜' },
+    { name: 'サニーレタス', aliases: ['サニーレタス'], category: '野菜' },
+    { name: 'ほうれん草', aliases: ['ほうれん草', 'ホウレン草'], category: '野菜' },
+    { name: '小松菜', aliases: ['小松菜'], category: '野菜' },
+    { name: 'きゅうり', aliases: ['きゅうり', '胡瓜'], category: '野菜' },
+    { name: 'トマト', aliases: ['トマト'], category: '野菜' },
+    { name: 'ミニトマト', aliases: ['ミニトマト'], category: '野菜' },
+    { name: 'ブロッコリー', aliases: ['ブロッコリー'], category: '野菜' },
+    { name: 'にんじん', aliases: ['にんじん', '人参'], category: '野菜' },
+    { name: '玉ねぎ', aliases: ['玉ねぎ', 'たまねぎ'], category: '野菜' },
+    { name: '長ねぎ', aliases: ['長ねぎ', '長ネギ', '白ねぎ', '長葱'], category: '野菜' },
+    { name: 'ピーマン', aliases: ['ピーマン'], category: '野菜' }
 ];
+
+const FRUIT_MASTER_BY_MONTH: Record<number, ProduceDefinition[]> = {
+    1: [
+        { name: 'いちご', aliases: ['いちご', '苺'], category: '果物' },
+        { name: 'みかん', aliases: ['みかん', '蜜柑'], category: '果物' },
+        { name: 'りんご', aliases: ['りんご', '林檎'], category: '果物' },
+        { name: 'バナナ', aliases: ['バナナ'], category: '果物' },
+        { name: 'キウイ', aliases: ['キウイ'], category: '果物' },
+        { name: 'オレンジ', aliases: ['オレンジ'], category: '果物' },
+        { name: 'グレープフルーツ', aliases: ['グレープフルーツ'], category: '果物' },
+        { name: 'デコポン', aliases: ['デコポン', 'しらぬい', '不知火'], category: '果物' },
+        { name: 'パイナップル', aliases: ['パイナップル', 'パイン'], category: '果物' },
+        { name: 'メロン', aliases: ['メロン'], category: '果物' }
+    ],
+    4: [
+        { name: 'いちご', aliases: ['いちご', '苺'], category: '果物' },
+        { name: 'りんご', aliases: ['りんご', '林檎'], category: '果物' },
+        { name: 'バナナ', aliases: ['バナナ'], category: '果物' },
+        { name: 'キウイ', aliases: ['キウイ'], category: '果物' },
+        { name: 'オレンジ', aliases: ['オレンジ'], category: '果物' },
+        { name: 'グレープフルーツ', aliases: ['グレープフルーツ'], category: '果物' },
+        { name: 'メロン', aliases: ['メロン'], category: '果物' },
+        { name: 'すいか', aliases: ['すいか', '西瓜'], category: '果物' },
+        { name: 'パイナップル', aliases: ['パイナップル', 'パイン'], category: '果物' },
+        { name: 'ぶどう', aliases: ['ぶどう', '葡萄'], category: '果物' }
+    ],
+    7: [
+        { name: 'すいか', aliases: ['すいか', '西瓜'], category: '果物' },
+        { name: 'メロン', aliases: ['メロン'], category: '果物' },
+        { name: 'もも', aliases: ['もも', '桃'], category: '果物' },
+        { name: 'なし', aliases: ['なし', '梨'], category: '果物' },
+        { name: 'ぶどう', aliases: ['ぶどう', '葡萄'], category: '果物' },
+        { name: 'バナナ', aliases: ['バナナ'], category: '果物' },
+        { name: 'キウイ', aliases: ['キウイ'], category: '果物' },
+        { name: 'オレンジ', aliases: ['オレンジ'], category: '果物' },
+        { name: 'パイナップル', aliases: ['パイナップル', 'パイン'], category: '果物' },
+        { name: 'りんご', aliases: ['りんご', '林檎'], category: '果物' }
+    ],
+    10: [
+        { name: 'りんご', aliases: ['りんご', '林檎'], category: '果物' },
+        { name: 'なし', aliases: ['なし', '梨'], category: '果物' },
+        { name: '柿', aliases: ['柿'], category: '果物' },
+        { name: 'ぶどう', aliases: ['ぶどう', '葡萄'], category: '果物' },
+        { name: 'みかん', aliases: ['みかん', '蜜柑'], category: '果物' },
+        { name: 'バナナ', aliases: ['バナナ'], category: '果物' },
+        { name: 'キウイ', aliases: ['キウイ'], category: '果物' },
+        { name: 'オレンジ', aliases: ['オレンジ'], category: '果物' },
+        { name: 'グレープフルーツ', aliases: ['グレープフルーツ'], category: '果物' },
+        { name: 'パイナップル', aliases: ['パイナップル', 'パイン'], category: '果物' }
+    ]
+};
+
+const getFruitMaster = (month: number) => {
+    if (month >= 1 && month <= 3) return FRUIT_MASTER_BY_MONTH[1];
+    if (month >= 4 && month <= 6) return FRUIT_MASTER_BY_MONTH[4];
+    if (month >= 7 && month <= 9) return FRUIT_MASTER_BY_MONTH[7];
+    return FRUIT_MASTER_BY_MONTH[10];
+};
+
+const getMajorProduceMaster = (dateString?: string): ProduceDefinition[] => {
+    const date = dateString ? new Date(dateString) : new Date();
+    const month = Number.isNaN(date.getTime()) ? new Date().getMonth() + 1 : date.getMonth() + 1;
+    return [...VEGETABLE_MASTER, ...getFruitMaster(month)];
+};
 
 const HIGH_KEYWORDS = ['高値', '高騰', '値上がり', '上昇', '強含み', '品薄', '不足', '欠品', '入荷減', '入荷少', '不安定'];
 const LOW_KEYWORDS = ['安値', '値下がり', 'お買い得', '特売', '安定', '潤沢', '順調', '豊作', '安価', '買い得'];
@@ -55,9 +114,9 @@ const includesAny = (text: string, keywords: string[]) => keywords.some(keyword 
 
 const unique = (items: string[]) => Array.from(new Set(items.filter(Boolean)));
 
-const findProduceMentions = (text: string) => {
+const findProduceMentions = (text: string, dateString?: string) => {
     const sentences = splitSentences(text);
-    const mentions = PRODUCE_DEFINITIONS.map(def => {
+    const mentions = getMajorProduceMaster(dateString).map(def => {
         const matchedSentences = sentences.filter(sentence => def.aliases.some(alias => sentence.includes(alias)));
         const highHits = matchedSentences.filter(sentence => includesAny(sentence, HIGH_KEYWORDS));
         const lowHits = matchedSentences.filter(sentence => includesAny(sentence, LOW_KEYWORDS));
@@ -97,6 +156,119 @@ const buildGenericItems = (sentences: string[], keywords: string[], fallback: st
 
     const items = matched.slice(0, limit).map(sentence => `${prefix}${sentence}`);
     return items.length > 0 ? items : [fallback];
+};
+
+const PRICE_REGEX = /([0-9]{2,5}(?:,[0-9]{3})*(?:\.[0-9]+)?)/g;
+const SPEC_TOKENS = ['L', 'M', 'S', '2L', '3L', '4L', '秀', '優', 'A品', 'B品', '特秀', '大玉', '小玉'];
+const UNIT_TOKENS = ['kg', 'K', '箱', 'ケース', 'cs', '袋', 'パック', 'pc', '玉', '個', '本', '束', 'ネット', '房', '粒'];
+
+const inferUnit = (text: string): string => {
+    const matched = UNIT_TOKENS.find(token => new RegExp(`(?:/|\\s|^|\\d)${token}(?:\\s|$)`, 'i').test(text));
+    return matched ? matched.toUpperCase() : '記載なし';
+};
+
+const inferSpec = (text: string): string => {
+    const token = SPEC_TOKENS.find(spec => text.includes(spec));
+    if (token) return token;
+
+    const weightMatch = text.match(/(\d+(?:\.\d+)?)\s?(kg|g|玉|個|入|本入|束入)/i);
+    return weightMatch ? weightMatch[0] : '規格記載なし';
+};
+
+const buildPriceKey = (entry: MarketPriceEntry) => `${entry.itemName}__${entry.spec}__${entry.unit}`;
+
+const parsePriceEntriesFromText = (text: string, dateString?: string): MarketPriceEntry[] => {
+    const lines = normalizeText(text)
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    const entries: MarketPriceEntry[] = [];
+
+    lines.forEach(line => {
+        const priceMatches = Array.from(line.matchAll(PRICE_REGEX));
+        const lastMatch = priceMatches.at(-1);
+        if (!lastMatch) return;
+
+        const price = Number(lastMatch[1].replace(/,/g, ''));
+        if (!Number.isFinite(price)) return;
+
+        getMajorProduceMaster(dateString).forEach(def => {
+            if (!def.aliases.some(alias => line.includes(alias))) return;
+
+            entries.push({
+                itemName: def.name,
+                category: def.category,
+                price,
+                unit: inferUnit(line),
+                spec: inferSpec(line),
+                sourceText: line
+            });
+        });
+    });
+
+    const uniqueMap = new Map<string, MarketPriceEntry>();
+    entries.forEach(entry => {
+        const key = buildPriceKey(entry);
+        if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, entry);
+        }
+    });
+
+    return Array.from(uniqueMap.values());
+};
+
+const getAnalysisSourceText = (market: MarketInfo): string => normalizeText([
+    `件名: ${market.subject}`,
+    market.snippet ? `要約: ${market.snippet}` : '',
+    market.bodyText ? `本文: ${market.bodyText}` : '',
+    market.attachments.length > 0 ? `添付: ${market.attachments.map(att => att.filename).join(', ')}` : ''
+].filter(Boolean).join('\n'));
+
+export const buildMajorProduceComparisons = (
+    currentMarket: MarketInfo,
+    previousMarket?: MarketInfo | null
+): MarketPriceComparison[] => {
+    const currentEntries = currentMarket.analysis.majorProducePrices && currentMarket.analysis.majorProducePrices.length > 0
+        ? currentMarket.analysis.majorProducePrices
+        : parsePriceEntriesFromText(getAnalysisSourceText(currentMarket), currentMarket.receivedAt);
+
+    const previousEntries = previousMarket
+        ? (previousMarket.analysis.majorProducePrices && previousMarket.analysis.majorProducePrices.length > 0
+            ? previousMarket.analysis.majorProducePrices
+            : parsePriceEntriesFromText(getAnalysisSourceText(previousMarket), previousMarket.receivedAt))
+        : [];
+
+    const previousByKey = new Map(previousEntries.map(entry => [buildPriceKey(entry), entry]));
+
+    return currentEntries.map(entry => {
+        const previous = previousByKey.get(buildPriceKey(entry));
+
+        if (!previous) {
+            return {
+                itemName: entry.itemName,
+                category: entry.category,
+                currentPrice: entry.price,
+                currentUnit: entry.unit,
+                currentSpec: entry.spec,
+                status: 'no-comparison' as const,
+                comparisonLabel: '比較対象なし'
+            };
+        }
+
+        const difference = entry.price - previous.price;
+        return {
+            itemName: entry.itemName,
+            category: entry.category,
+            currentPrice: entry.price,
+            currentUnit: entry.unit,
+            currentSpec: entry.spec,
+            previousPrice: previous.price,
+            difference,
+            status: (difference === 0 ? 'flat' : difference > 0 ? 'up' : 'down') as 'flat' | 'up' | 'down',
+            comparisonLabel: difference === 0 ? '横ばい' : difference > 0 ? '上昇' : '下落'
+        };
+    }).sort((a, b) => a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName));
 };
 
 /**
@@ -154,12 +326,13 @@ export const extractPdfText = async (base64Data: string): Promise<string> => {
 /**
  * Analyze market content using the actual email text and extracted attachment text.
  */
-export const analyzeMarketContent = async (text: string, subject: string): Promise<any> => {
+export const analyzeMarketContent = async (text: string, subject: string, receivedAt?: string): Promise<any> => {
     await new Promise(resolve => setTimeout(resolve, 300));
 
     const combined = normalizeText(`${subject}\n${text}`);
     const sentences = splitSentences(combined);
-    const mentions = findProduceMentions(combined);
+    const mentions = findProduceMentions(combined, receivedAt);
+    const majorProducePrices = parsePriceEntriesFromText(combined, receivedAt);
 
     const highPrices = unique(
         mentions
@@ -212,7 +385,8 @@ export const analyzeMarketContent = async (text: string, subject: string): Promi
             highPrices: resolvedHighPrices,
             lowPrices: resolvedLowPrices,
             salesHints: resolvedHints,
-            notices: resolvedNotices
+            notices: resolvedNotices,
+            majorProducePrices
         }
     };
 };

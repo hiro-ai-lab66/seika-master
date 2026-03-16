@@ -195,7 +195,8 @@ export const fetchMarketEmails = async (labelName: string = '相場情報'): Pro
                     highPrices: [],
                     lowPrices: [],
                     salesHints: [],
-                    notices: []
+                    notices: [],
+                    majorProducePrices: []
                 },
                 attachments,
                 externalLink: `https://mail.google.com/mail/u/0/#inbox/${detail.id}`
