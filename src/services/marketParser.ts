@@ -389,6 +389,18 @@ export const buildMajorProduceComparisons = (
         const previous = previousByKey.get(buildPriceKey(entry));
 
         if (!previous) {
+            const sameItemEntries = previousEntries.filter(prev => prev.itemName === entry.itemName);
+            const mismatchReason =
+                !previousMarket || previousEntries.length === 0
+                    ? 'previous-missing' as const
+                    : sameItemEntries.length === 0
+                        ? 'no-match' as const
+                        : sameItemEntries.some(prev => prev.unit === entry.unit)
+                            ? 'spec-mismatch' as const
+                            : sameItemEntries.some(prev => prev.spec === entry.spec)
+                                ? 'unit-mismatch' as const
+                                : 'no-match' as const;
+
             return {
                 itemName: entry.itemName,
                 category: entry.category,
@@ -396,7 +408,8 @@ export const buildMajorProduceComparisons = (
                 currentUnit: entry.unit,
                 currentSpec: entry.spec,
                 status: 'no-comparison' as const,
-                comparisonLabel: '比較対象なし'
+                comparisonLabel: '比較対象なし',
+                mismatchReason
             };
         }
 

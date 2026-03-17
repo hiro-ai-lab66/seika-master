@@ -139,6 +139,21 @@ const comparisonTone = (status: MarketPriceComparison['status']) => {
   }
 };
 
+const mismatchReasonLabel = (reason?: MarketPriceComparison['mismatchReason']) => {
+  switch (reason) {
+    case 'previous-missing':
+      return '前回データなし';
+    case 'spec-mismatch':
+      return '規格違い';
+    case 'unit-mismatch':
+      return '単位違い';
+    case 'no-match':
+      return '比較対象なし';
+    default:
+      return '比較対象なし';
+  }
+};
+
 export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, marketHistory, onBack }) => {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const previousMarket = findPreviousMarket(market, marketHistory);
@@ -356,7 +371,7 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
                     <th style={{ textAlign: 'left', padding: '10px 12px' }}>品目名</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px' }}>今日価格</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px' }}>単位 / 規格</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>昨日価格</th>
+                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>前回価格</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px' }}>差額</th>
                     <th style={{ textAlign: 'left', padding: '10px 12px' }}>判定</th>
                   </tr>
@@ -370,9 +385,11 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
                       </td>
                       <td style={{ padding: '12px', fontWeight: 700 }}>{formatPrice(comparison.currentPrice)}</td>
                       <td style={{ padding: '12px', color: '#475569' }}>{comparison.currentUnit} / {comparison.currentSpec}</td>
-                      <td style={{ padding: '12px', color: '#475569' }}>{formatPrice(comparison.previousPrice)}</td>
+                      <td style={{ padding: '12px', color: '#475569' }}>
+                        {comparison.previousPrice !== undefined ? formatPrice(comparison.previousPrice) : mismatchReasonLabel(comparison.mismatchReason)}
+                      </td>
                       <td style={{ padding: '12px', color: comparison.difference !== undefined ? comparisonTone(comparison.status) : '#94a3b8', fontWeight: 700 }}>
-                        {comparison.difference !== undefined ? `${comparison.difference > 0 ? '+' : ''}${comparison.difference.toLocaleString()}` : '-'}
+                        {comparison.difference !== undefined ? `${comparison.difference > 0 ? '+' : ''}${comparison.difference.toLocaleString()}` : mismatchReasonLabel(comparison.mismatchReason)}
                       </td>
                       <td style={{ padding: '12px' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: '999px', background: '#f8fafc', color: comparisonTone(comparison.status), fontSize: '0.78rem', fontWeight: 700 }}>

@@ -178,6 +178,7 @@ export interface MarketPriceComparison {
     difference?: number;
     status: 'up' | 'down' | 'flat' | 'no-comparison';
     comparisonLabel: string;
+    mismatchReason?: 'previous-missing' | 'spec-mismatch' | 'unit-mismatch' | 'no-match';
 }
 
 export interface MarketInfo {
