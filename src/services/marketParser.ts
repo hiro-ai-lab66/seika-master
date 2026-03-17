@@ -8,6 +8,14 @@ type ProduceDefinition = {
     category: '野菜' | '果物';
 };
 
+type SheetColumnMap = {
+    itemName?: number;
+    spec?: number;
+    unit?: number;
+    price?: number;
+    date?: number;
+};
+
 // Configure PDF.js worker using a CDN for the worker script
 // This is often easier in a range of environments than managing it locally
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -161,6 +169,11 @@ const buildGenericItems = (sentences: string[], keywords: string[], fallback: st
 const PRICE_REGEX = /([0-9]{2,5}(?:,[0-9]{3})*(?:\.[0-9]+)?)/g;
 const SPEC_TOKENS = ['L', 'M', 'S', '2L', '3L', '4L', '秀', '優', 'A品', 'B品', '特秀', '大玉', '小玉'];
 const UNIT_TOKENS = ['kg', 'K', '箱', 'ケース', 'cs', '袋', 'パック', 'pc', '玉', '個', '本', '束', 'ネット', '房', '粒'];
+const ITEM_HEADER_KEYWORDS = ['品名', '品目', '商品', '品', '名称'];
+const SPEC_HEADER_KEYWORDS = ['規格', '入数', '荷姿', 'サイズ', '階級'];
+const UNIT_HEADER_KEYWORDS = ['単位', '荷単位', '単'];
+const PRICE_HEADER_KEYWORDS = ['価格', '相場', '出庫', '市況', '単価', '売価'];
+const DATE_HEADER_KEYWORDS = ['日付', '日', '年月日'];
 
 const inferUnit = (text: string): string => {
     const matched = UNIT_TOKENS.find(token => new RegExp(`(?:/|\\s|^|\\d)${token}(?:\\s|$)`, 'i').test(text));
@@ -173,6 +186,137 @@ const inferSpec = (text: string): string => {
 
     const weightMatch = text.match(/(\d+(?:\.\d+)?)\s?(kg|g|玉|個|入|本入|束入)/i);
     return weightMatch ? weightMatch[0] : '規格記載なし';
+};
+
+const cellToString = (cell: unknown): string => {
+    if (cell === null || cell === undefined) return '';
+    if (typeof cell === 'number') return String(cell);
+    if (typeof cell === 'string') return normalizeText(cell);
+    if (cell instanceof Date) return cell.toISOString().slice(0, 10);
+    return normalizeText(String(cell));
+};
+
+const hasKeyword = (value: string, keywords: string[]) => keywords.some(keyword => value.includes(keyword));
+
+const detectHeaderMap = (rows: string[][]): { headerRowIndex: number; columnMap: SheetColumnMap } | null => {
+    let bestMatch: { headerRowIndex: number; columnMap: SheetColumnMap; score: number } | null = null;
+
+    rows.slice(0, 12).forEach((row, rowIndex) => {
+        const columnMap: SheetColumnMap = {};
+        row.forEach((cell, columnIndex) => {
+            if (!cell) return;
+            if (columnMap.itemName === undefined && hasKeyword(cell, ITEM_HEADER_KEYWORDS)) columnMap.itemName = columnIndex;
+            if (columnMap.spec === undefined && hasKeyword(cell, SPEC_HEADER_KEYWORDS)) columnMap.spec = columnIndex;
+            if (columnMap.unit === undefined && hasKeyword(cell, UNIT_HEADER_KEYWORDS)) columnMap.unit = columnIndex;
+            if (columnMap.price === undefined && hasKeyword(cell, PRICE_HEADER_KEYWORDS)) columnMap.price = columnIndex;
+            if (columnMap.date === undefined && hasKeyword(cell, DATE_HEADER_KEYWORDS)) columnMap.date = columnIndex;
+        });
+
+        const score = Object.values(columnMap).filter(index => index !== undefined).length;
+        if (columnMap.itemName !== undefined && columnMap.price !== undefined && (!bestMatch || score > bestMatch.score)) {
+            bestMatch = { headerRowIndex: rowIndex, columnMap, score };
+        }
+    });
+
+    const result = bestMatch as { headerRowIndex: number; columnMap: SheetColumnMap; score: number } | null;
+    if (result === null) return null;
+    return { headerRowIndex: result.headerRowIndex, columnMap: result.columnMap };
+};
+
+const parseRowPrice = (row: string[], columnMap: SheetColumnMap): number | null => {
+    const directCell = columnMap.price !== undefined ? row[columnMap.price] || '' : '';
+    const targetText = directCell || row.join(' ');
+    const matches = Array.from(targetText.matchAll(PRICE_REGEX));
+    const lastMatch = matches.at(-1);
+    if (!lastMatch) return null;
+    const value = Number(lastMatch[1].replace(/,/g, ''));
+    return Number.isFinite(value) ? value : null;
+};
+
+const findProduceDefinition = (text: string, dateString?: string) =>
+    getMajorProduceMaster(dateString).find(def => def.aliases.some(alias => text.includes(alias)));
+
+const parseExcelPriceEntries = (base64Data: string, dateString?: string): { text: string; priceEntries: MarketPriceEntry[] } => {
+    try {
+        const workbook = XLSX.read(base64Data, { type: 'base64', cellDates: true });
+        const textBlocks: string[] = [];
+        const entryMap = new Map<string, MarketPriceEntry>();
+
+        workbook.SheetNames.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json<(string | number | Date)[]>(worksheet, { header: 1, defval: '' })
+                .map(row => row.map(cellToString));
+
+            const headerInfo = detectHeaderMap(rows);
+            if (!headerInfo) {
+                const fallback = rows
+                    .filter(row => row.some(Boolean))
+                    .slice(0, 20)
+                    .map(row => row.join(' | '))
+                    .join('\n');
+                if (fallback) {
+                    textBlocks.push(`--- Sheet: ${sheetName} ---\n${fallback}`);
+                }
+                return;
+            }
+
+            const { headerRowIndex, columnMap } = headerInfo;
+            const structuredLines: string[] = [];
+
+            rows.slice(headerRowIndex + 1).forEach(row => {
+                if (!row.some(Boolean)) return;
+
+                const itemCell = columnMap.itemName !== undefined ? row[columnMap.itemName] || '' : '';
+                const produce = findProduceDefinition(itemCell || row.join(' '), dateString);
+                if (!produce) return;
+
+                const price = parseRowPrice(row, columnMap);
+                if (price === null) return;
+
+                const specCell = columnMap.spec !== undefined ? row[columnMap.spec] || '' : '';
+                const unitCell = columnMap.unit !== undefined ? row[columnMap.unit] || '' : '';
+                const dateCell = columnMap.date !== undefined ? row[columnMap.date] || '' : '';
+
+                const spec = specCell || inferSpec(row.join(' '));
+                const unit = unitCell || inferUnit(row.join(' '));
+                const sourceText = row.filter(Boolean).join(' | ');
+
+                structuredLines.push([
+                    produce.name,
+                    spec ? `規格:${spec}` : '',
+                    unit ? `単位:${unit}` : '',
+                    `価格:${price}`,
+                    dateCell ? `日付:${dateCell}` : ''
+                ].filter(Boolean).join(' | '));
+
+                const entry: MarketPriceEntry = {
+                    itemName: produce.name,
+                    category: produce.category,
+                    price,
+                    unit: unit || '記載なし',
+                    spec: spec || '規格記載なし',
+                    sourceText
+                };
+                const key = buildPriceKey(entry);
+                const existing = entryMap.get(key);
+                if (!existing || existing.sourceText.length < sourceText.length) {
+                    entryMap.set(key, entry);
+                }
+            });
+
+            if (structuredLines.length > 0) {
+                textBlocks.push(`--- Sheet: ${sheetName} ---\n${structuredLines.join('\n')}`);
+            }
+        });
+
+        return {
+            text: textBlocks.join('\n\n'),
+            priceEntries: Array.from(entryMap.values())
+        };
+    } catch (error) {
+        console.error('Excel table parsing failed', error);
+        return { text: 'Excel解析に失敗しました', priceEntries: [] };
+    }
 };
 
 const buildPriceKey = (entry: MarketPriceEntry) => `${entry.itemName}__${entry.spec}__${entry.unit}`;
@@ -275,22 +419,11 @@ export const buildMajorProduceComparisons = (
  * Extract text from an Excel file (Base64)
  */
 export const extractExcelText = (base64Data: string): string => {
-    try {
-        const workbook = XLSX.read(base64Data, { type: 'base64' });
-        let fullText = '';
-        
-        workbook.SheetNames.forEach(sheetName => {
-            const worksheet = workbook.Sheets[sheetName];
-            const csv = XLSX.utils.sheet_to_csv(worksheet);
-            fullText += `--- Sheet: ${sheetName} ---\n${csv}\n\n`;
-        });
-        
-        return fullText;
-    } catch (e) {
-        console.error('Excel parsing failed', e);
-        return 'Excel解析に失敗しました';
-    }
+    return parseExcelPriceEntries(base64Data).text;
 };
+
+export const extractExcelMarketData = (base64Data: string, dateString?: string) =>
+    parseExcelPriceEntries(base64Data, dateString);
 
 /**
  * Extract text from a PDF file (Base64)
@@ -326,13 +459,21 @@ export const extractPdfText = async (base64Data: string): Promise<string> => {
 /**
  * Analyze market content using the actual email text and extracted attachment text.
  */
-export const analyzeMarketContent = async (text: string, subject: string, receivedAt?: string): Promise<any> => {
+export const analyzeMarketContent = async (
+    text: string,
+    subject: string,
+    receivedAt?: string,
+    preExtractedPrices: MarketPriceEntry[] = []
+): Promise<any> => {
     await new Promise(resolve => setTimeout(resolve, 300));
 
     const combined = normalizeText(`${subject}\n${text}`);
     const sentences = splitSentences(combined);
     const mentions = findProduceMentions(combined, receivedAt);
-    const majorProducePrices = parsePriceEntriesFromText(combined, receivedAt);
+    const majorProducePrices = unique([
+        ...preExtractedPrices.map(entry => JSON.stringify(entry)),
+        ...parsePriceEntriesFromText(combined, receivedAt).map(entry => JSON.stringify(entry))
+    ]).map(value => JSON.parse(value) as MarketPriceEntry);
 
     const highPrices = unique(
         mentions

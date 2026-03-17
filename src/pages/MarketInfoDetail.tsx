@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Sparkles, FileText, ExternalLink, RefreshCw } from 'lucide-react';
+import type { MarketPriceEntry } from '../types';
 import type { MarketInfo } from '../types';
 import { getAttachmentData } from '../services/gmailService';
-import { extractExcelText, extractPdfText, analyzeMarketContent } from '../services/marketParser';
+import { extractExcelMarketData, extractPdfText, analyzeMarketContent } from '../services/marketParser';
 
 interface MarketInfoDetailProps {
   market: MarketInfo;
@@ -18,6 +19,7 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
     setIsAnalyzing(true);
     try {
         let combinedText = `件名: ${market.subject}\n送信者: ${market.sender}\n`;
+        const extractedPriceEntries: MarketPriceEntry[] = [];
         if (market.snippet) {
             combinedText += `要約: ${market.snippet}\n`;
         }
@@ -32,14 +34,16 @@ export const MarketInfoDetail: React.FC<MarketInfoDetailProps> = ({ market, onBa
         for (const att of market.attachments) {
             const base64 = await getAttachmentData(market.id, att.fileId!);
             if (att.mimeType.includes('spreadsheet') || att.filename.endsWith('.xlsx') || att.filename.endsWith('.xls')) {
-                combinedText += `\n[ファイル: ${att.filename}]\n${extractExcelText(base64)}\n`;
+                const excelData = extractExcelMarketData(base64, market.receivedAt);
+                combinedText += `\n[ファイル: ${att.filename}]\n${excelData.text}\n`;
+                extractedPriceEntries.push(...excelData.priceEntries);
             } else if (att.mimeType.includes('pdf') || att.filename.endsWith('.pdf')) {
                 const pdfText = await extractPdfText(base64);
                 combinedText += `\n[ファイル: ${att.filename}]\n${pdfText}\n`;
             }
         }
         
-        const result = await analyzeMarketContent(combinedText, market.subject, market.receivedAt);
+        const result = await analyzeMarketContent(combinedText, market.subject, market.receivedAt, extractedPriceEntries);
         
         const updated: MarketInfo = {
             ...market,
