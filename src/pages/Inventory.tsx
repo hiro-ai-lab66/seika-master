@@ -1,15 +1,47 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Boxes, Search, Trash2, Box, Printer, X, Copy, PlusCircle, Clock, Sparkles } from 'lucide-react';
+import { Boxes, Search, Trash2, Box, Printer, X, Copy, PlusCircle, Clock, Sparkles, Cloud, RefreshCw } from 'lucide-react';
 import type { Product, InventoryItem, InventoryType } from '../types';
 import { loadProducts } from '../storage/products';
 import { loadInventory, saveInventory } from '../storage/inventory';
 import { exportInventoryToExcel } from '../utils/excelExport';
+import {
+    convertSharedRowsToInventoryItems,
+    fetchSharedInventoryItems,
+    getSharedStoreName,
+    hasSheetsAccessToken,
+    initializeSheetsAuth,
+    isSheetsConfigured,
+    loginToGoogleSheets,
+    migrateLocalInventoryOnce,
+    upsertSharedInventoryItems
+} from '../services/googleSheetsInventoryService';
 
 interface InventoryProps {
     currentDate: string;
     onProductActive?: (name: string) => void;
     onOpenPopGem?: (name?: string) => void;
 }
+
+const buildInventoryKey = (item: InventoryItem) =>
+    `${item.date}__${item.inventoryType || 'monthend'}__${item.name}`;
+
+const mergeInventoryItems = (baseItems: InventoryItem[], incomingItems: InventoryItem[]) => {
+    const merged = new Map<string, InventoryItem>();
+
+    baseItems.forEach(item => {
+        merged.set(buildInventoryKey(item), item);
+    });
+
+    incomingItems.forEach(item => {
+        merged.set(buildInventoryKey(item), item);
+    });
+
+    return Array.from(merged.values()).sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return a.name.localeCompare(b.name, 'ja');
+    });
+};
 
 export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActive, onOpenPopGem }) => {
     const [products, setProducts] = useState<Product[]>([]);
@@ -20,6 +52,12 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [showOnlyTarget, setShowOnlyTarget] = useState(false);
     const [showOnlyUnentered, setShowOnlyUnentered] = useState(false);
     const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
+    const [isSheetsConfiguredState] = useState(isSheetsConfigured());
+    const [isSheetsAuthenticated, setIsSheetsAuthenticated] = useState(hasSheetsAccessToken());
+    const [isLoadingSharedInventory, setIsLoadingSharedInventory] = useState(false);
+    const [isSavingSharedInventory, setIsSavingSharedInventory] = useState(false);
+    const [sharedStatus, setSharedStatus] = useState<string | null>(null);
+    const [sharedError, setSharedError] = useState<string | null>(null);
 
     // 追加されたアイテムへのスクロールとハイライト処理
     useEffect(() => {
@@ -51,10 +89,59 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         setProducts(loadProducts());
     }, []);
 
+    useEffect(() => {
+        if (!isSheetsConfiguredState) return;
+
+        initializeSheetsAuth((resp) => {
+            if (resp.access_token) {
+                setIsSheetsAuthenticated(true);
+                setSharedError(null);
+                setSharedStatus('Googleスプレッドシートに接続しました');
+            }
+        }).catch((error) => {
+            console.error('Failed to initialize Google Sheets auth', error);
+            setSharedError('Googleスプレッドシート連携の初期化に失敗しました');
+        });
+    }, [isSheetsConfiguredState]);
+
     // インベントリ変更時に保存
     useEffect(() => {
         saveInventory(inventoryItems);
     }, [inventoryItems]);
+
+    useEffect(() => {
+        if (!isSheetsConfiguredState || !isSheetsAuthenticated || products.length === 0) return;
+
+        const loadSharedInventory = async () => {
+            setIsLoadingSharedInventory(true);
+            setSharedError(null);
+
+            try {
+                const productsByName = new Map(products.map(product => [product.name, product]));
+                const sharedRows = await fetchSharedInventoryItems();
+                const sharedItems = convertSharedRowsToInventoryItems(sharedRows, productsByName);
+
+                setInventoryItems(prev => mergeInventoryItems(prev, sharedItems));
+
+                const migrated = await migrateLocalInventoryOnce(loadInventory());
+                if (migrated) {
+                    const latestRows = await fetchSharedInventoryItems();
+                    const latestItems = convertSharedRowsToInventoryItems(latestRows, productsByName);
+                    setInventoryItems(prev => mergeInventoryItems(prev, latestItems));
+                    setSharedStatus('ローカル棚卸しデータをスプレッドシートへ初回移行しました');
+                } else {
+                    setSharedStatus('Googleスプレッドシートから最新データを取得しました');
+                }
+            } catch (error) {
+                console.error('Failed to load shared inventory', error);
+                setSharedError('Googleスプレッドシートから棚卸しデータを取得できませんでした');
+            } finally {
+                setIsLoadingSharedInventory(false);
+            }
+        };
+
+        void loadSharedInventory();
+    }, [isSheetsAuthenticated, isSheetsConfiguredState, products]);
 
     // 現在の日付＋種別の棚卸しデータ
     const todaysInventory = useMemo(() => {
@@ -107,6 +194,61 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             // 理論原価もリセット
             setTheoreticalCostStr('');
             localStorage.removeItem(getTheoreticalCostKey(currentDate, currentType));
+        }
+    };
+
+    const handleSheetsLogin = () => {
+        if (!isSheetsConfiguredState) {
+            setSharedError('Googleスプレッドシートの環境変数が未設定です');
+            return;
+        }
+
+        try {
+            loginToGoogleSheets(hasSheetsAccessToken() ? '' : 'select_account consent');
+        } catch (error) {
+            console.error('Failed to start Google Sheets login', error);
+            setSharedError('Googleスプレッドシートのログインを開始できませんでした');
+        }
+    };
+
+    const handleReloadSharedInventory = async () => {
+        if (!isSheetsAuthenticated || products.length === 0) return;
+
+        setIsLoadingSharedInventory(true);
+        setSharedError(null);
+
+        try {
+            const productsByName = new Map(products.map(product => [product.name, product]));
+            const rows = await fetchSharedInventoryItems();
+            const sharedItems = convertSharedRowsToInventoryItems(rows, productsByName);
+            setInventoryItems(prev => mergeInventoryItems(prev, sharedItems));
+            setSharedStatus('Googleスプレッドシートから最新データを再取得しました');
+        } catch (error) {
+            console.error('Failed to reload shared inventory', error);
+            setSharedError('最新データの取得に失敗しました');
+        } finally {
+            setIsLoadingSharedInventory(false);
+        }
+    };
+
+    const handleSaveSharedInventory = async () => {
+        if (!isSheetsAuthenticated) {
+            setSharedError('先にGoogleスプレッドシートへログインしてください');
+            return;
+        }
+
+        setIsSavingSharedInventory(true);
+        setSharedError(null);
+
+        try {
+            const targetItems = inventoryItems.filter(item => item.date === currentDate && (item.inventoryType || 'monthend') === currentType);
+            await upsertSharedInventoryItems(targetItems);
+            setSharedStatus('現在の棚卸しデータをGoogleスプレッドシートへ保存しました');
+        } catch (error) {
+            console.error('Failed to save shared inventory', error);
+            setSharedError('Googleスプレッドシートへの保存に失敗しました');
+        } finally {
+            setIsSavingSharedInventory(false);
         }
     };
 
@@ -409,7 +551,51 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             })}
                         </select>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+                        <button
+                            className="btn-action primary"
+                            style={{
+                                padding: '10px 16px',
+                                fontSize: '0.9rem',
+                                minWidth: '150px',
+                                width: 'auto',
+                                opacity: isSheetsConfiguredState ? 1 : 0.65
+                            }}
+                            onClick={handleSheetsLogin}
+                        >
+                            <Cloud size={16} />
+                            Googleシートにログイン
+                        </button>
+                        <button
+                            className="btn-action"
+                            style={{
+                                padding: '10px 16px',
+                                fontSize: '0.9rem',
+                                minWidth: '120px',
+                                width: 'auto'
+                            }}
+                            onClick={handleReloadSharedInventory}
+                            disabled={!isSheetsConfiguredState || !isSheetsAuthenticated || isLoadingSharedInventory}
+                        >
+                            <RefreshCw size={16} className={isLoadingSharedInventory ? 'spin' : ''} />
+                            最新取得
+                        </button>
+                        <button
+                            className="btn-action"
+                            style={{
+                                padding: '10px 16px',
+                                fontSize: '0.9rem',
+                                minWidth: '150px',
+                                width: 'auto',
+                                color: '#0284c7',
+                                borderColor: '#0284c7'
+                            }}
+                            onClick={handleSaveSharedInventory}
+                            disabled={!isSheetsConfiguredState || !isSheetsAuthenticated || isSavingSharedInventory}
+                        >
+                            <Cloud size={16} />
+                            Googleシートに保存
+                        </button>
                         {todaysInventory.length > 0 && currentType === 'mid' && (
                             <button
                                 className="btn-action"
@@ -430,6 +616,37 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             >
                                 <Printer size={16} /> 提出用PDF（月末）
                             </button>
+                        )}
+                    </div>
+                </div>
+
+                <div
+                    className="card-premium"
+                    style={{
+                        marginBottom: '1rem',
+                        backgroundColor: '#f8fafc',
+                        border: `1px solid ${sharedError ? '#fecaca' : '#dbeafe'}`,
+                        padding: '12px 16px'
+                    }}
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <strong style={{ fontSize: '0.95rem' }}>共有データ保存</strong>
+                        {!isSheetsConfiguredState && (
+                            <span style={{ fontSize: '0.85rem', color: '#b91c1c' }}>
+                                <code>VITE_SHARED_SHEET_ID</code> を設定すると Google スプレッドシート共有が有効になります。
+                            </span>
+                        )}
+                        {isSheetsConfiguredState && (
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                保存先: {getSharedStoreName()} / Googleスプレッドシート
+                                {isSheetsAuthenticated ? '（ログイン済み）' : '（未ログイン）'}
+                            </span>
+                        )}
+                        {sharedStatus && (
+                            <span style={{ fontSize: '0.85rem', color: '#0369a1' }}>{sharedStatus}</span>
+                        )}
+                        {sharedError && (
+                            <span style={{ fontSize: '0.85rem', color: '#b91c1c' }}>{sharedError}</span>
                         )}
                     </div>
                 </div>
