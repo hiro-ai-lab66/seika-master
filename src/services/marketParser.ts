@@ -415,6 +415,40 @@ export const buildMajorProduceComparisons = (
     }).sort((a, b) => a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName));
 };
 
+export const buildGroupedProduceSummaries = (comparisons: MarketPriceComparison[]) => {
+    const grouped = new Map<string, {
+        itemName: string;
+        category: '野菜' | '果物';
+        entries: MarketPriceComparison[];
+        averagePrice: number;
+        highestPrice: number;
+        lowestPrice: number;
+    }>();
+
+    comparisons.forEach(comparison => {
+        const existing = grouped.get(comparison.itemName);
+        if (existing) {
+            existing.entries.push(comparison);
+            const prices = existing.entries.map(entry => entry.currentPrice);
+            existing.averagePrice = Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length);
+            existing.highestPrice = Math.max(...prices);
+            existing.lowestPrice = Math.min(...prices);
+            return;
+        }
+
+        grouped.set(comparison.itemName, {
+            itemName: comparison.itemName,
+            category: comparison.category,
+            entries: [comparison],
+            averagePrice: comparison.currentPrice,
+            highestPrice: comparison.currentPrice,
+            lowestPrice: comparison.currentPrice
+        });
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName));
+};
+
 /**
  * Extract text from an Excel file (Base64)
  */

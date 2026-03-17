@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Sparkles, AlertTriangle, TrendingUp, TrendingDown, Lightbulb, Info, ExternalLink, Copy } from 'lucide-react';
 import type { MarketInfo, MarketPriceComparison } from '../types';
-import { buildMajorProduceComparisons } from '../services/marketParser';
+import { buildGroupedProduceSummaries, buildMajorProduceComparisons } from '../services/marketParser';
 
 interface MarketInfoAnalysisProps {
   market: MarketInfo;
@@ -143,6 +143,7 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const previousMarket = findPreviousMarket(market, marketHistory);
   const majorComparisons = buildMajorProduceComparisons(market, previousMarket);
+  const groupedSummaries = buildGroupedProduceSummaries(majorComparisons);
 
   const priorityCards = [
     {
@@ -280,6 +281,65 @@ export const MarketInfoAnalysis: React.FC<MarketInfoAnalysisProps> = ({ market, 
             <p style={{ margin: 0, fontSize: '1rem', color: '#1e3a8a', lineHeight: 1.6, fontWeight: 500 }}>
               {market.summary}
             </p>
+          </div>
+
+          <div style={{ ...baseAnalysisCardStyle }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)' }}>主要品目集約表示</h3>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                品目単位で規格別価格を集約
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              {groupedSummaries.length > 0 ? groupedSummaries.map((group) => (
+                <div key={group.itemName} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', background: '#fafafa' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>{group.itemName}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{group.category}</div>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#475569', background: '#eef2ff', borderRadius: '999px', padding: '4px 8px', fontWeight: 700 }}>
+                      {group.entries.length}規格
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '0.76rem', color: '#334155', background: 'white', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 8px', fontWeight: 700 }}>
+                      平均 {formatPrice(group.averagePrice)}
+                    </span>
+                    <span style={{ fontSize: '0.76rem', color: '#334155', background: 'white', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 8px', fontWeight: 700 }}>
+                      最高 {formatPrice(group.highestPrice)}
+                    </span>
+                    <span style={{ fontSize: '0.76rem', color: '#334155', background: 'white', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 8px', fontWeight: 700 }}>
+                      最低 {formatPrice(group.lowestPrice)}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {group.entries.map((entry) => (
+                      <div key={`${entry.itemName}-${entry.currentSpec}-${entry.currentUnit}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'white', borderRadius: '10px', padding: '10px 12px', border: '1px solid #edf2f7' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                            {entry.currentUnit} {entry.currentSpec}
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                            {entry.comparisonLabel}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)' }}>{formatPrice(entry.currentPrice)}</div>
+                          <div style={{ fontSize: '0.74rem', color: entry.difference !== undefined ? comparisonTone(entry.status) : '#94a3b8', fontWeight: 700 }}>
+                            {entry.difference !== undefined ? `${entry.difference > 0 ? '+' : ''}${entry.difference.toLocaleString()}円` : '比較対象なし'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )) : (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                  集約表示できる主要品目データがありません。
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ ...baseAnalysisCardStyle, overflow: 'hidden' }}>
