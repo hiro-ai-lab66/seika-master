@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Mail, RefreshCw, ChevronRight, FileText, ShieldAlert, CheckCircle } from 'lucide-react';
 import { loadGisScript, initTokenClient, loginToGmail, fetchMarketEmails, hasGmailAccessToken } from '../services/gmailService';
 import type { MarketInfo } from '../types';
@@ -9,6 +9,8 @@ interface MarketInfoListProps {
   onSyncComplete?: (newMarkets: MarketInfo[]) => void;
   isAuthenticated: boolean;
   onAuthChange: (isAuthenticated: boolean) => void;
+  autoStartLogin?: boolean;
+  onAutoLoginHandled?: () => void;
 }
 
 export const MarketInfoList: React.FC<MarketInfoListProps> = ({
@@ -16,12 +18,15 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({
   savedMarketHistory = [],
   onSyncComplete,
   isAuthenticated,
-  onAuthChange
+  onAuthChange,
+  autoStartLogin = false,
+  onAutoLoginHandled
 }) => {
   const [isGisLoaded, setIsGisLoaded] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markets, setMarkets] = useState<MarketInfo[]>(savedMarketHistory);
+  const autoLoginAttemptedRef = useRef(false);
 
   useEffect(() => {
     setMarkets(savedMarketHistory);
@@ -47,9 +52,32 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({
       });
   }, [onAuthChange]);
 
+  useEffect(() => {
+    if (!autoStartLogin) {
+      autoLoginAttemptedRef.current = false;
+    }
+  }, [autoStartLogin]);
+
+  useEffect(() => {
+    if (!autoStartLogin || !isGisLoaded || isAuthenticated || autoLoginAttemptedRef.current) {
+      return;
+    }
+
+    autoLoginAttemptedRef.current = true;
+
+    try {
+      loginToGmail(hasGmailAccessToken() ? '' : 'select_account consent');
+    } catch (e) {
+      setError('ログイン処理の開始に失敗しました');
+      autoLoginAttemptedRef.current = false;
+    } finally {
+      onAutoLoginHandled?.();
+    }
+  }, [autoStartLogin, isAuthenticated, isGisLoaded, onAutoLoginHandled]);
+
   const handleLogin = () => {
     try {
-        loginToGmail();
+        loginToGmail(hasGmailAccessToken() ? '' : 'select_account consent');
     } catch (e) {
         setError('ログイン処理の開始に失敗しました');
     }
@@ -120,6 +148,12 @@ export const MarketInfoList: React.FC<MarketInfoListProps> = ({
                       相場情報が届く個人Gmailと連携し、AIが自動で内容を要約・分析します。
                   </p>
               </div>
+
+              {autoStartLogin && (
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>
+                      Google認証を自動で開始しています。表示されない場合は下のボタンを押してください。
+                  </p>
+              )}
               
               <button 
                 onClick={handleLogin}

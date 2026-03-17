@@ -2,9 +2,12 @@ import type { MarketInfo, MarketAttachment } from '../types';
 
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
+const TOKEN_STORAGE_KEY = 'seika_market_access_token';
 
 let tokenClient: any = null;
-let accessToken: string | null = null;
+let accessToken: string | null = typeof window !== 'undefined'
+    ? window.sessionStorage.getItem(TOKEN_STORAGE_KEY)
+    : null;
 
 export const hasGmailAccessToken = (): boolean => Boolean(accessToken);
 
@@ -104,7 +107,13 @@ export const initTokenClient = (onTokenResponse: (resp: any) => void) => {
                 console.error('OAuth Error:', resp.error);
                 return;
             }
-            accessToken = resp.access_token;
+            const nextAccessToken = resp.access_token as string | undefined;
+            if (!nextAccessToken) {
+                console.error('OAuth Error: missing access token');
+                return;
+            }
+            accessToken = nextAccessToken;
+            window.sessionStorage.setItem(TOKEN_STORAGE_KEY, nextAccessToken);
             onTokenResponse(resp);
         },
     });
@@ -113,12 +122,11 @@ export const initTokenClient = (onTokenResponse: (resp: any) => void) => {
 /**
  * Request access token
  */
-export const loginToGmail = () => {
+export const loginToGmail = (prompt: string = 'select_account consent') => {
     if (!tokenClient) {
         throw new Error('GIS client not initialized');
     }
-    // 'select_account' forces the account picker, 'consent' ensures they see the scope confirmation
-    tokenClient.requestAccessToken({ prompt: 'select_account consent' });
+    tokenClient.requestAccessToken({ prompt });
 };
 
 /**

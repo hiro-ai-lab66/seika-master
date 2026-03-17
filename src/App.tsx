@@ -24,6 +24,7 @@ import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import type { AIAnalysisResult, MarketInfo } from './types';
 
 const STORAGE_KEY = 'seika_master_data_v2';
+const MARKET_REDIRECT_KEY = 'seika_market_redirect';
 
 class ErrorBoundary extends Component<{children: ReactNode, fallback?: ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -66,6 +67,10 @@ function App() {
   const [marketView, setMarketView] = useState<'list' | 'detail' | 'analysis'>('list');
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(null);
   const [isMarketAuthenticated, setIsMarketAuthenticated] = useState(false);
+  const [shouldAutoStartMarketLogin, setShouldAutoStartMarketLogin] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage.getItem(MARKET_REDIRECT_KEY) === 'market';
+  });
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -138,6 +143,26 @@ function App() {
       // QuotaExceededError is common if saving large base64 strings
     }
   }, [state]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const pendingMarketRedirect = window.sessionStorage.getItem(MARKET_REDIRECT_KEY);
+    if (pendingMarketRedirect === 'market') {
+      setActiveTab('market');
+      setMarketView('list');
+      setShouldAutoStartMarketLogin(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (isMarketAuthenticated) {
+      window.sessionStorage.removeItem(MARKET_REDIRECT_KEY);
+      setShouldAutoStartMarketLogin(false);
+    }
+  }, [isMarketAuthenticated]);
 
   const saveInspection = (entry: InspectionEntry) => {
     setState(prev => {
@@ -358,6 +383,8 @@ function App() {
                     onSyncComplete={saveMarketHistory}
                     isAuthenticated={isMarketAuthenticated}
                     onAuthChange={setIsMarketAuthenticated}
+                    autoStartLogin={shouldAutoStartMarketLogin}
+                    onAutoLoginHandled={() => setShouldAutoStartMarketLogin(false)}
                 />;
       default:
         return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
@@ -444,7 +471,14 @@ function App() {
                 setActiveTab(tab.id as any);
                 if (tab.id === 'sellfloor') setSellfloorView('list');
                 if (tab.id === 'popibrary') setPopibraryView('list');
-                if (tab.id === 'market') setMarketView('list');
+                if (tab.id === 'market') {
+                  setMarketView('list');
+                  setSelectedMarket(null);
+                  if (!isMarketAuthenticated) {
+                    window.sessionStorage.setItem(MARKET_REDIRECT_KEY, 'market');
+                    setShouldAutoStartMarketLogin(true);
+                  }
+                }
             }}
           >
             {/* @ts-ignore */}
