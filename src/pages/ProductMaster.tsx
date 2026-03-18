@@ -261,6 +261,8 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         e.preventDefault();
         setSubmitMessage(null);
         setSubmitError(null);
+        setSyncMessage(null);
+        setSyncError(null);
 
         console.log('[ProductMaster] validation start', { name, code, category, unit });
         if (!name.trim()) {
@@ -315,7 +317,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         saveProducts(updatedProducts);
                         return updatedProducts;
                     });
-                    setSyncMessage('共有保存が完了しました');
+                    setSyncMessage(null);
                 } catch (error) {
                     console.error('[ProductMaster] sheets sync failed', error);
                     const message = error instanceof Error ? error.message : '共有保存に失敗しました';
@@ -328,7 +330,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         saveProducts(updatedProducts);
                         return updatedProducts;
                     });
-                    setSyncError(`共有保存に失敗しました: ${message}`);
+                    setSyncError('登録は完了しましたが、共有同期に失敗しました');
                 }
             })();
         } catch (error) {
@@ -471,7 +473,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             {syncError && (
                 <div style={{
                     position: 'fixed', top: importResult || submitMessage || submitError || syncMessage ? '236px' : '20px', left: '50%', transform: 'translateX(-50%)',
-                    backgroundColor: '#f59e0b', color: '#111827', padding: '12px 24px',
+                    backgroundColor: '#fef3c7', color: '#92400e', padding: '12px 24px',
                     borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
                 }}>
