@@ -335,7 +335,8 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         return result;
     }, [products, searchQuery, displayFilter]);
 
-    const handleOpenRegistrationForm = () => {
+    const handleOpenRegistrationForm = (event?: React.SyntheticEvent) => {
+        event?.preventDefault();
         console.log('登録ボタン押下');
         setIsRegistrationFormOpen(true);
         formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -610,6 +611,8 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
           right: 16px;
           bottom: 104px;
           z-index: 30;
+          pointer-events: auto;
+          touch-action: manipulation;
           border: none;
           border-radius: 999px;
           background: linear-gradient(135deg, var(--primary) 0%, #0f766e 100%);
@@ -638,6 +641,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                 type="button"
                 className="mobile-add-fab"
                 onClick={handleOpenRegistrationForm}
+                onTouchEnd={handleOpenRegistrationForm}
                 aria-label="商品を登録する"
             >
                 <Plus size={18} />
