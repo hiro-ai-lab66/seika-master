@@ -123,6 +123,8 @@ export type Product = {
     totalSalesQty?: number;
     totalSalesAmt?: number;
     firstRegistered?: string;
+    syncStatus?: 'local-only' | 'pending' | 'synced' | 'failed';
+    syncError?: string;
 };
 
 export interface SellfloorRecord {

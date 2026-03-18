@@ -224,6 +224,11 @@ const appendSheetValues = async (range: string, values: string[][]) => {
     }
 };
 
+export const readSharedSheetValues = async (range: string) => fetchSheetValues(range);
+export const writeSharedSheetValues = async (range: string, values: string[][]) => updateSheetValues(range, values);
+export const appendSharedSheetValues = async (range: string, values: string[][]) => appendSheetValues(range, values);
+export const getSharedSpreadsheetId = () => SPREADSHEET_ID;
+
 const ensureHeaderRow = async () => {
     const result = await fetchSheetValues(`${SHEET_NAME}!A1:F1`);
     const header = result.values?.[0] || [];

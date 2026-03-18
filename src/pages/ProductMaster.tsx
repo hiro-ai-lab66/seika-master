@@ -3,6 +3,7 @@ import { Package, Search, Plus, Trash2, Tag, Hash, Scale, Box, Upload } from 'lu
 import Papa from 'papaparse';
 import type { Product } from '../types';
 import { loadProducts, saveProducts } from '../storage/products';
+import { syncProductToGoogleSheets } from '../services/googleSheetsProductService';
 
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
@@ -18,6 +19,8 @@ export const ProductMaster: React.FC = () => {
     const [isRegistrationFormOpen, setIsRegistrationFormOpen] = useState(true);
     const [submitMessage, setSubmitMessage] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [syncMessage, setSyncMessage] = useState<string | null>(null);
+    const [syncError, setSyncError] = useState<string | null>(null);
 
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -56,13 +59,15 @@ export const ProductMaster: React.FC = () => {
     }, [isRegistrationFormOpen]);
 
     useEffect(() => {
-        if (!submitMessage && !submitError) return;
+        if (!submitMessage && !submitError && !syncMessage && !syncError) return;
         const timer = window.setTimeout(() => {
             setSubmitMessage(null);
             setSubmitError(null);
+            setSyncMessage(null);
+            setSyncError(null);
         }, 2500);
         return () => window.clearTimeout(timer);
-    }, [submitMessage, submitError]);
+    }, [submitMessage, submitError, syncMessage, syncError]);
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -273,6 +278,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             unit: unit.trim(),
             inventoryTarget: false, // デフォルトで棚卸対象外
             updatedAt: new Date().toISOString(),
+            syncStatus: 'pending'
         };
 
         try {
@@ -298,6 +304,32 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             setSearchQuery('');
             setDisplayFilter('すべて');
             setSubmitMessage('登録しました');
+
+            void (async () => {
+                try {
+                    await syncProductToGoogleSheets(newProduct);
+                    const syncedProduct = { ...newProduct, syncStatus: 'synced' as const, syncError: undefined };
+                    setProducts(prev => {
+                        const updatedProducts = prev.map(item => item.id === newProduct.id ? syncedProduct : item);
+                        saveProducts(updatedProducts);
+                        return updatedProducts;
+                    });
+                    setSyncMessage('共有保存が完了しました');
+                } catch (error) {
+                    console.error('[ProductMaster] sheets sync failed', error);
+                    const message = error instanceof Error ? error.message : '共有保存に失敗しました';
+                    setProducts(prev => {
+                        const updatedProducts = prev.map(item =>
+                            item.id === newProduct.id
+                                ? { ...item, syncStatus: 'failed' as const, syncError: message }
+                                : item
+                        );
+                        saveProducts(updatedProducts);
+                        return updatedProducts;
+                    });
+                    setSyncError(`共有保存に失敗しました: ${message}`);
+                }
+            })();
         } catch (error) {
             console.error('[ProductMaster] registration error', error);
             setSubmitError(error instanceof Error ? error.message : '登録に失敗しました');
@@ -413,6 +445,28 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
                 }}>
                     {submitError}
+                </div>
+            )}
+
+            {syncMessage && (
+                <div style={{
+                    position: 'fixed', top: importResult || submitMessage || submitError ? '182px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    backgroundColor: '#0369a1', color: 'white', padding: '12px 24px',
+                    borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
+                }}>
+                    {syncMessage}
+                </div>
+            )}
+
+            {syncError && (
+                <div style={{
+                    position: 'fixed', top: importResult || submitMessage || submitError || syncMessage ? '236px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    backgroundColor: '#f59e0b', color: '#111827', padding: '12px 24px',
+                    borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
+                }}>
+                    {syncError}
                 </div>
             )}
 
@@ -647,6 +701,18 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                                                 <span className="value">{product.unit}</span>
                                             </div>
                                         )}
+                                        <div className="detail-item">
+                                            <span className="label">共有状態</span>
+                                            <span className="value">
+                                                {product.syncStatus === 'synced'
+                                                    ? '共有済み'
+                                                    : product.syncStatus === 'failed'
+                                                        ? '未同期'
+                                                        : product.syncStatus === 'pending'
+                                                            ? '同期中'
+                                                            : 'ローカルのみ'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             ))
