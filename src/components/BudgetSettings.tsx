@@ -11,6 +11,13 @@ interface Props {
 }
 
 export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, onChangeDate }) => {
+  const formatThousandValue = (amount: number) => amount > 0 ? String(Math.round(amount / 1000)) : '';
+  const parseThousandValue = (value: string) => {
+    const digits = value.replace(/[^\d]/g, '');
+    if (!digits) return 0;
+    return Number(digits) * 1000;
+  };
+
   // currentDateの年・月を基準とするローカル状態（日は1日とする）
   const initDate = new Date(`${currentDate}T00:00:00`);
   const [viewDate, setViewDate] = useState(new Date(initDate.getFullYear(), initDate.getMonth(), 1));
@@ -276,8 +283,11 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
       <div className="budget-list card">
         <div className="list-header">
           <span className="col-date">日付</span>
-          <span className="col-budget">予算 (円)</span>
+          <span className="col-budget">予算（千円）</span>
         </div>
+        <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: '#64748b', fontWeight: 700 }}>
+          ※金額は千円単位
+        </p>
         <div className="list-body">
           {localBudgets.map(b => {
             const isToday = b.date === getLocalTodayDateString();
@@ -292,13 +302,13 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
                 </div>
                 <div className="input-wrapper">
                   <input
-                    type="number"
-                    step="1000"
+                    type="text"
                     inputMode="numeric"
-                    value={b.totalBudget || ''}
+                    pattern="[0-9]*"
+                    value={formatThousandValue(b.totalBudget)}
                     onChange={e => {
-                      const val = parseInt(e.target.value) || 0;
-                      handleBudgetChange(b.date, (Math.floor(val / 1000) * 1000).toString());
+                      const val = parseThousandValue(e.target.value);
+                      handleBudgetChange(b.date, val.toString());
                     }}
                     placeholder="0"
                   />
