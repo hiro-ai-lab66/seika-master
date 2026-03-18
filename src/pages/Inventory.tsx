@@ -44,6 +44,232 @@ const mergeInventoryItems = (baseItems: InventoryItem[], incomingItems: Inventor
     });
 };
 
+type SharedInventoryPanelProps = {
+    isConfigured: boolean;
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    isSaving: boolean;
+    storeName: string;
+    status: string | null;
+    error: string | null;
+    showStatusCard?: boolean;
+    onLogin: () => void;
+    onReload: () => void;
+    onSave: () => void;
+};
+
+const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
+    isConfigured,
+    isAuthenticated,
+    isLoading,
+    isSaving,
+    storeName,
+    status,
+    error,
+    showStatusCard = true,
+    onLogin,
+    onReload,
+    onSave
+}) => (
+    <>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+            <button
+                className="btn-action primary"
+                style={{
+                    padding: '10px 16px',
+                    fontSize: '0.9rem',
+                    minWidth: '150px',
+                    width: 'auto',
+                    opacity: isConfigured ? 1 : 0.65
+                }}
+                onClick={onLogin}
+            >
+                <Cloud size={16} />
+                Googleシートにログイン
+            </button>
+            <button
+                className="btn-action"
+                style={{
+                    padding: '10px 16px',
+                    fontSize: '0.9rem',
+                    minWidth: '120px',
+                    width: 'auto'
+                }}
+                onClick={onReload}
+                disabled={!isConfigured || !isAuthenticated || isLoading}
+            >
+                <RefreshCw size={16} className={isLoading ? 'spin' : ''} />
+                最新取得
+            </button>
+            <button
+                className="btn-action"
+                style={{
+                    padding: '10px 16px',
+                    fontSize: '0.9rem',
+                    minWidth: '150px',
+                    width: 'auto',
+                    color: '#0284c7',
+                    borderColor: '#0284c7'
+                }}
+                onClick={onSave}
+                disabled={!isConfigured || !isAuthenticated || isSaving}
+            >
+                <Cloud size={16} />
+                Googleシートに保存
+            </button>
+        </div>
+
+        {showStatusCard && (
+            <div
+                className="card-premium"
+                style={{
+                    marginBottom: '1rem',
+                    backgroundColor: '#f8fafc',
+                    border: `1px solid ${error ? '#fecaca' : '#dbeafe'}`,
+                    padding: '12px 16px'
+                }}
+            >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <strong style={{ fontSize: '0.95rem' }}>共有データ保存</strong>
+                    {!isConfigured && (
+                        <span style={{ fontSize: '0.85rem', color: '#b91c1c' }}>
+                            <code>VITE_SHARED_SHEET_ID</code> を設定すると Google スプレッドシート共有が有効になります。
+                        </span>
+                    )}
+                    {isConfigured && (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            保存先: {storeName} / Googleスプレッドシート
+                            {isAuthenticated ? '（ログイン済み）' : '（未ログイン）'}
+                        </span>
+                    )}
+                    {status && <span style={{ fontSize: '0.85rem', color: '#0369a1' }}>{status}</span>}
+                    {error && <span style={{ fontSize: '0.85rem', color: '#b91c1c' }}>{error}</span>}
+                </div>
+            </div>
+        )}
+    </>
+);
+
+type InventoryAreaSectionProps = {
+    areaLabel: string;
+    items: InventoryItem[];
+    sectionId: string;
+    recentlyAddedItemId: string | null;
+    onOpenPopGem?: (name?: string) => void;
+    onDeleteItem: (id: string) => void;
+    onUpdateItem: (productId: string, qtyStr: string, costStr: string, department: '野菜' | '果物') => void;
+};
+
+const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
+    areaLabel,
+    items,
+    sectionId,
+    recentlyAddedItemId,
+    onOpenPopGem,
+    onDeleteItem,
+    onUpdateItem
+}) => (
+    <div id={sectionId} style={{ marginBottom: '2rem' }}>
+        <h4 style={{ padding: '8px 12px', backgroundColor: '#e2e8f0', borderRadius: '4px', marginBottom: '1rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {areaLabel}
+            <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#64748b' }}>{items.length}件</span>
+        </h4>
+        <div className="history-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {items.length === 0 ? (
+                <div className="empty-state" style={{ padding: '2rem 1rem' }}>
+                    <p>該当する商品がありません。</p>
+                </div>
+            ) : (
+                items.map(item => (
+                    <div
+                        key={item.id}
+                        id={`item-${item.id}`}
+                        className="history-card"
+                        style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.8rem',
+                            borderLeft: item.qty <= 0 ? '4px solid #b91c1c' : '4px solid transparent',
+                            backgroundColor: recentlyAddedItemId === item.id ? '#dcfce7' : '',
+                            transition: 'background-color 0.5s ease'
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h4 style={{ margin: 0, fontSize: '1.05rem', color: item.qty <= 0 ? '#b91c1c' : 'var(--text-main)' }}>
+                                    {item.name} {item.qty <= 0 && <span style={{ fontSize: '0.8rem', fontWeight: 'normal', opacity: 0.8 }}>(未入力)</span>}
+                                </h4>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '8px' }}>
+                                    {item.category && <span>{item.category}</span>}
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {onOpenPopGem && !item.id.startsWith('virtual-') && (
+                                    <button
+                                        onClick={() => onOpenPopGem(item.name)}
+                                        className="icon-button"
+                                        style={{ color: 'var(--primary)', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', backgroundColor: '#f1f5f9', borderRadius: '4px' }}
+                                        title="POP作成"
+                                    >
+                                        <Sparkles size={14} /> POP
+                                    </button>
+                                )}
+                                {!item.id.startsWith('virtual-') && (
+                                    <button
+                                        onClick={() => onDeleteItem(item.id)}
+                                        className="icon-button"
+                                        style={{ color: 'var(--danger)', padding: '4px' }}
+                                        title="削除"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <select
+                                    className="input-base"
+                                    style={{ width: '80px', padding: '6px' }}
+                                    value={item.department || '野菜'}
+                                    onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), item.cost?.toString() || '0', e.target.value as '野菜' | '果物')}
+                                >
+                                    <option value="野菜">野菜</option>
+                                    <option value="果物">果物</option>
+                                </select>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="数量"
+                                    className="input-base"
+                                    style={{ width: '80px', padding: '6px' }}
+                                    value={item.qty === 0 ? '' : item.qty}
+                                    onChange={(e) => onUpdateItem(item.productId, e.target.value, item.cost?.toString() || '0', item.department as '野菜' | '果物')}
+                                />
+                                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', minWidth: '40px' }}>{item.unit || ''}</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    placeholder="原価"
+                                    className="input-base"
+                                    style={{ width: '90px', padding: '6px' }}
+                                    value={item.cost === 0 ? '' : item.cost}
+                                    onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), e.target.value, item.department as '野菜' | '果物')}
+                                />
+                                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>円</span>
+                            </div>
+                        </div>
+                    </div>
+                ))
+            )}
+        </div>
+    </div>
+);
+
 export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActive, onOpenPopGem }) => {
     const [products, setProducts] = useState<Product[]>([]);
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(() => loadInventory());
@@ -574,50 +800,19 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                         </select>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
-                        <button
-                            className="btn-action primary"
-                            style={{
-                                padding: '10px 16px',
-                                fontSize: '0.9rem',
-                                minWidth: '150px',
-                                width: 'auto',
-                                opacity: isSheetsConfiguredState ? 1 : 0.65
-                            }}
-                            onClick={handleSheetsLogin}
-                        >
-                            <Cloud size={16} />
-                            Googleシートにログイン
-                        </button>
-                        <button
-                            className="btn-action"
-                            style={{
-                                padding: '10px 16px',
-                                fontSize: '0.9rem',
-                                minWidth: '120px',
-                                width: 'auto'
-                            }}
-                            onClick={handleReloadSharedInventory}
-                            disabled={!isSheetsConfiguredState || !isSheetsAuthenticated || isLoadingSharedInventory}
-                        >
-                            <RefreshCw size={16} className={isLoadingSharedInventory ? 'spin' : ''} />
-                            最新取得
-                        </button>
-                        <button
-                            className="btn-action"
-                            style={{
-                                padding: '10px 16px',
-                                fontSize: '0.9rem',
-                                minWidth: '150px',
-                                width: 'auto',
-                                color: '#0284c7',
-                                borderColor: '#0284c7'
-                            }}
-                            onClick={handleSaveSharedInventory}
-                            disabled={!isSheetsConfiguredState || !isSheetsAuthenticated || isSavingSharedInventory}
-                        >
-                            <Cloud size={16} />
-                            Googleシートに保存
-                        </button>
+                        <SharedInventoryPanel
+                            isConfigured={isSheetsConfiguredState}
+                            isAuthenticated={isSheetsAuthenticated}
+                            isLoading={isLoadingSharedInventory}
+                            isSaving={isSavingSharedInventory}
+                            storeName={getSharedStoreName()}
+                            status={null}
+                            error={null}
+                            showStatusCard={false}
+                            onLogin={handleSheetsLogin}
+                            onReload={handleReloadSharedInventory}
+                            onSave={handleSaveSharedInventory}
+                        />
                         {todaysInventory.length > 0 && currentType === 'mid' && (
                             <button
                                 className="btn-action"
@@ -642,36 +837,18 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     </div>
                 </div>
 
-                <div
-                    className="card-premium"
-                    style={{
-                        marginBottom: '1rem',
-                        backgroundColor: '#f8fafc',
-                        border: `1px solid ${sharedError ? '#fecaca' : '#dbeafe'}`,
-                        padding: '12px 16px'
-                    }}
-                >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <strong style={{ fontSize: '0.95rem' }}>共有データ保存</strong>
-                        {!isSheetsConfiguredState && (
-                            <span style={{ fontSize: '0.85rem', color: '#b91c1c' }}>
-                                <code>VITE_SHARED_SHEET_ID</code> を設定すると Google スプレッドシート共有が有効になります。
-                            </span>
-                        )}
-                        {isSheetsConfiguredState && (
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                保存先: {getSharedStoreName()} / Googleスプレッドシート
-                                {isSheetsAuthenticated ? '（ログイン済み）' : '（未ログイン）'}
-                            </span>
-                        )}
-                        {sharedStatus && (
-                            <span style={{ fontSize: '0.85rem', color: '#0369a1' }}>{sharedStatus}</span>
-                        )}
-                        {sharedError && (
-                            <span style={{ fontSize: '0.85rem', color: '#b91c1c' }}>{sharedError}</span>
-                        )}
-                    </div>
-                </div>
+                <SharedInventoryPanel
+                    isConfigured={isSheetsConfiguredState}
+                    isAuthenticated={isSheetsAuthenticated}
+                    isLoading={false}
+                    isSaving={false}
+                    storeName={getSharedStoreName()}
+                    status={sharedStatus}
+                    error={sharedError}
+                    onLogin={handleSheetsLogin}
+                    onReload={handleReloadSharedInventory}
+                    onSave={handleSaveSharedInventory}
+                />
 
                 {/* 原価サマリー */}
                 <div className="card-premium" style={{ marginBottom: '1.5rem', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
@@ -894,126 +1071,24 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             </div>
                         </div>
 
-                        {/* セクションごとの描画ヘルパー */}
-                        {(() => {
-                            const renderArea = (areaLabel: string, items: InventoryItem[], sectionId: string) => (
-                                <div id={sectionId} style={{ marginBottom: '2rem' }}>
-                                    <h4 style={{ padding: '8px 12px', backgroundColor: '#e2e8f0', borderRadius: '4px', marginBottom: '1rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        {areaLabel}
-                                        <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#64748b' }}>{items.length}件</span>
-                                    </h4>
-                                    <div className="history-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                        {items.length === 0 ? (
-                                            <div className="empty-state" style={{ padding: '2rem 1rem' }}>
-                                                <p>該当する商品がありません。</p>
-                                            </div>
-                                        ) : (
-                                            items.map(item => (
-                                                <div
-                                                    key={item.id}
-                                                    id={`item-${item.id}`}
-                                                    className="history-card"
-                                                    style={{
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: '0.8rem',
-                                                        borderLeft: item.qty <= 0 ? '4px solid #b91c1c' : '4px solid transparent',
-                                                        backgroundColor: recentlyAddedItemId === item.id ? '#dcfce7' : '',
-                                                        transition: 'background-color 0.5s ease'
-                                                    }}
-                                                >
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <div>
-                                                            <h4 style={{ margin: 0, fontSize: '1.05rem', color: item.qty <= 0 ? '#b91c1c' : 'var(--text-main)' }}>
-                                                                {item.name} {item.qty <= 0 && <span style={{ fontSize: '0.8rem', fontWeight: 'normal', opacity: 0.8 }}>(未入力)</span>}
-                                                            </h4>
-                                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '8px' }}>
-                                                                {item.category && <span>{item.category}</span>}
-                                                            </div>
-                                                        </div>
-
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            {onOpenPopGem && !item.id.startsWith('virtual-') && (
-                                                                <button
-                                                                    onClick={() => onOpenPopGem(item.name)}
-                                                                    className="icon-button"
-                                                                    style={{ color: 'var(--primary)', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', backgroundColor: '#f1f5f9', borderRadius: '4px' }}
-                                                                    title="POP作成"
-                                                                >
-                                                                    <Sparkles size={14} /> POP
-                                                                </button>
-                                                            )}
-                                                            {/* バーチャルアイテムはまだ実データがないので削除ボタンを無効化するか非表示にする */}
-                                                            {!item.id.startsWith('virtual-') && (
-                                                                <button
-                                                                    onClick={() => handleDeleteItem(item.id)}
-                                                                    className="icon-button"
-                                                                    style={{ color: 'var(--danger)', padding: '4px' }}
-                                                                    title="削除"
-                                                                >
-                                                                    <Trash2 size={18} />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* 編集エリア */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                            <select
-                                                                className="input-base"
-                                                                style={{ width: '80px', padding: '6px' }}
-                                                                value={item.department || '野菜'}
-                                                                onChange={(e) => handleUpdateItem(item.productId, item.qty.toString(), item.cost?.toString() || '0', e.target.value as '野菜' | '果物')}
-                                                            >
-                                                                <option value="野菜">野菜</option>
-                                                                <option value="果物">果物</option>
-                                                            </select>
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                step="0.01"
-                                                                placeholder="数量"
-                                                                className="input-base"
-                                                                style={{ width: '80px', padding: '6px' }}
-                                                                value={item.qty === 0 ? '' : item.qty}
-                                                                onChange={(e) => handleUpdateItem(item.productId, e.target.value, item.cost?.toString() || '0', item.department as '野菜' | '果物')}
-                                                            />
-                                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{item.unit || '個'}</span>
-                                                            <span style={{ margin: '0 4px', color: 'var(--text-muted)' }}>×</span>
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                step="1"
-                                                                placeholder="原価"
-                                                                className="input-base"
-                                                                style={{ width: '90px', padding: '6px' }}
-                                                                value={item.cost || ''}
-                                                                onChange={(e) => handleUpdateItem(item.productId, item.qty.toString(), e.target.value, item.department as '野菜' | '果物')}
-                                                            />
-                                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>円</span>
-                                                        </div>
-
-                                                        {(item.qty > 0 && (item.cost || 0) > 0) && (
-                                                            <div style={{ fontSize: '0.9rem', color: 'var(--primary-dark)', textAlign: 'right', fontWeight: 'bold' }}>
-                                                                計: ¥{((item.qty || 0) * (item.cost || 0)).toLocaleString()}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            );
-
-                            return (
-                                <>
-                                    {renderArea('バックヤード', backyardItems, 'backyard')}
-                                    {renderArea('冷蔵庫', fridgeItems, 'fridge')}
-                                </>
-                            );
-                        })()}
+                        <InventoryAreaSection
+                            areaLabel="バックヤード"
+                            items={backyardItems}
+                            sectionId="backyard"
+                            recentlyAddedItemId={recentlyAddedItemId}
+                            onOpenPopGem={onOpenPopGem}
+                            onDeleteItem={handleDeleteItem}
+                            onUpdateItem={handleUpdateItem}
+                        />
+                        <InventoryAreaSection
+                            areaLabel="冷蔵庫"
+                            items={fridgeItems}
+                            sectionId="fridge"
+                            recentlyAddedItemId={recentlyAddedItemId}
+                            onOpenPopGem={onOpenPopGem}
+                            onDeleteItem={handleDeleteItem}
+                            onUpdateItem={handleUpdateItem}
+                        />
                     </div>
                 </div>
             </div>

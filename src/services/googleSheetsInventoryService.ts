@@ -385,7 +385,7 @@ export const convertSharedRowsToInventoryItems = (
         const type = product?.type;
 
         return {
-            id: crypto.randomUUID(),
+            id: `sheet:${buildRowKey(row)}`,
             date: row.date,
             inventoryType: parsedSpec.inventoryType,
             productId: product?.id || `sheet:${row.item}`,
