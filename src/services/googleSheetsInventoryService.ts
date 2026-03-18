@@ -7,12 +7,15 @@ const SHEET_NAME = (import.meta as any).env?.VITE_SHARED_SHEET_TAB?.trim() || 's
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const TOKEN_STORAGE_KEY = 'seika_sheets_access_token';
+const TOKEN_EXPIRY_STORAGE_KEY = 'seika_sheets_access_token_expiry';
 const MIGRATION_KEY = 'seika_inventory_sheet_migrated_v1';
 const HEADER_ROW = ['日付', '店舗', '品目', '規格', '数量', '単価'];
 
 type TokenResponse = {
     access_token?: string;
     error?: string;
+    error_description?: string;
+    expires_in?: number;
 };
 
 export type SharedInventoryRow = {
@@ -29,6 +32,13 @@ let tokenClient: any = null;
 let accessToken: string | null = typeof window !== 'undefined'
     ? window.sessionStorage.getItem(TOKEN_STORAGE_KEY)
     : null;
+let accessTokenExpiry = typeof window !== 'undefined'
+    ? Number(window.sessionStorage.getItem(TOKEN_EXPIRY_STORAGE_KEY) || '0')
+    : 0;
+let tokenResponseHandler: ((resp: TokenResponse) => void) | null = null;
+let pendingTokenRequest: Promise<string> | null = null;
+let pendingTokenResolve: ((token: string) => void) | null = null;
+let pendingTokenReject: ((error: Error) => void) | null = null;
 
 const encodeRange = (range: string) => encodeURIComponent(range);
 const getValuesUrl = (range: string) =>
@@ -69,15 +79,108 @@ const toNumber = (value: string | undefined) => {
     return Number.isFinite(numeric) ? numeric : 0;
 };
 
-const fetchSheetValues = async (range: string) => {
-    ensureConfigured();
-    if (!accessToken) throw new Error('Google Sheets に未ログインです');
+const clearStoredAccessToken = () => {
+    accessToken = null;
+    accessTokenExpiry = 0;
 
-    const response = await fetch(getValuesUrl(range), {
-        headers: {
-            Authorization: `Bearer ${accessToken}`
+    if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+        window.sessionStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
+    }
+};
+
+const hasValidAccessToken = () => Boolean(
+    accessToken &&
+    accessTokenExpiry &&
+    accessTokenExpiry > Date.now() + 60_000
+);
+
+const storeAccessToken = (resp: TokenResponse) => {
+    const nextAccessToken = resp.access_token;
+    if (!nextAccessToken) {
+        throw new Error('Google Sheets のアクセストークンを取得できませんでした');
+    }
+
+    accessToken = nextAccessToken;
+    accessTokenExpiry = Date.now() + Math.max((resp.expires_in || 3600) - 60, 60) * 1000;
+
+    if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(TOKEN_STORAGE_KEY, nextAccessToken);
+        window.sessionStorage.setItem(TOKEN_EXPIRY_STORAGE_KEY, String(accessTokenExpiry));
+    }
+};
+
+const handleTokenError = (resp: TokenResponse) => {
+    const error = new Error(resp.error_description || resp.error || 'Google Sheets の認証に失敗しました');
+    clearStoredAccessToken();
+    pendingTokenReject?.(error);
+    pendingTokenReject = null;
+    pendingTokenResolve = null;
+    pendingTokenRequest = null;
+    tokenResponseHandler?.(resp);
+};
+
+const ensureSheetsAccessToken = async (interactive: boolean): Promise<string> => {
+    if (hasValidAccessToken() && accessToken) {
+        return accessToken;
+    }
+
+    if (!tokenClient) {
+        throw new Error('Google Sheets client not initialized');
+    }
+
+    if (pendingTokenRequest) {
+        return pendingTokenRequest;
+    }
+
+    pendingTokenRequest = new Promise<string>((resolve, reject) => {
+        pendingTokenResolve = resolve;
+        pendingTokenReject = reject;
+
+        try {
+            tokenClient.requestAccessToken({
+                prompt: interactive ? 'select_account consent' : ''
+            });
+        } catch (error) {
+            pendingTokenRequest = null;
+            pendingTokenResolve = null;
+            pendingTokenReject = null;
+            reject(error instanceof Error ? error : new Error('Google Sheets の認証開始に失敗しました'));
         }
     });
+
+    return pendingTokenRequest;
+};
+
+const authorizedSheetsFetch = async (url: string, init?: RequestInit) => {
+    ensureConfigured();
+
+    let token = await ensureSheetsAccessToken(false);
+    let response = await fetch(url, {
+        ...init,
+        headers: {
+            ...(init?.headers || {}),
+            Authorization: `Bearer ${token}`
+        }
+    });
+
+    if (response.status === 401) {
+        clearStoredAccessToken();
+        token = await ensureSheetsAccessToken(false);
+        response = await fetch(url, {
+            ...init,
+            headers: {
+                ...(init?.headers || {}),
+                Authorization: `Bearer ${token}`
+            }
+        });
+    }
+
+    return response;
+};
+
+const fetchSheetValues = async (range: string) => {
+    const response = await authorizedSheetsFetch(getValuesUrl(range));
 
     if (!response.ok) {
         throw new Error(`Google Sheets の取得に失敗しました (${response.status})`);
@@ -87,13 +190,9 @@ const fetchSheetValues = async (range: string) => {
 };
 
 const updateSheetValues = async (range: string, values: string[][]) => {
-    ensureConfigured();
-    if (!accessToken) throw new Error('Google Sheets に未ログインです');
-
-    const response = await fetch(`${getValuesUrl(range)}?valueInputOption=USER_ENTERED`, {
+    const response = await authorizedSheetsFetch(`${getValuesUrl(range)}?valueInputOption=USER_ENTERED`, {
         method: 'PUT',
         headers: {
-            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -109,13 +208,9 @@ const updateSheetValues = async (range: string, values: string[][]) => {
 };
 
 const appendSheetValues = async (range: string, values: string[][]) => {
-    ensureConfigured();
-    if (!accessToken) throw new Error('Google Sheets に未ログインです');
-
-    const response = await fetch(`${getValuesUrl(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+    const response = await authorizedSheetsFetch(`${getValuesUrl(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
         method: 'POST',
         headers: {
-            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -158,10 +253,11 @@ const listRows = async (): Promise<SharedInventoryRow[]> => {
 
 export const isSheetsConfigured = (): boolean => Boolean(CLIENT_ID && SPREADSHEET_ID);
 export const getSharedStoreName = (): string => STORE_NAME;
-export const hasSheetsAccessToken = (): boolean => Boolean(accessToken);
+export const hasSheetsAccessToken = (): boolean => hasValidAccessToken();
 
 export const initSheetsTokenClient = (onTokenResponse: (resp: TokenResponse) => void) => {
     ensureConfigured();
+    tokenResponseHandler = onTokenResponse;
 
     const googleAccounts = (window as any).google?.accounts?.oauth2;
     if (!googleAccounts?.initTokenClient) {
@@ -174,17 +270,26 @@ export const initSheetsTokenClient = (onTokenResponse: (resp: TokenResponse) => 
         callback: (resp: TokenResponse) => {
             if (resp.error) {
                 console.error('Sheets OAuth Error:', resp.error);
+                handleTokenError(resp);
                 return;
             }
 
-            const nextAccessToken = resp.access_token;
-            if (!nextAccessToken) {
-                throw new Error('Google Sheets のアクセストークンを取得できませんでした');
+            try {
+                storeAccessToken(resp);
+                pendingTokenResolve?.(accessToken!);
+            } catch (error) {
+                handleTokenError({
+                    error: 'token_store_failed',
+                    error_description: error instanceof Error ? error.message : 'Google Sheets のトークン保存に失敗しました'
+                });
+                return;
+            } finally {
+                pendingTokenResolve = null;
+                pendingTokenReject = null;
+                pendingTokenRequest = null;
             }
 
-            accessToken = nextAccessToken;
-            window.sessionStorage.setItem(TOKEN_STORAGE_KEY, nextAccessToken);
-            onTokenResponse(resp);
+            tokenResponseHandler?.(resp);
         }
     });
 };
@@ -196,11 +301,20 @@ export const initializeSheetsAuth = async (onTokenResponse: (resp: TokenResponse
 };
 
 export const loginToGoogleSheets = (prompt: string = 'select_account consent') => {
-    if (!tokenClient) {
-        throw new Error('Google Sheets client not initialized');
+    return ensureSheetsAccessToken(prompt !== '');
+};
+
+export const tryRestoreSheetsSession = async (): Promise<boolean> => {
+    if (hasValidAccessToken()) {
+        return true;
     }
 
-    tokenClient.requestAccessToken({ prompt });
+    try {
+        await ensureSheetsAccessToken(false);
+        return true;
+    } catch (error) {
+        return false;
+    }
 };
 
 export const fetchSharedInventoryItems = async (): Promise<SharedInventoryRow[]> => {

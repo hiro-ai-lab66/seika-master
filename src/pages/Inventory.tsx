@@ -13,6 +13,7 @@ import {
     isSheetsConfigured,
     loginToGoogleSheets,
     migrateLocalInventoryOnce,
+    tryRestoreSheetsSession,
     upsertSharedInventoryItems
 } from '../services/googleSheetsInventoryService';
 
@@ -92,16 +93,29 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     useEffect(() => {
         if (!isSheetsConfiguredState) return;
 
-        initializeSheetsAuth((resp) => {
-            if (resp.access_token) {
-                setIsSheetsAuthenticated(true);
-                setSharedError(null);
-                setSharedStatus('Googleスプレッドシートに接続しました');
+        const initialize = async () => {
+            try {
+                await initializeSheetsAuth((resp) => {
+                    if (resp.access_token) {
+                        setIsSheetsAuthenticated(true);
+                        setSharedError(null);
+                        setSharedStatus('Googleスプレッドシートに接続しました');
+                    }
+                });
+
+                const restored = await tryRestoreSheetsSession();
+                setIsSheetsAuthenticated(restored);
+                if (restored) {
+                    setSharedError(null);
+                    setSharedStatus('Googleスプレッドシートの認証を復元しました');
+                }
+            } catch (error) {
+                console.error('Failed to initialize Google Sheets auth', error);
+                setSharedError('Googleスプレッドシート連携の初期化に失敗しました');
             }
-        }).catch((error) => {
-            console.error('Failed to initialize Google Sheets auth', error);
-            setSharedError('Googleスプレッドシート連携の初期化に失敗しました');
-        });
+        };
+
+        void initialize();
     }, [isSheetsConfiguredState]);
 
     // インベントリ変更時に保存
@@ -203,12 +217,18 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             return;
         }
 
-        try {
-            loginToGoogleSheets(hasSheetsAccessToken() ? '' : 'select_account consent');
-        } catch (error) {
-            console.error('Failed to start Google Sheets login', error);
-            setSharedError('Googleスプレッドシートのログインを開始できませんでした');
-        }
+        void (async () => {
+            try {
+                await loginToGoogleSheets(hasSheetsAccessToken() ? '' : 'select_account consent');
+                setIsSheetsAuthenticated(true);
+                setSharedError(null);
+                setSharedStatus('Googleスプレッドシートにログインしました');
+            } catch (error) {
+                console.error('Failed to start Google Sheets login', error);
+                setIsSheetsAuthenticated(false);
+                setSharedError('Googleスプレッドシートのログインを開始できませんでした');
+            }
+        })();
     };
 
     const handleReloadSharedInventory = async () => {
@@ -225,6 +245,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             setSharedStatus('Googleスプレッドシートから最新データを再取得しました');
         } catch (error) {
             console.error('Failed to reload shared inventory', error);
+            setIsSheetsAuthenticated(false);
             setSharedError('最新データの取得に失敗しました');
         } finally {
             setIsLoadingSharedInventory(false);
@@ -246,6 +267,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             setSharedStatus('現在の棚卸しデータをGoogleスプレッドシートへ保存しました');
         } catch (error) {
             console.error('Failed to save shared inventory', error);
+            setIsSheetsAuthenticated(false);
             setSharedError('Googleスプレッドシートへの保存に失敗しました');
         } finally {
             setIsSavingSharedInventory(false);
