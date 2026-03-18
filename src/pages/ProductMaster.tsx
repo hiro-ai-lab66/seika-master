@@ -18,6 +18,8 @@ export const ProductMaster: React.FC = () => {
 
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const formCardRef = useRef<HTMLDivElement>(null);
+    const nameInputRef = useRef<HTMLInputElement>(null);
     const [importCategory, setImportCategory] = useState<'野菜' | '果物'>('野菜');
     const [importResult, setImportResult] = useState<{ added: number, skipped: number, error: number } | null>(null);
 
@@ -309,6 +311,13 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         return result;
     }, [products, searchQuery, displayFilter]);
 
+    const focusRegistrationForm = () => {
+        formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.setTimeout(() => {
+            nameInputRef.current?.focus();
+        }, 250);
+    };
+
     return (
         <div className="page-container">
             {/* 取込結果トースト */}
@@ -325,7 +334,14 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
 
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2>商品マスター</h2>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button
+                        className="button-outline product-add-shortcut desktop-only-add"
+                        onClick={focusRegistrationForm}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: 'var(--primary)', color: 'var(--primary)', fontWeight: 700 }}
+                    >
+                        <Plus size={16} /> プラス登録する
+                    </button>
                     <button
                         className="button-outline"
                         onClick={() => {
@@ -372,7 +388,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
 
             <div className="dashboard-grid">
                 {/* 商品登録フォーム */}
-                <div className="card-premium">
+                <div className="card-premium" ref={formCardRef}>
                     <div className="card-header-icon">
                         <div className="icon-circle"><Package size={24} /></div>
                         <div>
@@ -387,6 +403,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                             <input
                                 type="text"
                                 value={name}
+                                ref={nameInputRef}
                                 onChange={e => setName(e.target.value)}
                                 placeholder="例: キャベツ"
                                 required
@@ -561,7 +578,45 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
           border-radius: var(--radius-md);
           border: 1px dashed #cbd5e1;
         }
+
+        .mobile-add-fab {
+          position: fixed;
+          right: 16px;
+          bottom: 104px;
+          z-index: 30;
+          border: none;
+          border-radius: 999px;
+          background: linear-gradient(135deg, var(--primary) 0%, #0f766e 100%);
+          color: white;
+          padding: 14px 18px;
+          box-shadow: 0 14px 32px rgba(15, 118, 110, 0.28);
+          display: none;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.95rem;
+          font-weight: 800;
+        }
+
+        @media (max-width: 768px) {
+          .mobile-add-fab {
+            display: inline-flex;
+          }
+
+          .desktop-only-add {
+            display: none !important;
+          }
+        }
       `}</style>
+
+            <button
+                type="button"
+                className="mobile-add-fab"
+                onClick={focusRegistrationForm}
+                aria-label="商品を登録する"
+            >
+                <Plus size={18} />
+                ＋登録
+            </button>
         </div>
     );
 };
