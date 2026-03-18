@@ -164,6 +164,7 @@ type InventoryAreaSectionProps = {
     sectionId: string;
     recentlyAddedItemId: string | null;
     currentValueType: InventoryValueType;
+    onQuantityKeyDown: (event: React.KeyboardEvent<HTMLInputElement>, sectionId: string, itemId: string) => void;
     onOpenPopGem?: (name?: string) => void;
     onDeleteItem: (id: string) => void;
     onUpdateItem: (productId: string, qtyStr: string, costStr: string, department: '野菜' | '果物') => void;
@@ -175,6 +176,7 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
     sectionId,
     recentlyAddedItemId,
     currentValueType,
+    onQuantityKeyDown,
     onOpenPopGem,
     onDeleteItem,
     onUpdateItem
@@ -250,14 +252,20 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
                                     <option value="果物">果物</option>
                                 </select>
                                 <input
+                                    id={`qty-${item.id}`}
                                     type="number"
                                     min="0"
                                     step="0.01"
                                     placeholder="数量"
                                     className="input-base"
                                     style={{ width: '80px', padding: '6px' }}
+                                    inputMode="decimal"
+                                    enterKeyHint="next"
+                                    data-qty-input="true"
                                     value={item.qty === 0 ? '' : item.qty}
                                     onChange={(e) => onUpdateItem(item.productId, e.target.value, item.cost?.toString() || '0', item.department as '野菜' | '果物')}
+                                    onFocus={(e) => e.currentTarget.select()}
+                                    onKeyDown={(event) => onQuantityKeyDown(event, sectionId, item.id)}
                                 />
                                 <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', minWidth: '40px' }}>{item.unit || ''}</span>
                                 <input
@@ -300,6 +308,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
     const [manualItemName, setManualItemName] = useState('');
     const [manualItemQty, setManualItemQty] = useState('');
+    const [executionTime, setExecutionTime] = useState('16：00　　　～　18：00');
     const [isSheetsConfiguredState] = useState(isSheetsConfigured());
     const [isSheetsAuthenticated, setIsSheetsAuthenticated] = useState(hasSheetsAccessToken());
     const [isLoadingSharedInventory, setIsLoadingSharedInventory] = useState(false);
@@ -801,6 +810,26 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         });
     };
 
+    const handleQuantityKeyDown = (
+        event: React.KeyboardEvent<HTMLInputElement>,
+        sectionId: string,
+        itemId: string
+    ) => {
+        if (event.key !== 'Enter') return;
+
+        event.preventDefault();
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+
+        const inputs = Array.from(section.querySelectorAll<HTMLInputElement>('input[data-qty-input="true"]'));
+        const currentIndex = inputs.findIndex(input => input.id === `qty-${itemId}`);
+        const nextInput = currentIndex >= 0 ? inputs[currentIndex + 1] : null;
+        if (nextInput) {
+            nextInput.focus();
+            nextInput.select();
+        }
+    };
+
     const getAreaRenderItems = (targetArea: 'backyard' | 'fridge') => {
         let itemsForArea = todaysInventory.filter(item => {
             const product = products.find(p => p.id === item.productId);
@@ -909,6 +938,14 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             <option value="cost">原価</option>
                             <option value="price">売価</option>
                         </select>
+                        <input
+                            type="text"
+                            className="input-base"
+                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: '220px', display: 'inline-block' }}
+                            value={executionTime}
+                            onChange={(e) => setExecutionTime(e.target.value)}
+                            placeholder="実施時間"
+                        />
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
                         <SharedInventoryPanel
@@ -941,7 +978,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                     exportInventoryToExcel(inventoryItems, currentDate, {
                                         type: currentType,
                                         department: currentDepartment,
-                                        valueType: currentValueType
+                                        valueType: currentValueType,
+                                        storeName: '古沢店',
+                                        executionTime
                                     });
                                 }}
                             >
@@ -1228,6 +1267,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             sectionId="backyard"
                             recentlyAddedItemId={recentlyAddedItemId}
                             currentValueType={currentValueType}
+                            onQuantityKeyDown={handleQuantityKeyDown}
                             onOpenPopGem={onOpenPopGem}
                             onDeleteItem={handleDeleteItem}
                             onUpdateItem={handleUpdateItem}
@@ -1238,6 +1278,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             sectionId="fridge"
                             recentlyAddedItemId={recentlyAddedItemId}
                             currentValueType={currentValueType}
+                            onQuantityKeyDown={handleQuantityKeyDown}
                             onOpenPopGem={onOpenPopGem}
                             onDeleteItem={handleDeleteItem}
                             onUpdateItem={handleUpdateItem}

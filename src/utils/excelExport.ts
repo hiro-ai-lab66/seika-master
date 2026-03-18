@@ -5,12 +5,12 @@ type ExportOptions = {
     type: InventoryType;
     department: InventoryDepartment;
     valueType: InventoryValueType;
+    storeName?: string;
+    executionTime?: string;
 };
 
 const DETAIL_ROW_START = 12;
 const DETAIL_ROW_END = 160;
-const UNASSIGNED_SHEET_NAME = '未割当商品';
-
 const normalizeName = (value: string) => value.replace(/\s+/g, '').replace(/　/g, '').trim();
 
 const formatDate = (dateStr: string) => {
@@ -44,43 +44,60 @@ const setCellValue = (sheet: XLSX.WorkSheet, address: string, value: string | nu
     sheet[address] = cell;
 };
 
-const updateHeaderValues = (sheet: XLSX.WorkSheet, department: InventoryDepartment, formattedDate: string) => {
-    setCellValue(sheet, 'C5', '古沢店');
+const updateHeaderValues = (
+    sheet: XLSX.WorkSheet,
+    department: InventoryDepartment,
+    formattedDate: string,
+    storeName: string,
+    executionTime: string
+) => {
+    setCellValue(sheet, 'C5', storeName);
     setCellValue(sheet, 'C7', department);
     setCellValue(sheet, 'F7', `         ${formattedDate}`);
     setCellValue(sheet, 'C9', '後方');
-    setCellValue(sheet, 'E9', '実施時間　16：00　　　～　18：00');
+    setCellValue(sheet, 'E9', `実施時間　${executionTime}`);
 };
 
 const buildDetailRowMap = (sheet: XLSX.WorkSheet) => {
     const rowMap = new Map<string, number>();
+    let subtotalRow = DETAIL_ROW_END + 1;
 
     for (let row = DETAIL_ROW_START; row <= DETAIL_ROW_END; row += 1) {
         const nameCell = sheet[`B${row}`];
         if (!nameCell?.v) continue;
 
         const rawName = String(nameCell.v).trim();
-        if (!rawName || rawName === '品名' || rawName === '小計') continue;
+        if (!rawName || rawName === '品名') continue;
+        if (rawName === '小計') {
+            subtotalRow = row;
+            continue;
+        }
 
         rowMap.set(normalizeName(rawName), row);
     }
 
-    return rowMap;
+    return { rowMap, subtotalRow };
 };
 
-const clearTemplateValueCells = (sheet: XLSX.WorkSheet, rowMap: Map<string, number>) => {
+const clearTemplateValueCells = (sheet: XLSX.WorkSheet, rowMap: Map<string, number>, subtotalRow: number) => {
     rowMap.forEach((row) => {
         ['F', 'H', 'I', 'J', 'K'].forEach((column) => {
             delete sheet[`${column}${row}`];
         });
     });
+
+    for (let row = subtotalRow + 1; row <= subtotalRow + 20; row += 1) {
+        ['B', 'F', 'G', 'H', 'I', 'J', 'K'].forEach((column) => {
+            delete sheet[`${column}${row}`];
+        });
+    }
 };
 
 const writeMatchedRows = (sheet: XLSX.WorkSheet, items: InventoryItem[]) => {
-    const rowMap = buildDetailRowMap(sheet);
+    const { rowMap, subtotalRow } = buildDetailRowMap(sheet);
     const unmatchedItems: InventoryItem[] = [];
 
-    clearTemplateValueCells(sheet, rowMap);
+    clearTemplateValueCells(sheet, rowMap, subtotalRow);
 
     items.forEach((item) => {
         const row = rowMap.get(normalizeName(item.name));
@@ -103,7 +120,7 @@ const writeMatchedRows = (sheet: XLSX.WorkSheet, items: InventoryItem[]) => {
         setCellValue(sheet, `K${row}`, item.qty * price, `F${row}*I${row}`);
     });
 
-    return unmatchedItems;
+    return { unmatchedItems, subtotalRow };
 };
 
 const updateSummarySheet = (
@@ -111,7 +128,8 @@ const updateSummarySheet = (
     department: InventoryDepartment,
     formattedDate: string,
     items: InventoryItem[],
-    valueType: InventoryValueType
+    valueType: InventoryValueType,
+    storeName: string
 ) => {
     const totalAmount = items.reduce((sum, item) => {
         const unitValue = valueType === 'price' ? (item.price || 0) : (item.cost || 0);
@@ -119,40 +137,29 @@ const updateSummarySheet = (
     }, 0);
 
     setCellValue(sheet, 'C9', `　　棚卸実施日：西暦　${formattedDate}`);
-    setCellValue(sheet, 'D15', '店舗名：　古沢店');
+    setCellValue(sheet, 'D15', `店舗名：　${storeName}`);
     setCellValue(sheet, 'D17', `部門名：　${department}`);
     setCellValue(sheet, 'I15', 51);
     setCellValue(sheet, 'I17', department === '野菜' ? 1 : 2);
     setCellValue(sheet, 'H20', totalAmount);
 };
 
-const writeUnassignedSheet = (workbook: XLSX.WorkBook, items: InventoryItem[], options: ExportOptions) => {
+const writeUnassignedItemsToDetailSheet = (sheet: XLSX.WorkSheet, items: InventoryItem[], startRow: number) => {
     if (items.length === 0) {
-        if (workbook.Sheets[UNASSIGNED_SHEET_NAME]) {
-            workbook.Sheets[UNASSIGNED_SHEET_NAME] = XLSX.utils.aoa_to_sheet([
-                ['商品名', '部門', '数量', '原価', '売価', '棚卸区分'],
-                ['未割当なし', options.department, '', '', '', options.type === 'mid' ? '15日' : '月末']
-            ]);
-        }
         return;
     }
 
-    const rows = [
-        ['商品名', '部門', '数量', '原価', '売価', '棚卸区分'],
-        ...items.map(item => [
-            item.name,
-            item.department || '野菜',
-            item.qty,
-            item.cost || 0,
-            item.price || 0,
-            item.inventoryType === 'mid' ? '15日' : '月末'
-        ])
-    ];
-
-    workbook.Sheets[UNASSIGNED_SHEET_NAME] = XLSX.utils.aoa_to_sheet(rows);
-    if (!workbook.SheetNames.includes(UNASSIGNED_SHEET_NAME)) {
-        workbook.SheetNames.push(UNASSIGNED_SHEET_NAME);
-    }
+    setCellValue(sheet, `B${startRow}`, '未登録商品');
+    items.forEach((item, index) => {
+        const row = startRow + index + 1;
+        setCellValue(sheet, `B${row}`, item.name);
+        setCellValue(sheet, `F${row}`, item.qty);
+        if (item.unit) setCellValue(sheet, `G${row}`, item.unit);
+        setCellValue(sheet, `H${row}`, item.cost || 0);
+        setCellValue(sheet, `I${row}`, item.price || 0);
+        setCellValue(sheet, `J${row}`, item.qty * (item.cost || 0), `F${row}*H${row}`);
+        setCellValue(sheet, `K${row}`, item.qty * (item.price || 0), `F${row}*I${row}`);
+    });
 };
 
 export const exportInventoryToExcel = async (
@@ -178,6 +185,8 @@ export const exportInventoryToExcel = async (
         }
 
         const formattedDate = formatDate(dateStr);
+        const storeName = options.storeName || '古沢店';
+        const executionTime = options.executionTime || '16：00　　　～　18：00';
         const filteredItems = items
             .filter(item =>
                 (item.inventoryType || 'monthend') === options.type &&
@@ -186,10 +195,10 @@ export const exportInventoryToExcel = async (
             )
             .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 
-        updateHeaderValues(detailSheet, options.department, formattedDate);
-        const unmatchedItems = writeMatchedRows(detailSheet, filteredItems);
-        updateSummarySheet(summarySheet, options.department, formattedDate, filteredItems, options.valueType);
-        writeUnassignedSheet(workbook, unmatchedItems, options);
+        updateHeaderValues(detailSheet, options.department, formattedDate, storeName, executionTime);
+        const { unmatchedItems, subtotalRow } = writeMatchedRows(detailSheet, filteredItems);
+        updateSummarySheet(summarySheet, options.department, formattedDate, filteredItems, options.valueType, storeName);
+        writeUnassignedItemsToDetailSheet(detailSheet, unmatchedItems, subtotalRow + 1);
 
         XLSX.writeFile(
             workbook,
