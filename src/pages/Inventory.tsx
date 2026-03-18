@@ -52,6 +52,26 @@ const resolveDepartment = (product?: Product | InventoryItem, fallback: Inventor
     return '野菜';
 };
 
+const AMOUNT_UNIT_NOTE = '※金額は千円単位';
+
+const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
+
+const formatAmountInputValue = (amount?: number) => {
+    if (!amount) return '';
+    return String(Math.round(amount / 1000));
+};
+
+const parseThousandInputToYen = (value: string) => {
+    const digits = sanitizeThousandInput(value);
+    if (!digits) return 0;
+    return Number(digits) * 1000;
+};
+
+const formatThousandDisplay = (amount: number) => Math.round(amount / 1000).toLocaleString();
+
+const getCurrentValueAmount = (item: InventoryItem, valueType: InventoryValueType) =>
+    valueType === 'cost' ? (item.cost || 0) : (item.price || 0);
+
 type SharedInventoryPanelProps = {
     isConfigured: boolean;
     isAuthenticated: boolean;
@@ -246,7 +266,7 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
                                     className="input-base"
                                     style={{ width: '80px', padding: '6px' }}
                                     value={item.department || '野菜'}
-                                    onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), item.cost?.toString() || '0', e.target.value as '野菜' | '果物')}
+                                    onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), formatAmountInputValue(getCurrentValueAmount(item, currentValueType)), e.target.value as '野菜' | '果物')}
                                 >
                                     <option value="野菜">野菜</option>
                                     <option value="果物">果物</option>
@@ -263,28 +283,29 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
                                     enterKeyHint="next"
                                     data-qty-input="true"
                                     value={item.qty === 0 ? '' : item.qty}
-                                    onChange={(e) => onUpdateItem(item.productId, e.target.value, item.cost?.toString() || '0', item.department as '野菜' | '果物')}
+                                    onChange={(e) => onUpdateItem(item.productId, e.target.value, formatAmountInputValue(getCurrentValueAmount(item, currentValueType)), item.department as '野菜' | '果物')}
                                     onFocus={(e) => e.currentTarget.select()}
                                     onKeyDown={(event) => onQuantityKeyDown(event, sectionId, item.id)}
                                 />
                                 <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', minWidth: '40px' }}>{item.unit || ''}</span>
                                 <input
-                                    type="number"
-                                    min="0"
-                                    step="0.1"
-                                    placeholder={currentValueType === 'cost' ? '原価' : '売価'}
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder={currentValueType === 'cost' ? '原価（千円）' : '売価（千円）'}
                                     className="input-base"
                                     style={{ width: '90px', padding: '6px' }}
-                                    value={(currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0)) === 0 ? '' : (currentValueType === 'cost' ? item.cost : item.price)}
-                                    onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), e.target.value, item.department as '野菜' | '果物')}
+                                    value={formatAmountInputValue(currentValueType === 'cost' ? item.cost : item.price)}
+                                    onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), sanitizeThousandInput(e.target.value), item.department as '野菜' | '果物')}
+                                    onFocus={(e) => e.currentTarget.select()}
                                 />
                                 <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                    {currentValueType === 'cost' ? '原価' : '売価'}
+                                    {currentValueType === 'cost' ? '原価（千円）' : '売価（千円）'}
                                 </span>
                             </div>
                             {(item.qty > 0 && (currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0)) > 0) && (
                                 <div style={{ fontSize: '0.9rem', color: 'var(--primary-dark)', textAlign: 'right', fontWeight: 'bold' }}>
-                                    計: ¥{((item.qty || 0) * (currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0))).toLocaleString()}
+                                    計: {formatThousandDisplay((item.qty || 0) * (currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0)))}
                                 </div>
                             )}
                         </div>
@@ -337,7 +358,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     }, [recentlyAddedItemId]);
 
     // 理論原価の状態管理（日付と区分ごとにlocalStorageに保存）
-    const getTheoreticalCostKey = (date: string, type: InventoryType, valueType: InventoryValueType) => `theoreticalCost:${date}:${type}:${valueType}`;
+    const getTheoreticalCostKey = (date: string, type: InventoryType, valueType: InventoryValueType) => `theoreticalCostK:${date}:${type}:${valueType}`;
     const [theoreticalCostStr, setTheoreticalCostStr] = useState<string>('');
 
     // 各商品行の入力値を保持 (旧仕様。本日の棚卸し状況で直接編集するため不要になりました)
@@ -439,8 +460,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
     // 理論原価の変更時にlocalStorageに保存する
     const handleTheoreticalCostChange = (val: string) => {
-        setTheoreticalCostStr(val);
-        localStorage.setItem(getTheoreticalCostKey(currentDate, currentType, currentValueType), val);
+        const sanitized = sanitizeThousandInput(val);
+        setTheoreticalCostStr(sanitized);
+        localStorage.setItem(getTheoreticalCostKey(currentDate, currentType, currentValueType), sanitized);
     };
 
     // 実棚卸原価の合計計算
@@ -451,7 +473,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         }, 0);
     }, [currentDepartmentInventory, currentValueType]);
 
-    const theoreticalCost = Number(theoreticalCostStr) || 0;
+    const theoreticalCost = parseThousandInputToYen(theoreticalCostStr);
     const costDifference = theoreticalCost - actualTotalCost;
 
     const handleDeleteItem = (id: string) => {
@@ -755,7 +777,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
     const handleUpdateItem = (productId: string, qtyStr: string, amountStr: string, department: InventoryDepartment) => {
         const qty = Number(qtyStr);
-        const amount = Number(amountStr);
+        const amount = parseThousandInputToYen(amountStr);
 
         setInventoryItems(prev => {
             const existingIndex = prev.findIndex(item => {
@@ -1003,15 +1025,21 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     onSave={handleSaveSharedInventory}
                 />
 
+                <div style={{ marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold', color: '#475569' }}>
+                    {AMOUNT_UNIT_NOTE}
+                </div>
+
                 {/* 金額サマリー */}
                 <div className="card-premium" style={{ marginBottom: '1.5rem', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', alignItems: 'center' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                             <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
-                                理論{currentValueType === 'cost' ? '原価' : '売価'} (円)
+                                理論{currentValueType === 'cost' ? '原価' : '売価'}（千円）
                             </label>
                             <input
-                                type="number"
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
                                 className="input-base"
                                 placeholder="0"
                                 value={theoreticalCostStr}
@@ -1022,10 +1050,10 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                             <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
-                                実棚卸{currentValueType === 'cost' ? '原価' : '売価'} (円)
+                                実棚卸{currentValueType === 'cost' ? '原価' : '売価'}（千円）
                             </span>
                             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)', padding: '8px 0' }}>
-                                {actualTotalCost.toLocaleString()}
+                                {formatThousandDisplay(actualTotalCost)}
                             </div>
                         </div>
 
@@ -1038,12 +1066,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                 fontWeight: 'bold',
                                 color: costDifference === 0 ? 'var(--text-main)' : (costDifference > 0 ? '#15803d' : '#b91c1c'),
                                 padding: '8px 0',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
                             }}>
-                                {costDifference > 0 ? '+' : ''}{costDifference.toLocaleString()}
-                                <span style={{ fontSize: '0.9rem', fontWeight: 'normal' }}>円</span>
+                                {costDifference > 0 ? '+' : ''}{formatThousandDisplay(costDifference)}
                             </div>
                         </div>
                     </div>
@@ -1331,8 +1355,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                                             <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #cbd5e1', width: '40%' }}>品名</th>
                                                             <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #cbd5e1', width: '15%' }}>数量</th>
                                                             <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #cbd5e1', width: '15%' }}>単位</th>
-                                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #cbd5e1', width: '15%' }}>原価</th>
-                                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #cbd5e1', width: '15%' }}>金額</th>
+                                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #cbd5e1', width: '15%' }}>原価（千円）</th>
+                                                            <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #cbd5e1', width: '15%' }}>金額（千円）</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -1341,8 +1365,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                                                 <td style={{ padding: '8px' }}>{item.name}</td>
                                                                 <td style={{ padding: '8px', textAlign: 'right' }}>{item.qty}</td>
                                                                 <td style={{ padding: '8px' }}>{item.unit || ''}</td>
-                                                                <td style={{ padding: '8px', textAlign: 'right' }}>¥{item.cost?.toLocaleString() || 0}</td>
-                                                                <td style={{ padding: '8px', textAlign: 'right' }}>¥{((item.qty || 0) * (item.cost || 0)).toLocaleString()}</td>
+                                                                <td style={{ padding: '8px', textAlign: 'right' }}>{formatThousandDisplay(item.cost || 0)}</td>
+                                                                <td style={{ padding: '8px', textAlign: 'right' }}>{formatThousandDisplay((item.qty || 0) * (item.cost || 0))}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -1350,7 +1374,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
                                                 {isLastPage && (
                                                     <div style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', marginRight: '8px', marginTop: '1rem' }}>
-                                                        {dept}部門 小計: ¥{totalAmount.toLocaleString()}
+                                                        {dept}部門 小計: {formatThousandDisplay(totalAmount)}
                                                     </div>
                                                 )}
                                             </div>
