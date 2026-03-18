@@ -45,7 +45,7 @@ const updateHeaderValues = (sheet: XLSX.WorkSheet, department: InventoryDepartme
 
 const clearDetailRows = (sheet: XLSX.WorkSheet) => {
     for (let row = DETAIL_ROW_START; row <= DETAIL_ROW_END; row += 1) {
-        ['B', 'F', 'G', 'I', 'J', 'K'].forEach(column => {
+        ['B', 'F', 'G', 'H', 'I', 'J', 'K'].forEach(column => {
             delete sheet[`${column}${row + 1}`];
         });
     }
@@ -63,9 +63,10 @@ const writeDetailRows = (sheet: XLSX.WorkSheet, items: InventoryItem[]) => {
         setCellValue(sheet, `B${row}`, item.name);
         setCellValue(sheet, `F${row}`, item.qty || 0);
         setCellValue(sheet, `G${row}`, unit);
-        setCellValue(sheet, `I${row}`, cost);
-        setCellValue(sheet, `J${row}`, price);
-        setCellValue(sheet, `K${row}`, item.qty * cost);
+        setCellValue(sheet, `H${row}`, cost);
+        setCellValue(sheet, `I${row}`, price);
+        setCellValue(sheet, `J${row}`, item.qty * cost);
+        setCellValue(sheet, `K${row}`, item.qty * price);
     });
 };
 
