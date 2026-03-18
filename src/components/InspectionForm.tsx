@@ -15,6 +15,27 @@ interface Props {
 }
 
 export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBudgets, currentDate, onChangeDate }) => {
+    const AMOUNT_NOTE = '※金額は千円単位';
+    const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
+    const parseThousandInput = (value: string) => {
+        const digits = sanitizeThousandInput(value);
+        if (!digits) return null;
+        return Number(digits) * 1000;
+    };
+    const formatThousandInput = (value: number | null | undefined) => {
+        if (value === null || value === undefined || value === 0) return '';
+        return String(Math.round(value / 1000));
+    };
+    const formatThousandDisplay = (value: number | null | undefined, signed = false) => {
+        if (value === null || value === undefined) return '-';
+        const rounded = Math.round(value / 1000);
+        const abs = Math.abs(rounded).toLocaleString();
+        if (!signed) return rounded.toLocaleString();
+        if (rounded > 0) return `+${abs}`;
+        if (rounded < 0) return `-${abs}`;
+        return '0';
+    };
+
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
 
     const [form, setForm] = useState<Partial<InspectionEntry>>(() => {
@@ -109,6 +130,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             const num = parseFloat(value);
             handleChange(field, isNaN(num) ? null : num);
         }
+    };
+
+    const handleAmountChange = (field: keyof InspectionEntry, value: string) => {
+        if (value === "") {
+            handleChange(field, null);
+            return;
+        }
+        handleChange(field, parseThousandInput(value));
     };
     // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
     const calcJAN13 = (rawCode: string): string => {
@@ -339,7 +368,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 weather: aiWeather || undefined,
                 temp_band: aiTempBand || undefined,
                 customer_count: aiCustomerCount ? parseInt(aiCustomerCount) : undefined,
-                avg_price: aiAvgPrice ? parseInt(aiAvgPrice) : undefined,
+                avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
             };
         });
         saveDailySales(updatedSales);
@@ -375,14 +404,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiWeather(first.weather || '');
             setAiTempBand(first.temp_band || '');
             setAiCustomerCount(first.customer_count !== undefined ? String(first.customer_count) : '');
-            setAiAvgPrice(first.avg_price !== undefined ? String(first.avg_price) : '');
+            setAiAvgPrice(first.avg_price !== undefined ? String(Math.round(first.avg_price / 1000)) : '');
         }
     }, [currentDate]);
 
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
         if (isYoY) return `${num.toFixed(1)}%`;
-        if (isAmount) return `${num.toLocaleString()}円`;
+        if (isAmount) return formatThousandDisplay(num);
         return num.toLocaleString();
     };
 
@@ -399,6 +428,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 </div>
             </div>
 
+            <p style={{ margin: '-8px 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 700 }}>{AMOUNT_NOTE}</p>
+
             <div className="tab-switcher">
                 {(['12:00', '17:00', 'final'] as const).map(p => (
                     <button
@@ -414,16 +445,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             <form onSubmit={handleSubmit} className="form-stack">
                 <div className="entry-group common-fields">
                     <div className="form-group">
-                        <label>本日の売上予算 (円) *</label>
+                        <label>本日の売上予算（千円） *</label>
                         <input
-                            type="number"
-                            step="1000"
+                            type="text"
                             inputMode="numeric"
-                            value={form.totalBudget === 0 ? '' : (form.totalBudget || '')}
-                            onChange={e => {
-                                const val = parseInt(e.target.value) || 0;
-                                handleNumberChange('totalBudget', (Math.floor(val / 1000) * 1000).toString());
-                            }}
+                            pattern="[0-9]*"
+                            value={formatThousandInput(form.totalBudget)}
+                            onChange={e => handleAmountChange('totalBudget', e.target.value)}
                             placeholder="予算を入力"
                             required
                         />
@@ -435,12 +463,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <h3>12:00 中間報告</h3>
                         <div className="form-group-grid">
                             <div className="form-group">
-                                <label>12時実績 (円)</label>
+                                <label>12時実績（千円）</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     inputMode="numeric"
-                                    value={form.actual12 ?? ''}
-                                    onChange={e => handleNumberChange('actual12', e.target.value)}
+                                    pattern="[0-9]*"
+                                    value={formatThousandInput(form.actual12)}
+                                    onChange={e => handleAmountChange('actual12', e.target.value)}
                                     placeholder="0"
                                 />
                             </div>
@@ -480,22 +509,24 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             </div>
                             <div className="form-group-grid">
                                 <div className="form-group">
-                                    <label>売上目標 (円)</label>
+                                    <label>売上目標（千円）</label>
                                     <input
-                                        type="number"
+                                        type="text"
                                         inputMode="numeric"
-                                        value={form.promotionTargetSales || ''}
-                                        onChange={e => handleNumberChange('promotionTargetSales', e.target.value)}
+                                        pattern="[0-9]*"
+                                        value={formatThousandInput(form.promotionTargetSales)}
+                                        onChange={e => handleAmountChange('promotionTargetSales', e.target.value)}
                                         placeholder="目標額"
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label>12時時点売上 (円)</label>
+                                    <label>12時時点売上（千円）</label>
                                     <input
-                                        type="number"
+                                        type="text"
                                         inputMode="numeric"
-                                        value={form.promotionActual12Sales || ''}
-                                        onChange={e => handleNumberChange('promotionActual12Sales', e.target.value)}
+                                        pattern="[0-9]*"
+                                        value={formatThousandInput(form.promotionActual12Sales)}
+                                        onChange={e => handleAmountChange('promotionActual12Sales', e.target.value)}
                                         placeholder="実績額"
                                     />
                                 </div>
@@ -510,18 +541,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="live-results-grid">
                             <div className="result-item">
                                 <div className="label">予測最終</div>
-                                <div className="value">{form.forecast12 !== null && form.forecast12 !== undefined ? `¥${form.forecast12.toLocaleString()}` : "---"}</div>
+                                <div className="value">{form.forecast12 !== null && form.forecast12 !== undefined ? formatThousandDisplay(form.forecast12) : "---"}</div>
                             </div>
                             <div className="result-item">
                                 <div className="label">予算差額</div>
                                 <div className={`value ${form.diff12 !== null && form.diff12 !== undefined ? (Number(form.diff12) < 0 ? 'negative' : 'positive') : ''}`}>
-                                    {form.diff12 !== null && form.diff12 !== undefined ? `${Number(form.diff12) > 0 ? '+' : ''}${form.diff12.toLocaleString()}` : "---"}
+                                    {form.diff12 !== null && form.diff12 !== undefined ? formatThousandDisplay(form.diff12, true) : "---"}
                                 </div>
                             </div>
                             {form.diff12 !== null && form.diff12 !== undefined && Number(form.diff12) < 0 && (
                                 <div className="result-item shortfall">
                                     <div className="label">不足額</div>
-                                    <div className="value">¥{Math.abs(form.diff12).toLocaleString()}</div>
+                                    <div className="value">{formatThousandDisplay(Math.abs(form.diff12))}</div>
                                 </div>
                             )}
                         </div>
@@ -543,12 +574,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <h3>17:00 夕方報告</h3>
                         <div className="form-group-grid">
                             <div className="form-group">
-                                <label>17時実績 (円)</label>
+                                <label>17時実績（千円）</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     inputMode="numeric"
-                                    value={form.actual17 ?? ''}
-                                    onChange={e => handleNumberChange('actual17', e.target.value)}
+                                    pattern="[0-9]*"
+                                    value={formatThousandInput(form.actual17)}
+                                    onChange={e => handleAmountChange('actual17', e.target.value)}
                                     placeholder="0"
                                 />
                             </div>
@@ -588,22 +620,24 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             </div>
                             <div className="form-group-grid">
                                 <div className="form-group">
-                                    <label>売上目標 (円)</label>
+                                    <label>売上目標（千円）</label>
                                     <input
-                                        type="number"
+                                        type="text"
                                         inputMode="numeric"
-                                        value={form.promotionTargetSales || ''}
-                                        onChange={e => handleNumberChange('promotionTargetSales', e.target.value)}
+                                        pattern="[0-9]*"
+                                        value={formatThousandInput(form.promotionTargetSales)}
+                                        onChange={e => handleAmountChange('promotionTargetSales', e.target.value)}
                                         placeholder="目標額"
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label>17時時点売上 (円)</label>
+                                    <label>17時時点売上（千円）</label>
                                     <input
-                                        type="number"
+                                        type="text"
                                         inputMode="numeric"
-                                        value={form.promotionActual17Sales || ''}
-                                        onChange={e => handleNumberChange('promotionActual17Sales', e.target.value)}
+                                        pattern="[0-9]*"
+                                        value={formatThousandInput(form.promotionActual17Sales)}
+                                        onChange={e => handleAmountChange('promotionActual17Sales', e.target.value)}
                                         placeholder="実績額"
                                     />
                                 </div>
@@ -618,18 +652,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="live-results-grid">
                             <div className="result-item">
                                 <div className="label">予測最終</div>
-                                <div className="value">{form.forecast17 !== null && form.forecast17 !== undefined ? `¥${form.forecast17.toLocaleString()}` : "---"}</div>
+                                <div className="value">{form.forecast17 !== null && form.forecast17 !== undefined ? formatThousandDisplay(form.forecast17) : "---"}</div>
                             </div>
                             <div className="result-item">
                                 <div className="label">予算差額</div>
                                 <div className={`value ${form.diff17 !== null && form.diff17 !== undefined ? (Number(form.diff17) < 0 ? 'negative' : 'positive') : ''}`}>
-                                    {form.diff17 !== null && form.diff17 !== undefined ? `${Number(form.diff17) > 0 ? '+' : ''}${form.diff17.toLocaleString()}` : "---"}
+                                    {form.diff17 !== null && form.diff17 !== undefined ? formatThousandDisplay(form.diff17, true) : "---"}
                                 </div>
                             </div>
                             {form.diff17 !== null && form.diff17 !== undefined && Number(form.diff17) < 0 && (
                                 <div className="result-item shortfall">
                                     <div className="label">不足額</div>
-                                    <div className="value">¥{Math.abs(form.diff17).toLocaleString()}</div>
+                                    <div className="value">{formatThousandDisplay(Math.abs(form.diff17))}</div>
                                 </div>
                             )}
                         </div>
@@ -650,12 +684,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     <div className="entry-group">
                         <h3>最終報告 (閉店)</h3>
                         <div className="form-group">
-                            <label>最終実績 (円)</label>
+                            <label>最終実績（千円）</label>
                             <input
-                                type="number"
+                                type="text"
                                 inputMode="numeric"
-                                value={form.actualFinal ?? ''}
-                                onChange={e => handleNumberChange('actualFinal', e.target.value)}
+                                pattern="[0-9]*"
+                                value={formatThousandInput(form.actualFinal)}
+                                onChange={e => handleAmountChange('actualFinal', e.target.value)}
                                 placeholder="0"
                             />
                         </div>
@@ -674,12 +709,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         </div>
                         <div className="form-group-grid">
                             <div className="form-group">
-                                <label>ロス額 (円)</label>
+                                <label>ロス額（千円）</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     inputMode="numeric"
-                                    value={form.lossAmount ?? ''}
-                                    onChange={e => handleNumberChange('lossAmount', e.target.value)}
+                                    pattern="[0-9]*"
+                                    value={formatThousandInput(form.lossAmount)}
+                                    onChange={e => handleAmountChange('lossAmount', e.target.value)}
                                     placeholder="0"
                                 />
                             </div>
@@ -720,8 +756,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     <input type="number" inputMode="numeric" placeholder="0" value={aiCustomerCount} onChange={e => setAiCustomerCount(e.target.value)} />
                                 </div>
                                 <div className="ai-meta-item">
-                                    <label>客単価 (円)</label>
-                                    <input type="number" inputMode="numeric" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(e.target.value)} />
+                                    <label>客単価（千円）</label>
+                                    <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(sanitizeThousandInput(e.target.value))} />
                                 </div>
                             </div>
                         </div>
