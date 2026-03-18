@@ -1,7 +1,7 @@
 import { useState, useEffect, Component } from 'react';
 import type { ReactNode } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp } from 'lucide-react';
-import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord } from './types';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText } from 'lucide-react';
+import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
 import './App.css';
 import { Dashboard } from './components/Dashboard';
@@ -21,6 +21,7 @@ import { MarketInfoList } from './pages/MarketInfoList';
 import { MarketInfoDetail } from './pages/MarketInfoDetail';
 import { MarketInfoAnalysis } from './pages/MarketInfoAnalysis';
 import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
+import { DailyNotesPage } from './pages/DailyNotesPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
 
 const STORAGE_KEY = 'seika_master_data_v2';
@@ -52,7 +53,7 @@ class ErrorBoundary extends Component<{children: ReactNode, fallback?: ReactNode
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market' | 'dailyNotes'>('dashboard');
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -131,6 +132,7 @@ function App() {
       todos: [],
       inspections: [],
       dailyBudgets: [],
+      dailyNotes: [],
       sellfloorRecords: []
     };
   });
@@ -180,6 +182,20 @@ function App() {
 
   const saveBudgets = (budgets: DailyBudget[]) => {
     setState(prev => ({ ...prev, dailyBudgets: budgets }));
+  };
+
+  const saveDailyNotes = (entry: DailyNotesEntry) => {
+    setState(prev => {
+      const currentEntries = prev.dailyNotes || [];
+      const existsIndex = currentEntries.findIndex(item => item.date === entry.date);
+      const nextEntries = [...currentEntries];
+      if (existsIndex >= 0) {
+        nextEntries[existsIndex] = entry;
+      } else {
+        nextEntries.unshift(entry);
+      }
+      return { ...prev, dailyNotes: nextEntries };
+    });
   };
 
   const saveSellfloorRecord = (record: SellfloorRecord) => {
@@ -279,6 +295,8 @@ function App() {
         );
       case 'budget':
         return <BudgetSettings state={state} onSave={saveBudgets} currentDate={currentDate} onChangeDate={changeDate} />;
+      case 'dailyNotes':
+        return <DailyNotesPage currentDate={currentDate} onChangeDate={changeDate} entries={state.dailyNotes || []} onSave={saveDailyNotes} />;
       case 'ai':
         return <AIAssist state={state} currentDate={currentDate} onSaveChirashi={(image, date) => setState(prev => ({ ...prev, chirashiImage: image || undefined, chirashiDate: date || undefined }))} />;
       case 'todo':
@@ -454,6 +472,7 @@ function App() {
           { id: 'dashboard', icon: LayoutDashboard, label: '概要' },
           { id: 'sales', icon: PenLine, label: '点検入力' },
           { id: 'budget', icon: Calculator, label: '予算設定' },
+          { id: 'dailyNotes', icon: NotebookText, label: '連絡事項' },
           { id: 'inventory', icon: Boxes, label: '棚卸し' },
           { id: 'products', icon: Package, label: '商品マスター' },
           { id: 'ai', icon: Sparkles, label: 'AI支援' },

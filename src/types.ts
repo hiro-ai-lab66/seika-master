@@ -234,11 +234,20 @@ export type InventoryItem = {
     updatedAt: string;
 };
 
+export interface DailyNotesEntry {
+    date: string;
+    schedule: string;
+    inspectionNotes: string;
+    announcements: string;
+    updatedAt: string;
+}
+
 export interface AppState {
     sales: SalesData[];
     todos: ToDoItem[];
     inspections: InspectionEntry[];
     dailyBudgets: DailyBudget[];
+    dailyNotes?: DailyNotesEntry[];
     sellfloorRecords?: SellfloorRecord[];
     popData?: PopItem[];
     aiAnalysisHistory?: AIAnalysisResult[];
