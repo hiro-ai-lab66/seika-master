@@ -19,6 +19,7 @@ export const ProductMaster: React.FC = () => {
     const [isRegistrationFormOpen, setIsRegistrationFormOpen] = useState(true);
     const [submitMessage, setSubmitMessage] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [submitWarning, setSubmitWarning] = useState<string | null>(null);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
     const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -60,15 +61,16 @@ export const ProductMaster: React.FC = () => {
     }, [isRegistrationFormOpen]);
 
     useEffect(() => {
-        if (!submitMessage && !submitError && !syncMessage && !syncError) return;
+        if (!submitMessage && !submitError && !submitWarning && !syncMessage && !syncError) return;
         const timer = window.setTimeout(() => {
             setSubmitMessage(null);
             setSubmitError(null);
+            setSubmitWarning(null);
             setSyncMessage(null);
             setSyncError(null);
         }, 2500);
         return () => window.clearTimeout(timer);
-    }, [submitMessage, submitError, syncMessage, syncError]);
+    }, [submitMessage, submitError, submitWarning, syncMessage, syncError]);
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -261,6 +263,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         e.preventDefault();
         setSubmitMessage(null);
         setSubmitError(null);
+        setSubmitWarning(null);
         setSyncMessage(null);
         setSyncError(null);
 
@@ -296,10 +299,6 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                 return updatedProducts;
             });
 
-            if (!saveSucceeded) {
-                throw new Error('localStorageへの保存に失敗しました');
-            }
-
             setName('');
             setCode('');
             setCategory('');
@@ -307,6 +306,10 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             setSearchQuery('');
             setDisplayFilter('すべて');
             setSubmitMessage('登録しました');
+
+            if (!saveSucceeded) {
+                setSubmitWarning('登録は完了しましたが、端末内バックアップ保存に失敗しました');
+            }
 
             void (async () => {
                 try {
@@ -459,9 +462,20 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                 </div>
             )}
 
+            {submitWarning && (
+                <div style={{
+                    position: 'fixed', top: importResult || submitMessage || submitError ? '128px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    backgroundColor: '#fef3c7', color: '#92400e', padding: '12px 24px',
+                    borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
+                }}>
+                    {submitWarning}
+                </div>
+            )}
+
             {syncMessage && (
                 <div style={{
-                    position: 'fixed', top: importResult || submitMessage || submitError ? '182px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    position: 'fixed', top: importResult || submitMessage || submitError || submitWarning ? '182px' : '20px', left: '50%', transform: 'translateX(-50%)',
                     backgroundColor: '#0369a1', color: 'white', padding: '12px 24px',
                     borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
@@ -472,7 +486,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
 
             {syncError && (
                 <div style={{
-                    position: 'fixed', top: importResult || submitMessage || submitError || syncMessage ? '236px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    position: 'fixed', top: importResult || submitMessage || submitError || submitWarning || syncMessage ? '236px' : '20px', left: '50%', transform: 'translateX(-50%)',
                     backgroundColor: '#fef3c7', color: '#92400e', padding: '12px 24px',
                     borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
