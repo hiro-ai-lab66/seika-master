@@ -17,11 +17,13 @@ export const loadProducts = (): Product[] => {
     return [];
 };
 
-export const saveProducts = (items: Product[]): void => {
+export const saveProducts = (items: Product[]): boolean => {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
         console.log('[ProductStorage] saved products:', items.length);
+        return true;
     } catch (e) {
         console.error('Failed to save products to localStorage:', e);
+        return false;
     }
 };

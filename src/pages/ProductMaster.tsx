@@ -16,6 +16,8 @@ export const ProductMaster: React.FC = () => {
     const [category, setCategory] = useState('');
     const [unit, setUnit] = useState('');
     const [isRegistrationFormOpen, setIsRegistrationFormOpen] = useState(true);
+    const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,6 +54,15 @@ export const ProductMaster: React.FC = () => {
 
         return () => window.clearTimeout(timer);
     }, [isRegistrationFormOpen]);
+
+    useEffect(() => {
+        if (!submitMessage && !submitError) return;
+        const timer = window.setTimeout(() => {
+            setSubmitMessage(null);
+            setSubmitError(null);
+        }, 2500);
+        return () => window.clearTimeout(timer);
+    }, [submitMessage, submitError]);
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -239,9 +250,20 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         reader.readAsText(file, 'UTF-8');
     };
 
-    const handleAddProduct = (e: React.FormEvent) => {
+    const handleAddProduct = (e: React.FormEvent<HTMLFormElement>) => {
+        console.log('[ProductMaster] submit button pressed');
         e.preventDefault();
-        if (!name.trim()) return;
+        setSubmitMessage(null);
+        setSubmitError(null);
+
+        console.log('[ProductMaster] validation start', { name, code, category, unit });
+        if (!name.trim()) {
+            console.warn('[ProductMaster] validation failed: name is required');
+            setSubmitError('商品名を入力してください');
+            return;
+        }
+
+        console.log('[ProductMaster] validation passed');
 
         const newProduct: Product = {
             id: crypto.randomUUID(),
@@ -253,20 +275,33 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             updatedAt: new Date().toISOString(),
         };
 
-        setProducts(prev => {
-            const updatedProducts = [newProduct, ...prev];
-            console.log('[ProductMaster] add product:', newProduct);
-            saveProducts(updatedProducts);
-            return updatedProducts;
-        });
+        try {
+            let saveSucceeded = false;
 
-        // フォームリセット
-        setName('');
-        setCode('');
-        setCategory('');
-        setUnit('');
-        setSearchQuery('');
-        setDisplayFilter('すべて');
+            setProducts(prev => {
+                const updatedProducts = [newProduct, ...prev];
+                console.log('[ProductMaster] add product:', newProduct);
+                console.log('[ProductMaster] saveProducts called');
+                saveSucceeded = saveProducts(updatedProducts);
+                console.log(saveSucceeded ? '[ProductMaster] save success' : '[ProductMaster] save failed');
+                return updatedProducts;
+            });
+
+            if (!saveSucceeded) {
+                throw new Error('localStorageへの保存に失敗しました');
+            }
+
+            setName('');
+            setCode('');
+            setCategory('');
+            setUnit('');
+            setSearchQuery('');
+            setDisplayFilter('すべて');
+            setSubmitMessage('登録しました');
+        } catch (error) {
+            console.error('[ProductMaster] registration error', error);
+            setSubmitError(error instanceof Error ? error.message : '登録に失敗しました');
+        }
     };
 
     const handleDeleteProduct = (id: string) => {
@@ -356,6 +391,28 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
                 }}>
                     CSV取込完了: 追加 {importResult.added}件 / 上書き {importResult.skipped}件 / エラー {importResult.error}件
+                </div>
+            )}
+
+            {submitMessage && (
+                <div style={{
+                    position: 'fixed', top: importResult ? '74px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    backgroundColor: '#15803d', color: 'white', padding: '12px 24px',
+                    borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
+                }}>
+                    {submitMessage}
+                </div>
+            )}
+
+            {submitError && (
+                <div style={{
+                    position: 'fixed', top: importResult || submitMessage ? '128px' : '20px', left: '50%', transform: 'translateX(-50%)',
+                    backgroundColor: '#b91c1c', color: 'white', padding: '12px 24px',
+                    borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', maxWidth: '90vw'
+                }}>
+                    {submitError}
                 </div>
             )}
 
@@ -482,7 +539,12 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                             </div>
                         </div>
 
-                        <button type="submit" className="btn-save" style={{ marginTop: '1rem', width: '100%' }}>
+                        <button
+                            type="submit"
+                            className="btn-save"
+                            style={{ marginTop: '1rem', width: '100%' }}
+                            onClick={() => console.log('[ProductMaster] register form button clicked')}
+                        >
                             <Plus size={20} />
                             登録する
                         </button>
