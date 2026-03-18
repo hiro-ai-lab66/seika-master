@@ -213,6 +213,8 @@ export interface AIAnalysisResult {
 }
 
 export type InventoryType = 'mid' | 'monthend';
+export type InventoryDepartment = '野菜' | '果物';
+export type InventoryValueType = 'cost' | 'price';
 
 export type InventoryItem = {
     id: string;
@@ -223,9 +225,12 @@ export type InventoryItem = {
     qty: number;
     unit?: string;
     category?: string;
-    department?: '野菜' | '果物';
+    department?: InventoryDepartment;
     area?: 'backyard' | 'fridge';
     cost?: number;
+    price?: number;
+    valueType?: InventoryValueType;
+    manual?: boolean;
     updatedAt: string;
 };
 

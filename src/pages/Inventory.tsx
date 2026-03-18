@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Boxes, Search, Trash2, Box, Printer, X, Copy, PlusCircle, Clock, Sparkles, Cloud, RefreshCw } from 'lucide-react';
-import type { Product, InventoryItem, InventoryType } from '../types';
+import type { Product, InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 import { loadProducts } from '../storage/products';
 import { loadInventory, saveInventory } from '../storage/inventory';
 import { exportInventoryToExcel } from '../utils/excelExport';
@@ -42,6 +42,14 @@ const mergeInventoryItems = (baseItems: InventoryItem[], incomingItems: Inventor
         if (dateCompare !== 0) return dateCompare;
         return a.name.localeCompare(b.name, 'ja');
     });
+};
+
+const resolveDepartment = (product?: Product | InventoryItem, fallback: InventoryDepartment = '野菜'): InventoryDepartment => {
+    if (!product) return fallback;
+    if ('department' in product && product.department) return product.department;
+    if ('type' in product && product.type === '果物') return '果物';
+    if (product.category?.includes('果物')) return '果物';
+    return '野菜';
 };
 
 type SharedInventoryPanelProps = {
@@ -155,6 +163,7 @@ type InventoryAreaSectionProps = {
     items: InventoryItem[];
     sectionId: string;
     recentlyAddedItemId: string | null;
+    currentValueType: InventoryValueType;
     onOpenPopGem?: (name?: string) => void;
     onDeleteItem: (id: string) => void;
     onUpdateItem: (productId: string, qtyStr: string, costStr: string, department: '野菜' | '果物') => void;
@@ -165,6 +174,7 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
     items,
     sectionId,
     recentlyAddedItemId,
+    currentValueType,
     onOpenPopGem,
     onDeleteItem,
     onUpdateItem
@@ -254,14 +264,21 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
                                     type="number"
                                     min="0"
                                     step="0.1"
-                                    placeholder="原価"
+                                    placeholder={currentValueType === 'cost' ? '原価' : '売価'}
                                     className="input-base"
                                     style={{ width: '90px', padding: '6px' }}
-                                    value={item.cost === 0 ? '' : item.cost}
+                                    value={(currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0)) === 0 ? '' : (currentValueType === 'cost' ? item.cost : item.price)}
                                     onChange={(e) => onUpdateItem(item.productId, item.qty.toString(), e.target.value, item.department as '野菜' | '果物')}
                                 />
-                                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>円</span>
+                                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                                    {currentValueType === 'cost' ? '原価' : '売価'}
+                                </span>
                             </div>
+                            {(item.qty > 0 && (currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0)) > 0) && (
+                                <div style={{ fontSize: '0.9rem', color: 'var(--primary-dark)', textAlign: 'right', fontWeight: 'bold' }}>
+                                    計: ¥{((item.qty || 0) * (currentValueType === 'cost' ? (item.cost || 0) : (item.price || 0))).toLocaleString()}
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))
@@ -275,10 +292,14 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(() => loadInventory());
     const [searchQuery, setSearchQuery] = useState('');
     const [currentType, setCurrentType] = useState<InventoryType>('monthend');
+    const [currentDepartment, setCurrentDepartment] = useState<InventoryDepartment>('野菜');
+    const [currentValueType, setCurrentValueType] = useState<InventoryValueType>('cost');
     const [showPreview, setShowPreview] = useState(false);
     const [showOnlyTarget, setShowOnlyTarget] = useState(false);
     const [showOnlyUnentered, setShowOnlyUnentered] = useState(false);
     const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
+    const [manualItemName, setManualItemName] = useState('');
+    const [manualItemQty, setManualItemQty] = useState('');
     const [isSheetsConfiguredState] = useState(isSheetsConfigured());
     const [isSheetsAuthenticated, setIsSheetsAuthenticated] = useState(hasSheetsAccessToken());
     const [isLoadingSharedInventory, setIsLoadingSharedInventory] = useState(false);
@@ -307,7 +328,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     }, [recentlyAddedItemId]);
 
     // 理論原価の状態管理（日付と区分ごとにlocalStorageに保存）
-    const getTheoreticalCostKey = (date: string, type: InventoryType) => `theoreticalCost:${date}:${type}`;
+    const getTheoreticalCostKey = (date: string, type: InventoryType, valueType: InventoryValueType) => `theoreticalCost:${date}:${type}:${valueType}`;
     const [theoreticalCostStr, setTheoreticalCostStr] = useState<string>('');
 
     // 各商品行の入力値を保持 (旧仕様。本日の棚卸し状況で直接編集するため不要になりました)
@@ -393,26 +414,33 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         });
     }, [inventoryItems, currentDate, currentType]);
 
+    const currentDepartmentInventory = useMemo(() => {
+        return todaysInventory.filter(item => (item.department || '野菜') === currentDepartment);
+    }, [todaysInventory, currentDepartment]);
+
     // 日付・区分の変更時に、該当する理論原価をlocalStorageから復元する
     useEffect(() => {
-        const savedCost = localStorage.getItem(getTheoreticalCostKey(currentDate, currentType));
+        const savedCost = localStorage.getItem(getTheoreticalCostKey(currentDate, currentType, currentValueType));
         if (savedCost !== null) {
             setTheoreticalCostStr(savedCost);
         } else {
             setTheoreticalCostStr('');
         }
-    }, [currentDate, currentType]);
+    }, [currentDate, currentType, currentValueType]);
 
     // 理論原価の変更時にlocalStorageに保存する
     const handleTheoreticalCostChange = (val: string) => {
         setTheoreticalCostStr(val);
-        localStorage.setItem(getTheoreticalCostKey(currentDate, currentType), val);
+        localStorage.setItem(getTheoreticalCostKey(currentDate, currentType, currentValueType), val);
     };
 
     // 実棚卸原価の合計計算
     const actualTotalCost = useMemo(() => {
-        return todaysInventory.reduce((sum, item) => sum + (item.qty * (item.cost || 0)), 0);
-    }, [todaysInventory]);
+        return currentDepartmentInventory.reduce((sum, item) => {
+            const unitValue = currentValueType === 'price' ? (item.price || 0) : (item.cost || 0);
+            return sum + (item.qty * unitValue);
+        }, 0);
+    }, [currentDepartmentInventory, currentValueType]);
 
     const theoreticalCost = Number(theoreticalCostStr) || 0;
     const costDifference = theoreticalCost - actualTotalCost;
@@ -433,7 +461,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             }));
             // 理論原価もリセット
             setTheoreticalCostStr('');
-            localStorage.removeItem(getTheoreticalCostKey(currentDate, currentType));
+            localStorage.removeItem(getTheoreticalCostKey(currentDate, currentType, currentValueType));
         }
     };
 
@@ -501,13 +529,13 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     };
 
     const handleCopyToMonthend = () => {
-        if (todaysInventory.length === 0 || currentType !== 'mid') return;
+        if (currentDepartmentInventory.length === 0 || currentType !== 'mid') return;
 
         if (!window.confirm("15日の棚卸データを『月末』に上書きコピーします。月末の既存データは削除されます。よろしいですか？")) {
             return;
         }
 
-        const newItems: InventoryItem[] = todaysInventory.map(item => ({
+        const newItems: InventoryItem[] = currentDepartmentInventory.map(item => ({
             ...item,
             id: crypto.randomUUID(),
             inventoryType: 'monthend',
@@ -542,6 +570,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         const q = normalize(searchQuery);
 
         return products.filter(p => {
+            if (resolveDepartment(p) !== currentDepartment) return false;
             if (!q) return true;
 
             return (
@@ -551,12 +580,12 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                 (p.kana && normalize(p.kana).includes(q))
             );
         });
-    }, [products, searchQuery]);
+    }, [products, searchQuery, currentDepartment]);
 
     const { enteredCount, unenteredCount } = useMemo(() => {
         let entered = 0;
         let unentered = 0;
-        todaysInventory.forEach(item => {
+        currentDepartmentInventory.forEach(item => {
             if (item.qty > 0) {
                 entered++;
             } else {
@@ -564,7 +593,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             }
         });
         return { enteredCount: entered, unenteredCount: unentered };
-    }, [todaysInventory]);
+    }, [currentDepartmentInventory]);
 
     const displayProducts = useMemo(() => {
         // 検索結果は最大50件程度に絞る（パフォーマンス対策）
@@ -604,9 +633,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         return Array.from(recentSet.values())
             .filter(item => {
                 const productExists = products.some(p => p.id === item.productId);
-                const todaysItem = todaysInventory.find(i => i.productId === item.productId);
+                const todaysItem = currentDepartmentInventory.find(i => i.productId === item.productId);
                 const alreadyAddedToday = todaysItem && todaysItem.qty > 0;
-                return productExists && !alreadyAddedToday;
+                return productExists && !alreadyAddedToday && (item.department || '野菜') === currentDepartment;
             })
             // 必要なら元の商品の順番などに戻せるが、ここはそのまま過去のアイテム情報を利用
             .map(item => {
@@ -617,7 +646,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     lastDepartment: item.department,
                 };
             });
-    }, [inventoryItems, currentDate, currentType, products, todaysInventory]);
+    }, [inventoryItems, currentDate, currentType, currentDepartment, products, currentDepartmentInventory]);
 
     const handleQuickAdd = (product: Product, defaultUnit?: string, defaultDepartment?: '野菜' | '果物') => {
         // qty=0 で棚卸リストに追加する
@@ -632,11 +661,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
             let department = defaultDepartment;
             if (!department) {
-                if (product.type === '果物' || product.category?.includes('果物')) {
-                    department = '果物';
-                } else {
-                    department = '野菜';
-                }
+                department = resolveDepartment(product, currentDepartment);
             }
 
             const newId = crypto.randomUUID();
@@ -652,6 +677,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                 category: product.category,
                 department,
                 cost: product.cost || 0,
+                price: product.price || 0,
+                valueType: currentValueType,
                 area: product.area,
                 updatedAt: new Date().toISOString()
             };
@@ -664,9 +691,62 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         });
     };
 
-    const handleUpdateItem = (productId: string, qtyStr: string, costStr: string, department: '野菜' | '果物') => {
+    const handleAddManualItem = () => {
+        const trimmedName = manualItemName.trim();
+        const qty = Number(manualItemQty);
+
+        if (!trimmedName) {
+            alert('商品名を入力してください');
+            return;
+        }
+
+        setInventoryItems(prev => {
+            const existing = prev.find(item =>
+                item.date === currentDate &&
+                (item.inventoryType || 'monthend') === currentType &&
+                item.name === trimmedName &&
+                (item.department || '野菜') === currentDepartment
+            );
+
+            if (existing) {
+                return prev.map(item =>
+                    item.id === existing.id
+                        ? {
+                            ...item,
+                            qty: Number.isFinite(qty) ? qty : item.qty,
+                            updatedAt: new Date().toISOString()
+                        }
+                        : item
+                );
+            }
+
+            return [
+                ...prev,
+                {
+                    id: crypto.randomUUID(),
+                    date: currentDate,
+                    inventoryType: currentType,
+                    productId: `manual:${trimmedName}`,
+                    name: trimmedName,
+                    qty: Number.isFinite(qty) ? qty : 0,
+                    department: currentDepartment,
+                    cost: 0,
+                    price: 0,
+                    valueType: currentValueType,
+                    manual: true,
+                    area: 'backyard',
+                    updatedAt: new Date().toISOString()
+                }
+            ];
+        });
+
+        setManualItemName('');
+        setManualItemQty('');
+    };
+
+    const handleUpdateItem = (productId: string, qtyStr: string, amountStr: string, department: InventoryDepartment) => {
         const qty = Number(qtyStr);
-        const cost = Number(costStr);
+        const amount = Number(amountStr);
 
         setInventoryItems(prev => {
             const existingIndex = prev.findIndex(item => {
@@ -679,8 +759,14 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                 newItems[existingIndex] = {
                     ...newItems[existingIndex],
                     qty: isNaN(qty) ? 0 : qty,
-                    cost: isNaN(cost) ? 0 : cost,
+                    cost: currentValueType === 'cost'
+                        ? (isNaN(amount) ? 0 : amount)
+                        : newItems[existingIndex].cost,
+                    price: currentValueType === 'price'
+                        ? (isNaN(amount) ? 0 : amount)
+                        : newItems[existingIndex].price,
                     department,
+                    valueType: currentValueType,
                     updatedAt: new Date().toISOString()
                 };
                 if (onProductActive) {
@@ -701,7 +787,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     unit: product.unit,
                     category: product.category,
                     department,
-                    cost: isNaN(cost) ? 0 : cost,
+                    cost: currentValueType === 'cost' ? (isNaN(amount) ? 0 : amount) : (product.cost || 0),
+                    price: currentValueType === 'price' ? (isNaN(amount) ? 0 : amount) : (product.price || 0),
+                    valueType: currentValueType,
                     area: product.area,
                     updatedAt: new Date().toISOString()
                 };
@@ -717,15 +805,18 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         let itemsForArea = todaysInventory.filter(item => {
             const product = products.find(p => p.id === item.productId);
             const area = item.area || product?.area || 'backyard';
-            return area === targetArea;
+            return area === targetArea && (item.department || '野菜') === currentDepartment;
         });
 
         if (showOnlyTarget) {
-            const targetProducts = products.filter(p => p.inventoryTarget && p.area === targetArea);
+            const targetProducts = products.filter(p =>
+                p.inventoryTarget &&
+                p.area === targetArea &&
+                resolveDepartment(p) === currentDepartment
+            );
             for (const p of targetProducts) {
                 if (!itemsForArea.find(i => i.productId === p.id)) {
-                    let department = '野菜';
-                    if (p.type === '果物' || p.category?.includes('果物')) department = '果物';
+                    const department = resolveDepartment(p);
 
                     itemsForArea.push({
                         id: `virtual-${p.id}`,
@@ -736,8 +827,10 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                         qty: 0,
                         unit: p.unit,
                         category: p.category,
-                        department: department as '野菜' | '果物',
+                        department,
                         cost: p.cost || 0,
+                        price: p.price || 0,
+                        valueType: currentValueType,
                         area: p.area,
                         updatedAt: new Date().toISOString()
                     });
@@ -762,7 +855,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <h2 style={{ margin: 0 }}>棚卸し入力</h2>
-                            {todaysInventory.length > 0 && (
+                            {currentDepartmentInventory.length > 0 && (
                                 <button
                                     style={{
                                         padding: '4px 10px',
@@ -798,6 +891,24 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                 return <option key={opt.value} value={opt.value} translate="no">{opt.label}</option>;
                             })}
                         </select>
+                        <select
+                            className="input-base"
+                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: 'auto', display: 'inline-block' }}
+                            value={currentDepartment}
+                            onChange={(e) => setCurrentDepartment(e.target.value as InventoryDepartment)}
+                        >
+                            <option value="野菜">野菜</option>
+                            <option value="果物">果物</option>
+                        </select>
+                        <select
+                            className="input-base"
+                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: 'auto', display: 'inline-block' }}
+                            value={currentValueType}
+                            onChange={(e) => setCurrentValueType(e.target.value as InventoryValueType)}
+                        >
+                            <option value="cost">原価</option>
+                            <option value="price">売価</option>
+                        </select>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
                         <SharedInventoryPanel
@@ -813,7 +924,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             onReload={handleReloadSharedInventory}
                             onSave={handleSaveSharedInventory}
                         />
-                        {todaysInventory.length > 0 && currentType === 'mid' && (
+                        {currentDepartmentInventory.length > 0 && currentType === 'mid' && (
                             <button
                                 className="btn-action"
                                 style={{ padding: '8px 16px', fontSize: '0.9rem', width: 'auto', color: '#0284c7', borderColor: '#0284c7' }}
@@ -822,16 +933,19 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                 <Copy size={16} /> 15日→月末へコピー（上書き）
                             </button>
                         )}
-                        {todaysInventory.length > 0 && currentType === 'monthend' && (
+                        {currentDepartmentInventory.length > 0 && (
                             <button
                                 className="btn-action primary"
                                 style={{ padding: '8px 16px', fontSize: '0.9rem', width: 'auto' }}
                                 onClick={() => {
-                                    exportInventoryToExcel(todaysInventory, currentDate, 'monthend');
-                                    setShowPreview(true);
+                                    exportInventoryToExcel(inventoryItems, currentDate, {
+                                        type: currentType,
+                                        department: currentDepartment,
+                                        valueType: currentValueType
+                                    });
                                 }}
                             >
-                                <Printer size={16} /> 提出用PDF（月末）
+                                <Printer size={16} /> Excel出力
                             </button>
                         )}
                     </div>
@@ -850,11 +964,13 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     onSave={handleSaveSharedInventory}
                 />
 
-                {/* 原価サマリー */}
+                {/* 金額サマリー */}
                 <div className="card-premium" style={{ marginBottom: '1.5rem', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', alignItems: 'center' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>理論原価 (円)</label>
+                            <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
+                                理論{currentValueType === 'cost' ? '原価' : '売価'} (円)
+                            </label>
                             <input
                                 type="number"
                                 className="input-base"
@@ -866,14 +982,18 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>実棚卸原価 (円)</span>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
+                                実棚卸{currentValueType === 'cost' ? '原価' : '売価'} (円)
+                            </span>
                             <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)', padding: '8px 0' }}>
                                 {actualTotalCost.toLocaleString()}
                             </div>
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>差額 (理論 - 実棚卸)</span>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
+                                差額 (理論{currentValueType === 'cost' ? '原価' : '売価'} - 実棚卸)
+                            </span>
                             <div style={{
                                 fontSize: '1.5rem',
                                 fontWeight: 'bold',
@@ -969,9 +1089,40 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
                         </div>
 
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: '2fr 1fr auto',
+                                gap: '8px',
+                                marginBottom: '1rem'
+                            }}
+                        >
+                            <input
+                                type="text"
+                                className="input-base"
+                                placeholder="商品マスター外の商品名を手入力"
+                                value={manualItemName}
+                                onChange={(e) => setManualItemName(e.target.value)}
+                            />
+                            <input
+                                type="number"
+                                className="input-base"
+                                placeholder="数量"
+                                value={manualItemQty}
+                                onChange={(e) => setManualItemQty(e.target.value)}
+                            />
+                            <button
+                                className="btn-action"
+                                style={{ width: 'auto', minWidth: '110px' }}
+                                onClick={handleAddManualItem}
+                            >
+                                <PlusCircle size={16} /> 手入力追加
+                            </button>
+                        </div>
+
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                                {searchQuery ? `${filteredProducts.length}件見つかりました（最大50件表示）` : '検索で絞り込んでください'}
+                                {searchQuery ? `${filteredProducts.length}件見つかりました（最大50件表示）` : `${currentDepartment}の商品を検索または手入力してください`}
                             </span>
                         </div>
 
@@ -984,7 +1135,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             ) : (
                                 displayProducts.map(product => {
                                     // すでに本日入力済みかチェック
-                                    const existing = todaysInventory.find(i => i.productId === product.id);
+                                    const existing = currentDepartmentInventory.find(i => i.productId === product.id);
 
                                     return (
                                         <div key={product.id} className="history-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
@@ -1076,6 +1227,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             items={backyardItems}
                             sectionId="backyard"
                             recentlyAddedItemId={recentlyAddedItemId}
+                            currentValueType={currentValueType}
                             onOpenPopGem={onOpenPopGem}
                             onDeleteItem={handleDeleteItem}
                             onUpdateItem={handleUpdateItem}
@@ -1085,6 +1237,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             items={fridgeItems}
                             sectionId="fridge"
                             recentlyAddedItemId={recentlyAddedItemId}
+                            currentValueType={currentValueType}
                             onOpenPopGem={onOpenPopGem}
                             onDeleteItem={handleDeleteItem}
                             onUpdateItem={handleUpdateItem}
