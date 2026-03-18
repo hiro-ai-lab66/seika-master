@@ -25,6 +25,7 @@ export const ProductMaster: React.FC = () => {
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
     const formCardRef = useRef<HTMLDivElement>(null);
+    const productFormRef = useRef<HTMLFormElement>(null);
     const nameInputRef = useRef<HTMLInputElement>(null);
     const [importCategory, setImportCategory] = useState<'野菜' | '果物'>('野菜');
     const [importResult, setImportResult] = useState<{ added: number, skipped: number, error: number } | null>(null);
@@ -412,6 +413,14 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         }, 250);
     };
 
+    const canSubmitProduct = Boolean(name.trim());
+
+    const handleSubmitFromFab = (event?: React.SyntheticEvent) => {
+        event?.preventDefault();
+        console.log('[ProductMaster] mobile submit trigger');
+        productFormRef.current?.requestSubmit();
+    };
+
     return (
         <div className="page-container">
             {/* 取込結果トースト */}
@@ -535,7 +544,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         </div>
                     </div>
 
-                    <form onSubmit={handleAddProduct} className="inspection-form">
+                    <form ref={productFormRef} onSubmit={handleAddProduct} className="inspection-form">
                         <div className="form-group">
                             <label>商品名 <span className="required-badge">*</span></label>
                             <input
@@ -754,6 +763,12 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
           font-weight: 800;
         }
 
+        .mobile-add-fab:disabled {
+          opacity: 0.45;
+          box-shadow: none;
+          cursor: not-allowed;
+        }
+
         @media (max-width: 768px) {
           .mobile-add-fab {
             display: inline-flex;
@@ -768,12 +783,12 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             <button
                 type="button"
                 className="mobile-add-fab"
-                onClick={handleOpenRegistrationForm}
-                onTouchEnd={handleOpenRegistrationForm}
+                onClick={handleSubmitFromFab}
                 aria-label="商品を登録する"
+                disabled={!canSubmitProduct}
             >
                 <Plus size={18} />
-                ＋登録
+                ＋登録する
             </button>
         </div>
     );
