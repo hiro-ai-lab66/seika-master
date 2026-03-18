@@ -29,6 +29,12 @@ export const ProductMaster: React.FC = () => {
         saveProducts(products);
     }, [products]);
 
+    useEffect(() => {
+        const loadedProducts = loadProducts();
+        console.log('[ProductMaster] initial products:', loadedProducts.length);
+        setProducts(loadedProducts);
+    }, []);
+
     // 結果表示の5秒後に消す
     useEffect(() => {
         if (importResult) {
@@ -247,13 +253,20 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             updatedAt: new Date().toISOString(),
         };
 
-        setProducts(prev => [newProduct, ...prev]);
+        setProducts(prev => {
+            const updatedProducts = [newProduct, ...prev];
+            console.log('[ProductMaster] add product:', newProduct);
+            saveProducts(updatedProducts);
+            return updatedProducts;
+        });
 
         // フォームリセット
         setName('');
         setCode('');
         setCategory('');
         setUnit('');
+        setSearchQuery('');
+        setDisplayFilter('すべて');
     };
 
     const handleDeleteProduct = (id: string) => {

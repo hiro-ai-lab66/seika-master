@@ -6,17 +6,21 @@ export const loadProducts = (): Product[] => {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
-            return JSON.parse(saved);
+            const parsed = JSON.parse(saved);
+            console.log('[ProductStorage] loaded products:', parsed.length);
+            return parsed;
         }
     } catch (e) {
         console.error('Failed to load products from localStorage:', e);
     }
+    console.log('[ProductStorage] loaded products: 0');
     return [];
 };
 
 export const saveProducts = (items: Product[]): void => {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        console.log('[ProductStorage] saved products:', items.length);
     } catch (e) {
         console.error('Failed to save products to localStorage:', e);
     }
