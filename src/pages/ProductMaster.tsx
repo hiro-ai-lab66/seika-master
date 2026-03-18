@@ -15,6 +15,7 @@ export const ProductMaster: React.FC = () => {
     const [code, setCode] = useState('');
     const [category, setCategory] = useState('');
     const [unit, setUnit] = useState('');
+    const [isRegistrationFormOpen, setIsRegistrationFormOpen] = useState(true);
 
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,6 +36,16 @@ export const ProductMaster: React.FC = () => {
             return () => clearTimeout(timer);
         }
     }, [importResult]);
+
+    useEffect(() => {
+        if (!isRegistrationFormOpen) return;
+
+        const timer = window.setTimeout(() => {
+            nameInputRef.current?.focus();
+        }, 180);
+
+        return () => window.clearTimeout(timer);
+    }, [isRegistrationFormOpen]);
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -311,7 +322,9 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         return result;
     }, [products, searchQuery, displayFilter]);
 
-    const focusRegistrationForm = () => {
+    const handleOpenRegistrationForm = () => {
+        console.log('登録ボタン押下');
+        setIsRegistrationFormOpen(true);
         formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         window.setTimeout(() => {
             nameInputRef.current?.focus();
@@ -337,7 +350,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <button
                         className="button-outline product-add-shortcut desktop-only-add"
-                        onClick={focusRegistrationForm}
+                        onClick={handleOpenRegistrationForm}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: 'var(--primary)', color: 'var(--primary)', fontWeight: 700 }}
                     >
                         <Plus size={16} /> プラス登録する
@@ -388,7 +401,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
 
             <div className="dashboard-grid">
                 {/* 商品登録フォーム */}
-                <div className="card-premium" ref={formCardRef}>
+                <div className="card-premium registration-card" ref={formCardRef} data-open={isRegistrationFormOpen ? 'true' : 'false'}>
                     <div className="card-header-icon">
                         <div className="icon-circle"><Package size={24} /></div>
                         <div>
@@ -611,7 +624,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             <button
                 type="button"
                 className="mobile-add-fab"
-                onClick={focusRegistrationForm}
+                onClick={handleOpenRegistrationForm}
                 aria-label="商品を登録する"
             >
                 <Plus size={18} />
