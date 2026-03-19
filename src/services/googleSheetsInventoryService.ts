@@ -256,6 +256,26 @@ const listRows = async (): Promise<SharedInventoryRow[]> => {
         }));
 };
 
+const buildInventoryRowValues = (item: InventoryItem): string[] => {
+    const row: SharedInventoryRow = {
+        date: item.date,
+        store: STORE_NAME,
+        item: item.name,
+        spec: buildSpec(item),
+        quantity: item.qty,
+        unitPrice: item.cost || 0
+    };
+
+    return [
+        row.date,
+        row.store,
+        row.item,
+        row.spec,
+        String(row.quantity),
+        String(row.unitPrice)
+    ];
+};
+
 export const isSheetsConfigured = (): boolean => Boolean(CLIENT_ID && SPREADSHEET_ID);
 export const getSharedStoreName = (): string => STORE_NAME;
 export const hasSheetsAccessToken = (): boolean => hasValidAccessToken();
@@ -358,6 +378,17 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
             await appendSheetValues(`${SHEET_NAME}!A:F`, values);
         }
     }
+};
+
+export const replaceSharedInventoryItems = async (items: InventoryItem[]) => {
+    await ensureHeaderRow();
+    const existingRows = await listRows();
+    const rowCount = Math.max(existingRows.length, items.length, 1);
+    const values = Array.from({ length: rowCount }, (_, index) => {
+        const item = items[index];
+        return item ? buildInventoryRowValues(item) : ['', '', '', '', '', ''];
+    });
+    await updateSheetValues(`${SHEET_NAME}!A2:F${rowCount + 1}`, values);
 };
 
 export const shouldMigrateLocalInventory = (): boolean => {

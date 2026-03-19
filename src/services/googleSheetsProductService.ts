@@ -68,6 +68,54 @@ const listSharedProducts = async (): Promise<SharedProductRow[]> => {
         }));
 };
 
+export const fetchSharedProducts = async (): Promise<Product[]> => {
+    ensureConfigured();
+
+    if (!hasSheetsAccessToken()) {
+        await initializeSheetsAuth(() => undefined);
+        const restored = await tryRestoreSheetsSession();
+        if (!restored) {
+            throw new Error('Google Sheets にログインしてください');
+        }
+    }
+
+    const rows = await listSharedProducts();
+    return rows.map((row) => ({
+        id: row.id || crypto.randomUUID(),
+        name: row.name,
+        code: row.code,
+        category: row.category,
+        unit: row.unit,
+        type: row.type,
+        updatedAt: row.updatedAt || new Date().toISOString(),
+        syncStatus: 'synced'
+    }));
+};
+
+export const replaceProductsInGoogleSheets = async (products: Product[]): Promise<void> => {
+    ensureConfigured();
+
+    if (!hasSheetsAccessToken()) {
+        try {
+            await initializeSheetsAuth(() => undefined);
+            const restored = await tryRestoreSheetsSession();
+            if (!restored) {
+                await loginToGoogleSheets('select_account consent');
+            }
+        } catch (error) {
+            throw new Error('Google Sheets 認証に失敗しました');
+        }
+    }
+
+    const existingRows = await listSharedProducts();
+    const rowCount = Math.max(existingRows.length, products.length, 1);
+    const values = Array.from({ length: rowCount }, (_, index) => {
+        const product = products[index];
+        return product ? buildProductValues(product) : ['', '', '', '', '', '', ''];
+    });
+    await writeSharedSheetValues(`${PRODUCT_SHEET_NAME}!A2:G${rowCount + 1}`, values);
+};
+
 export const syncProductToGoogleSheets = async (product: Product): Promise<void> => {
     ensureConfigured();
 

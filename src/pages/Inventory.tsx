@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Boxes, Search, Trash2, Box, Printer, X, Copy, PlusCircle, Clock, Sparkles, Cloud, RefreshCw } from 'lucide-react';
 import type { Product, InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 import { loadProducts } from '../storage/products';
@@ -13,8 +13,8 @@ import {
     isSheetsConfigured,
     loginToGoogleSheets,
     migrateLocalInventoryOnce,
-    tryRestoreSheetsSession,
-    upsertSharedInventoryItems
+    replaceSharedInventoryItems,
+    tryRestoreSheetsSession
 } from '../services/googleSheetsInventoryService';
 
 interface InventoryProps {
@@ -336,6 +336,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [isSavingSharedInventory, setIsSavingSharedInventory] = useState(false);
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
     const [sharedError, setSharedError] = useState<string | null>(null);
+    const hasSharedInventoryLoadedRef = useRef(false);
 
     // 追加されたアイテムへのスクロールとハイライト処理
     useEffect(() => {
@@ -413,6 +414,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                 const sharedItems = convertSharedRowsToInventoryItems(sharedRows, productsByName);
 
                 setInventoryItems(prev => mergeInventoryItems(prev, sharedItems));
+                hasSharedInventoryLoadedRef.current = true;
 
                 const migrated = await migrateLocalInventoryOnce(loadInventory());
                 if (migrated) {
@@ -421,7 +423,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     setInventoryItems(prev => mergeInventoryItems(prev, latestItems));
                     setSharedStatus('ローカル棚卸しデータをスプレッドシートへ初回移行しました');
                 } else {
-                    setSharedStatus('Googleスプレッドシートから最新データを取得しました');
+                    setSharedStatus('Googleスプレッドシート共有データを表示中');
                 }
             } catch (error) {
                 console.error('Failed to load shared inventory', error);
@@ -527,7 +529,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             const rows = await fetchSharedInventoryItems();
             const sharedItems = convertSharedRowsToInventoryItems(rows, productsByName);
             setInventoryItems(prev => mergeInventoryItems(prev, sharedItems));
-            setSharedStatus('Googleスプレッドシートから最新データを再取得しました');
+            hasSharedInventoryLoadedRef.current = true;
+            setSharedStatus('Googleスプレッドシート共有データを再取得しました');
         } catch (error) {
             console.error('Failed to reload shared inventory', error);
             setIsSheetsAuthenticated(false);
@@ -547,9 +550,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         setSharedError(null);
 
         try {
-            const targetItems = inventoryItems.filter(item => item.date === currentDate && (item.inventoryType || 'monthend') === currentType);
-            await upsertSharedInventoryItems(targetItems);
-            setSharedStatus('現在の棚卸しデータをGoogleスプレッドシートへ保存しました');
+            await replaceSharedInventoryItems(inventoryItems);
+            setSharedStatus('棚卸しデータをGoogleスプレッドシートへ保存しました');
         } catch (error) {
             console.error('Failed to save shared inventory', error);
             setIsSheetsAuthenticated(false);
@@ -558,6 +560,23 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             setIsSavingSharedInventory(false);
         }
     };
+
+    useEffect(() => {
+        if (!isSheetsConfiguredState || !isSheetsAuthenticated || !hasSharedInventoryLoadedRef.current) return;
+
+        const timer = window.setTimeout(async () => {
+            try {
+                await replaceSharedInventoryItems(inventoryItems);
+                setSharedError(null);
+                setSharedStatus('Googleスプレッドシートへ共有済み');
+            } catch (error) {
+                console.error('Failed to auto sync inventory', error);
+                setSharedError('共有同期に失敗したためローカルデータを保持しています');
+            }
+        }, 800);
+
+        return () => window.clearTimeout(timer);
+    }, [inventoryItems, isSheetsAuthenticated, isSheetsConfiguredState]);
 
     const handleCopyToMonthend = () => {
         if (currentDepartmentInventory.length === 0 || currentType !== 'mid') return;

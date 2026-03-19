@@ -3,7 +3,8 @@ import { Package, Search, Plus, Trash2, Tag, Hash, Scale, Box, Upload } from 'lu
 import Papa from 'papaparse';
 import type { Product } from '../types';
 import { loadProducts, saveProducts } from '../storage/products';
-import { syncProductToGoogleSheets } from '../services/googleSheetsProductService';
+import { fetchSharedProducts, replaceProductsInGoogleSheets, syncProductToGoogleSheets } from '../services/googleSheetsProductService';
+import { hasSheetsAccessToken, initializeSheetsAuth, isSheetsConfigured, tryRestoreSheetsSession } from '../services/googleSheetsInventoryService';
 
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
@@ -22,12 +23,17 @@ export const ProductMaster: React.FC = () => {
     const [submitWarning, setSubmitWarning] = useState<string | null>(null);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
     const [syncError, setSyncError] = useState<string | null>(null);
+    const [sharedStatus, setSharedStatus] = useState<string | null>(null);
+    const [sharedError, setSharedError] = useState<string | null>(null);
+    const [isSharedLoading, setIsSharedLoading] = useState(false);
+    const [isSheetsReady, setIsSheetsReady] = useState(false);
 
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
     const formCardRef = useRef<HTMLDivElement>(null);
     const productFormRef = useRef<HTMLFormElement>(null);
     const nameInputRef = useRef<HTMLInputElement>(null);
+    const isHydratingFromSheetsRef = useRef(false);
     const [importCategory, setImportCategory] = useState<'野菜' | '果物'>('野菜');
     const [importResult, setImportResult] = useState<{ added: number, skipped: number, error: number } | null>(null);
 
@@ -41,6 +47,66 @@ export const ProductMaster: React.FC = () => {
         console.log('[ProductMaster] initial products:', loadedProducts.length);
         setProducts(loadedProducts);
     }, []);
+
+    useEffect(() => {
+        if (!isSheetsConfigured()) {
+            setSharedStatus('ローカルデータを表示中');
+            return;
+        }
+
+        const initializeSharedProducts = async () => {
+            setIsSharedLoading(true);
+            try {
+                await initializeSheetsAuth(() => undefined);
+                const restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
+                if (!restored) {
+                    setSharedStatus('Google Sheets 未接続のためローカルデータを表示中');
+                    setIsSheetsReady(false);
+                    return;
+                }
+
+                const sharedProducts = await fetchSharedProducts();
+                isHydratingFromSheetsRef.current = true;
+                setProducts(sharedProducts);
+                saveProducts(sharedProducts);
+                setIsSheetsReady(true);
+                setSharedError(null);
+                setSharedStatus('Google Sheets 共有データを表示中');
+            } catch (error) {
+                console.error('[ProductMaster] failed to load shared products', error);
+                setIsSheetsReady(false);
+                setSharedError('Google Sheets の取得に失敗したためローカルデータを表示中');
+            } finally {
+                setIsSharedLoading(false);
+                window.setTimeout(() => {
+                    isHydratingFromSheetsRef.current = false;
+                }, 0);
+            }
+        };
+
+        void initializeSharedProducts();
+    }, []);
+
+    useEffect(() => {
+        if (!isSheetsReady || isHydratingFromSheetsRef.current) return;
+
+        const syncLatestProducts = async () => {
+            try {
+                await replaceProductsInGoogleSheets(products.map(item => ({
+                    ...item,
+                    syncStatus: 'synced',
+                    syncError: undefined
+                })));
+                setSharedError(null);
+                setSharedStatus('Google Sheets に共有済み');
+            } catch (error) {
+                console.error('[ProductMaster] failed to sync product master', error);
+                setSharedError('共有同期に失敗したためローカルを保持しています');
+            }
+        };
+
+        void syncLatestProducts();
+    }, [products, isSheetsReady]);
 
     // 結果表示の5秒後に消す
     useEffect(() => {
@@ -437,6 +503,21 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                     display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
                 }}>
                     CSV取込完了: 追加 {importResult.added}件 / 上書き {importResult.skipped}件 / エラー {importResult.error}件
+                </div>
+            )}
+
+            {(sharedStatus || sharedError || isSharedLoading) && (
+                <div style={{
+                    marginBottom: '12px',
+                    background: '#f8fafc',
+                    border: `1px solid ${sharedError ? '#fde68a' : '#dbeafe'}`,
+                    color: sharedError ? '#92400e' : '#1d4ed8',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    fontSize: '0.9rem',
+                    fontWeight: 600
+                }}>
+                    {isSharedLoading ? 'Google Sheets 共有データを読み込み中です' : sharedError || sharedStatus}
                 </div>
             )}
 
