@@ -41,6 +41,37 @@ const ensureConfigured = () => {
     }
 };
 
+const ensureProductSheetsSession = async (interactive: boolean) => {
+    ensureConfigured();
+    console.log('[ProductSheets] ensure session', {
+        interactive,
+        spreadsheetId: getSharedSpreadsheetId(),
+        sheetName: PRODUCT_SHEET_NAME,
+        hasToken: hasSheetsAccessToken()
+    });
+
+    await initializeSheetsAuth(() => undefined);
+
+    if (hasSheetsAccessToken()) {
+        console.log('[ProductSheets] valid token already exists');
+        return;
+    }
+
+    const restored = await tryRestoreSheetsSession();
+    console.log('[ProductSheets] restore session result:', restored);
+
+    if (restored) {
+        return;
+    }
+
+    if (!interactive) {
+        throw new Error('Google Sheets 未ログイン');
+    }
+
+    await loginToGoogleSheets('select_account consent');
+    console.log('[ProductSheets] interactive login completed');
+};
+
 const ensureProductHeader = async () => {
     const result = await readSharedSheetValues(`${PRODUCT_SHEET_NAME}!A1:G1`);
     const header = result.values?.[0] || [];
@@ -69,17 +100,10 @@ const listSharedProducts = async (): Promise<SharedProductRow[]> => {
 };
 
 export const fetchSharedProducts = async (): Promise<Product[]> => {
-    ensureConfigured();
-
-    if (!hasSheetsAccessToken()) {
-        await initializeSheetsAuth(() => undefined);
-        const restored = await tryRestoreSheetsSession();
-        if (!restored) {
-            throw new Error('Google Sheets にログインしてください');
-        }
-    }
+    await ensureProductSheetsSession(false);
 
     const rows = await listSharedProducts();
+    console.log('[ProductSheets] fetched rows:', rows.length);
     return rows.map((row) => ({
         id: row.id || crypto.randomUUID(),
         name: row.name,
@@ -93,18 +117,11 @@ export const fetchSharedProducts = async (): Promise<Product[]> => {
 };
 
 export const replaceProductsInGoogleSheets = async (products: Product[]): Promise<void> => {
-    ensureConfigured();
-
-    if (!hasSheetsAccessToken()) {
-        try {
-            await initializeSheetsAuth(() => undefined);
-            const restored = await tryRestoreSheetsSession();
-            if (!restored) {
-                await loginToGoogleSheets('select_account consent');
-            }
-        } catch (error) {
-            throw new Error('Google Sheets 認証に失敗しました');
-        }
+    try {
+        await ensureProductSheetsSession(true);
+    } catch (error) {
+        console.error('[ProductSheets] auth failed before replace', error);
+        throw new Error(error instanceof Error ? error.message : 'Google Sheets 認証に失敗しました');
     }
 
     const existingRows = await listSharedProducts();
@@ -113,27 +130,26 @@ export const replaceProductsInGoogleSheets = async (products: Product[]): Promis
         const product = products[index];
         return product ? buildProductValues(product) : ['', '', '', '', '', '', ''];
     });
+    console.log('[ProductSheets] replace rows', { existingRows: existingRows.length, products: products.length, rowCount });
     await writeSharedSheetValues(`${PRODUCT_SHEET_NAME}!A2:G${rowCount + 1}`, values);
 };
 
 export const syncProductToGoogleSheets = async (product: Product): Promise<void> => {
-    ensureConfigured();
-
-    if (!hasSheetsAccessToken()) {
-        try {
-            await initializeSheetsAuth(() => undefined);
-            const restored = await tryRestoreSheetsSession();
-            if (!restored) {
-                await loginToGoogleSheets('select_account consent');
-            }
-        } catch (error) {
-            throw new Error('Google Sheets 認証に失敗しました');
-        }
+    try {
+        await ensureProductSheetsSession(true);
+    } catch (error) {
+        console.error('[ProductSheets] auth failed before sync', error);
+        throw new Error(error instanceof Error ? error.message : 'Google Sheets 認証に失敗しました');
     }
 
     const existingRows = await listSharedProducts();
     const existing = existingRows.find((row) => row.id === product.id || (row.code && product.code && row.code === product.code));
     const values = [buildProductValues(product)];
+    console.log('[ProductSheets] sync product', {
+        productId: product.id,
+        code: product.code,
+        existingRow: existing?.rowNumber || null
+    });
 
     if (existing?.rowNumber) {
         await writeSharedSheetValues(`${PRODUCT_SHEET_NAME}!A${existing.rowNumber}:G${existing.rowNumber}`, values);

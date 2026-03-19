@@ -60,7 +60,8 @@ export const ProductMaster: React.FC = () => {
                 await initializeSheetsAuth(() => undefined);
                 const restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
                 if (!restored) {
-                    setSharedStatus('Google Sheets 未接続のためローカルデータを表示中');
+                    console.log('[ProductMaster] product sheet not authenticated yet');
+                    setSharedStatus('Google Sheets 未ログインのためローカルデータを表示中');
                     setIsSheetsReady(false);
                     return;
                 }
@@ -75,7 +76,7 @@ export const ProductMaster: React.FC = () => {
             } catch (error) {
                 console.error('[ProductMaster] failed to load shared products', error);
                 setIsSheetsReady(false);
-                setSharedError('Google Sheets の取得に失敗したためローカルデータを表示中');
+                setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
             } finally {
                 setIsSharedLoading(false);
                 window.setTimeout(() => {
@@ -101,7 +102,7 @@ export const ProductMaster: React.FC = () => {
                 setSharedStatus('Google Sheets に共有済み');
             } catch (error) {
                 console.error('[ProductMaster] failed to sync product master', error);
-                setSharedError('共有同期に失敗したためローカルを保持しています');
+                setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有同期に失敗しました'}`);
             }
         };
 
@@ -399,6 +400,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         saveProducts(updatedProducts);
                         return updatedProducts;
                     });
+                    setSharedError(`Google Sheets接続エラー: ${message}`);
                     setSyncError('登録は完了しましたが、共有同期に失敗しました');
                 }
             })();
