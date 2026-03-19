@@ -316,6 +316,13 @@ export const readSharedSheetValues = async (range: string) => fetchSheetValues(r
 export const writeSharedSheetValues = async (range: string, values: string[][]) => updateSheetValues(range, values);
 export const appendSharedSheetValues = async (range: string, values: string[][]) => appendSheetValues(range, values);
 export const getSharedSpreadsheetId = () => SPREADSHEET_ID;
+export const readSharedSpreadsheetMetadata = async () => {
+    const response = await authorizedSheetsFetch(getSpreadsheetMetadataUrl());
+    if (!response.ok) {
+        throw await buildSheetsError(response, 'Google Sheets のメタデータ取得に失敗しました');
+    }
+    return response.json();
+};
 
 const ensureHeaderRow = async () => {
     const sheetName = await resolveInventorySheetName();

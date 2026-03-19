@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import type { InspectionEntry, DailyBudget, BestItem, Product, DailySalesRecord } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
-import { Upload } from 'lucide-react';
+import { Upload, Cloud, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
 import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dailySales';
+import { appendSharedCheckRows, fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow } from '../services/googleSheetsCheckService';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -16,6 +17,7 @@ interface Props {
 
 export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBudgets, currentDate, onChangeDate }) => {
     const AMOUNT_NOTE = '※金額は千円単位';
+    const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
     const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
     const parseThousandInput = (value: string) => {
         const digits = sanitizeThousandInput(value);
@@ -35,8 +37,16 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (rounded < 0) return `-${abs}`;
         return '0';
     };
+    const formatCheckValue = (value: number | null | undefined) => {
+        if (value === null || value === undefined) return '';
+        return String(Math.round(value / 1000));
+    };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
+    const [sharedStatus, setSharedStatus] = useState<string | null>(null);
+    const [sharedError, setSharedError] = useState<string | null>(null);
+    const [isSharedSaving, setIsSharedSaving] = useState(false);
+    const [isSharedReloading, setIsSharedReloading] = useState(false);
 
     const [form, setForm] = useState<Partial<InspectionEntry>>(() => {
         const targetDate = currentDate;
@@ -138,6 +148,124 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             return;
         }
         handleChange(field, parseThousandInput(value));
+    };
+
+    const buildSharedCheckRows = (): SharedCheckRow[] => {
+        const baseRows: SharedCheckRow[] = [
+            {
+                date: currentDate,
+                store: STORE_NAME,
+                item: '本日の売上予算',
+                content: formatCheckValue(form.totalBudget),
+                status: form.totalBudget ? '入力済' : '未入力',
+                owner: '',
+                time: period
+            }
+        ];
+
+        if (period === '12:00') {
+            baseRows.push(
+                { date: currentDate, store: STORE_NAME, item: '12時実績', content: formatCheckValue(form.actual12), status: form.actual12 !== null && form.actual12 !== undefined ? '入力済' : '未入力', owner: '', time: '12:00' },
+                { date: currentDate, store: STORE_NAME, item: '12時消化率', content: form.rate12?.toString() || '', status: form.rate12 !== null && form.rate12 !== undefined ? '入力済' : '未入力', owner: '', time: '12:00' },
+                { date: currentDate, store: STORE_NAME, item: '12時客数', content: form.customers12?.toString() || '', status: form.customers12 !== null && form.customers12 !== undefined ? '入力済' : '未入力', owner: '', time: '12:00' },
+                { date: currentDate, store: STORE_NAME, item: '売り込み品', content: form.promotionItem || '', status: form.promotionItem ? '入力済' : '未入力', owner: '', time: '12:00' },
+                { date: currentDate, store: STORE_NAME, item: '12時気づき', content: form.notes12 || '', status: form.notes12 ? '入力済' : '未入力', owner: '', time: '12:00' }
+            );
+        }
+
+        if (period === '17:00') {
+            baseRows.push(
+                { date: currentDate, store: STORE_NAME, item: '17時実績', content: formatCheckValue(form.actual17), status: form.actual17 !== null && form.actual17 !== undefined ? '入力済' : '未入力', owner: '', time: '17:00' },
+                { date: currentDate, store: STORE_NAME, item: '17時消化率', content: form.rate17?.toString() || '', status: form.rate17 !== null && form.rate17 !== undefined ? '入力済' : '未入力', owner: '', time: '17:00' },
+                { date: currentDate, store: STORE_NAME, item: '17時客数', content: form.customers17?.toString() || '', status: form.customers17 !== null && form.customers17 !== undefined ? '入力済' : '未入力', owner: '', time: '17:00' },
+                { date: currentDate, store: STORE_NAME, item: '売り込み品', content: form.promotionItem || '', status: form.promotionItem ? '入力済' : '未入力', owner: '', time: '17:00' },
+                { date: currentDate, store: STORE_NAME, item: '17時気づき', content: form.notes17 || '', status: form.notes17 ? '入力済' : '未入力', owner: '', time: '17:00' }
+            );
+        }
+
+        if (period === 'final') {
+            baseRows.push(
+                { date: currentDate, store: STORE_NAME, item: '最終実績', content: formatCheckValue(form.actualFinal), status: form.actualFinal !== null && form.actualFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '最終客数', content: form.customersFinal?.toString() || '', status: form.customersFinal !== null && form.customersFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: 'ロス額', content: formatCheckValue(form.lossAmount), status: form.lossAmount !== null && form.lossAmount !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '天候', content: aiWeather, status: aiWeather ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '気温帯', content: aiTempBand, status: aiTempBand ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '客数', content: aiCustomerCount, status: aiCustomerCount ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '客単価', content: aiAvgPrice, status: aiAvgPrice ? '入力済' : '未入力', owner: '', time: 'final' }
+            );
+        }
+
+        return baseRows.filter((row) => row.content !== '' || row.item === '本日の売上予算');
+    };
+
+    const applySharedRowsToForm = (rows: SharedCheckRow[]) => {
+        if (rows.length === 0) return;
+
+        const relevantRows = rows.filter((row) => row.date === currentDate && (row.time === period || row.item === '本日の売上予算'));
+        if (relevantRows.length === 0) {
+            setSharedStatus(`共有データはありますが、この日付/時間帯の該当行はありません（シート: ${getSharedCheckSheetName()}）`);
+            return;
+        }
+
+        setForm((prev) => {
+            const next = { ...prev };
+            relevantRows.forEach((row) => {
+                    switch (row.item) {
+                    case '本日の売上予算':
+                        next.totalBudget = parseThousandInput(row.content) || 0;
+                        break;
+                    case '12時実績':
+                        next.actual12 = parseThousandInput(row.content);
+                        break;
+                    case '12時消化率':
+                        next.rate12 = row.content ? Number(row.content) : null;
+                        break;
+                    case '12時客数':
+                        next.customers12 = row.content ? Number(row.content) : null;
+                        break;
+                    case '12時気づき':
+                        next.notes12 = row.content;
+                        break;
+                    case '17時実績':
+                        next.actual17 = parseThousandInput(row.content);
+                        break;
+                    case '17時消化率':
+                        next.rate17 = row.content ? Number(row.content) : null;
+                        break;
+                    case '17時客数':
+                        next.customers17 = row.content ? Number(row.content) : null;
+                        break;
+                    case '17時気づき':
+                        next.notes17 = row.content;
+                        break;
+                    case '売り込み品':
+                        next.promotionItem = row.content;
+                        break;
+                    case '最終実績':
+                        next.actualFinal = parseThousandInput(row.content);
+                        break;
+                    case '最終客数':
+                        next.customersFinal = row.content ? Number(row.content) : null;
+                        break;
+                    case 'ロス額':
+                        next.lossAmount = parseThousandInput(row.content);
+                        break;
+                    default:
+                        break;
+                }
+            });
+            return next;
+        });
+
+        const rowMap = new Map(relevantRows.map((row) => [row.item, row.content]));
+        if (period === 'final') {
+            setAiWeather(rowMap.get('天候') || '');
+            setAiTempBand(rowMap.get('気温帯') || '');
+            setAiCustomerCount(rowMap.get('客数') || '');
+            setAiAvgPrice(rowMap.get('客単価') || '');
+        }
+
+        setSharedStatus(`共有データを再取得しました（シート: ${getSharedCheckSheetName()}）`);
     };
     // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
     const calcJAN13 = (rawCode: string): string => {
@@ -408,6 +536,37 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
     }, [currentDate]);
 
+    const handleSaveToSharedCheck = async () => {
+        setSharedError(null);
+        setSharedStatus(null);
+        setIsSharedSaving(true);
+        try {
+            const rows = buildSharedCheckRows();
+            await appendSharedCheckRows(rows);
+            setSharedStatus(`Googleシートへ共有保存しました（シート: ${getSharedCheckSheetName()}）`);
+        } catch (error) {
+            console.error('[CheckSheets] save failed', error);
+            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '保存に失敗しました'}`);
+        } finally {
+            setIsSharedSaving(false);
+        }
+    };
+
+    const handleReloadSharedCheck = async () => {
+        setSharedError(null);
+        setSharedStatus(null);
+        setIsSharedReloading(true);
+        try {
+            const rows = await fetchSharedCheckRows();
+            applySharedRowsToForm(rows);
+        } catch (error) {
+            console.error('[CheckSheets] reload failed', error);
+            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
+        } finally {
+            setIsSharedReloading(false);
+        }
+    };
+
     const formatNum = (num: number | undefined, isYoY = false, isAmount = false) => {
         if (num === undefined || num === null) return '-';
         if (isYoY) return `${num.toFixed(1)}%`;
@@ -417,7 +576,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     return (
         <div className="inspection-form">
-            <div className="form-header-actions" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="form-header-actions" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div className="date-picker-wrapper">
                     <input
                         type="date"
@@ -426,9 +585,32 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         onChange={(e) => onChangeDate(e.target.value)}
                     />
                 </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button type="button" className="button-secondary" onClick={handleReloadSharedCheck} disabled={isSharedReloading}>
+                        <RefreshCw size={16} className={isSharedReloading ? 'spin' : ''} />
+                        共有データ再取得
+                    </button>
+                    <button type="button" className="button-primary" onClick={handleSaveToSharedCheck} disabled={isSharedSaving}>
+                        <Cloud size={16} />
+                        Googleシートに保存
+                    </button>
+                </div>
             </div>
 
             <p style={{ margin: '-8px 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 700 }}>{AMOUNT_NOTE}</p>
+            {(sharedStatus || sharedError) && (
+                <div style={{
+                    marginTop: '8px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    background: sharedError ? '#fef2f2' : '#eff6ff',
+                    color: sharedError ? '#b91c1c' : '#1d4ed8',
+                    fontSize: '0.85rem',
+                    fontWeight: 600
+                }}>
+                    {sharedError || sharedStatus}
+                </div>
+            )}
 
             <div className="tab-switcher">
                 {(['12:00', '17:00', 'final'] as const).map(p => (
