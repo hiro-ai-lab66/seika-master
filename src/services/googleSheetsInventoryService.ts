@@ -343,7 +343,9 @@ export const tryRestoreSheetsSession = async (): Promise<boolean> => {
 };
 
 export const fetchSharedInventoryItems = async (): Promise<SharedInventoryRow[]> => {
-    return listRows();
+    const rows = await listRows();
+    console.log('[InventorySheets] fetched rows:', rows.length);
+    return rows;
 };
 
 export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
@@ -384,6 +386,7 @@ export const replaceSharedInventoryItems = async (items: InventoryItem[]) => {
     await ensureHeaderRow();
     const existingRows = await listRows();
     const rowCount = Math.max(existingRows.length, items.length, 1);
+    console.log('[InventorySheets] replace rows', { existingRows: existingRows.length, items: items.length, rowCount });
     const values = Array.from({ length: rowCount }, (_, index) => {
         const item = items[index];
         return item ? buildInventoryRowValues(item) : ['', '', '', '', '', ''];
@@ -403,6 +406,7 @@ export const markLocalInventoryMigrated = () => {
 
 export const migrateLocalInventoryOnce = async (items: InventoryItem[]) => {
     if (!shouldMigrateLocalInventory() || items.length === 0) return false;
+    console.log('[InventorySheets] migrating local inventory to sheet:', items.length);
     await upsertSharedInventoryItems(items);
     markLocalInventoryMigrated();
     return true;

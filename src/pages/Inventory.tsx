@@ -23,27 +23,6 @@ interface InventoryProps {
     onOpenPopGem?: (name?: string) => void;
 }
 
-const buildInventoryKey = (item: InventoryItem) =>
-    `${item.date}__${item.inventoryType || 'monthend'}__${item.name}`;
-
-const mergeInventoryItems = (baseItems: InventoryItem[], incomingItems: InventoryItem[]) => {
-    const merged = new Map<string, InventoryItem>();
-
-    baseItems.forEach(item => {
-        merged.set(buildInventoryKey(item), item);
-    });
-
-    incomingItems.forEach(item => {
-        merged.set(buildInventoryKey(item), item);
-    });
-
-    return Array.from(merged.values()).sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
-        if (dateCompare !== 0) return dateCompare;
-        return a.name.localeCompare(b.name, 'ja');
-    });
-};
-
 const resolveDepartment = (product?: Product | InventoryItem, fallback: InventoryDepartment = '野菜'): InventoryDepartment => {
     if (!product) return fallback;
     if ('department' in product && product.department) return product.department;
@@ -80,6 +59,7 @@ type SharedInventoryPanelProps = {
     storeName: string;
     status: string | null;
     error: string | null;
+    needsLogin?: boolean;
     showStatusCard?: boolean;
     onLogin: () => void;
     onReload: () => void;
@@ -94,6 +74,7 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
     storeName,
     status,
     error,
+    needsLogin = false,
     showStatusCard = true,
     onLogin,
     onReload,
@@ -113,7 +94,7 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
                 onClick={onLogin}
             >
                 <Cloud size={16} />
-                Googleシートにログイン
+                {needsLogin ? '再ログイン' : 'Googleシートにログイン'}
             </button>
             <button
                 className="btn-action"
@@ -127,7 +108,7 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
                 disabled={!isConfigured || !isAuthenticated || isLoading}
             >
                 <RefreshCw size={16} className={isLoading ? 'spin' : ''} />
-                最新取得
+                共有データ再取得
             </button>
             <button
                 className="btn-action"
@@ -336,6 +317,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [isSavingSharedInventory, setIsSavingSharedInventory] = useState(false);
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
     const [sharedError, setSharedError] = useState<string | null>(null);
+    const [needsSheetsLogin, setNeedsSheetsLogin] = useState(false);
     const hasSharedInventoryLoadedRef = useRef(false);
 
     // 追加されたアイテムへのスクロールとハイライト処理
@@ -368,73 +350,88 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         setProducts(loadProducts());
     }, []);
 
-    useEffect(() => {
-        if (!isSheetsConfiguredState) return;
+    const loadSharedInventoryIntoState = async (interactiveLogin: boolean) => {
+        if (!isSheetsConfiguredState) {
+            setSharedStatus('Google Sheets 未設定のためローカルデータを表示中');
+            setNeedsSheetsLogin(false);
+            return;
+        }
 
-        const initialize = async () => {
-            try {
-                await initializeSheetsAuth((resp) => {
-                    if (resp.access_token) {
-                        setIsSheetsAuthenticated(true);
-                        setSharedError(null);
-                        setSharedStatus('Googleスプレッドシートに接続しました');
-                    }
-                });
+        if (products.length === 0) {
+            console.log('[Inventory] skip shared load until products are ready');
+            return;
+        }
 
-                const restored = await tryRestoreSheetsSession();
-                setIsSheetsAuthenticated(restored);
-                if (restored) {
-                    setSharedError(null);
-                    setSharedStatus('Googleスプレッドシートの認証を復元しました');
+        setIsLoadingSharedInventory(true);
+        setSharedError(null);
+
+        try {
+            await initializeSheetsAuth((resp) => {
+                if (resp.access_token) {
+                    console.log('[Inventory] sheets token received');
+                    setIsSheetsAuthenticated(true);
                 }
-            } catch (error) {
-                console.error('Failed to initialize Google Sheets auth', error);
-                setSharedError('Googleスプレッドシート連携の初期化に失敗しました');
-            }
-        };
+            });
 
-        void initialize();
-    }, [isSheetsConfiguredState]);
+            let restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
+            console.log('[Inventory] restore session result', { restored, interactiveLogin });
+
+            if (!restored && interactiveLogin) {
+                await loginToGoogleSheets('select_account consent');
+                restored = true;
+                console.log('[Inventory] interactive login completed');
+            }
+
+            if (!restored) {
+                setNeedsSheetsLogin(true);
+                setIsSheetsAuthenticated(false);
+                setSharedStatus('Google Sheets に再ログインすると共有データを表示できます');
+                return;
+            }
+
+            setIsSheetsAuthenticated(true);
+            const productsByName = new Map(products.map(product => [product.name, product]));
+            const sharedRows = await fetchSharedInventoryItems();
+            const sharedItems = convertSharedRowsToInventoryItems(sharedRows, productsByName);
+
+            if (sharedRows.length === 0) {
+                const migrated = await migrateLocalInventoryOnce(loadInventory());
+                if (migrated) {
+                    const latestRows = await fetchSharedInventoryItems();
+                    const latestItems = convertSharedRowsToInventoryItems(latestRows, productsByName);
+                    setInventoryItems(latestItems);
+                    setSharedStatus('共有シートが空のためローカル棚卸しデータを初回移行しました');
+                } else {
+                    setInventoryItems([]);
+                    setSharedStatus('共有データを表示中');
+                }
+            } else {
+                setInventoryItems(sharedItems);
+                setSharedStatus('共有データを表示中');
+            }
+
+            hasSharedInventoryLoadedRef.current = true;
+            setNeedsSheetsLogin(false);
+            setSharedError(null);
+        } catch (error) {
+            console.error('Failed to load shared inventory', error);
+            setIsSheetsAuthenticated(false);
+            setNeedsSheetsLogin(error instanceof Error ? error.message.includes('未ログイン') : false);
+            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
+        } finally {
+            setIsLoadingSharedInventory(false);
+        }
+    };
+
+    useEffect(() => {
+        if (products.length === 0) return;
+        void loadSharedInventoryIntoState(false);
+    }, [products, isSheetsConfiguredState]);
 
     // インベントリ変更時に保存
     useEffect(() => {
         saveInventory(inventoryItems);
     }, [inventoryItems]);
-
-    useEffect(() => {
-        if (!isSheetsConfiguredState || !isSheetsAuthenticated || products.length === 0) return;
-
-        const loadSharedInventory = async () => {
-            setIsLoadingSharedInventory(true);
-            setSharedError(null);
-
-            try {
-                const productsByName = new Map(products.map(product => [product.name, product]));
-                const sharedRows = await fetchSharedInventoryItems();
-                const sharedItems = convertSharedRowsToInventoryItems(sharedRows, productsByName);
-
-                setInventoryItems(prev => mergeInventoryItems(prev, sharedItems));
-                hasSharedInventoryLoadedRef.current = true;
-
-                const migrated = await migrateLocalInventoryOnce(loadInventory());
-                if (migrated) {
-                    const latestRows = await fetchSharedInventoryItems();
-                    const latestItems = convertSharedRowsToInventoryItems(latestRows, productsByName);
-                    setInventoryItems(prev => mergeInventoryItems(prev, latestItems));
-                    setSharedStatus('ローカル棚卸しデータをスプレッドシートへ初回移行しました');
-                } else {
-                    setSharedStatus('Googleスプレッドシート共有データを表示中');
-                }
-            } catch (error) {
-                console.error('Failed to load shared inventory', error);
-                setSharedError('Googleスプレッドシートから棚卸しデータを取得できませんでした');
-            } finally {
-                setIsLoadingSharedInventory(false);
-            }
-        };
-
-        void loadSharedInventory();
-    }, [isSheetsAuthenticated, isSheetsConfiguredState, products]);
 
     // 現在の日付＋種別の棚卸しデータ
     const todaysInventory = useMemo(() => {
@@ -506,10 +503,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
         void (async () => {
             try {
-                await loginToGoogleSheets(hasSheetsAccessToken() ? '' : 'select_account consent');
-                setIsSheetsAuthenticated(true);
-                setSharedError(null);
-                setSharedStatus('Googleスプレッドシートにログインしました');
+                await loadSharedInventoryIntoState(true);
             } catch (error) {
                 console.error('Failed to start Google Sheets login', error);
                 setIsSheetsAuthenticated(false);
@@ -519,25 +513,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     };
 
     const handleReloadSharedInventory = async () => {
-        if (!isSheetsAuthenticated || products.length === 0) return;
-
-        setIsLoadingSharedInventory(true);
-        setSharedError(null);
-
-        try {
-            const productsByName = new Map(products.map(product => [product.name, product]));
-            const rows = await fetchSharedInventoryItems();
-            const sharedItems = convertSharedRowsToInventoryItems(rows, productsByName);
-            setInventoryItems(prev => mergeInventoryItems(prev, sharedItems));
-            hasSharedInventoryLoadedRef.current = true;
-            setSharedStatus('Googleスプレッドシート共有データを再取得しました');
-        } catch (error) {
-            console.error('Failed to reload shared inventory', error);
-            setIsSheetsAuthenticated(false);
-            setSharedError('最新データの取得に失敗しました');
-        } finally {
-            setIsLoadingSharedInventory(false);
-        }
+        await loadSharedInventoryIntoState(false);
     };
 
     const handleSaveSharedInventory = async () => {
@@ -551,11 +527,11 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
 
         try {
             await replaceSharedInventoryItems(inventoryItems);
-            setSharedStatus('棚卸しデータをGoogleスプレッドシートへ保存しました');
+            setSharedStatus('Googleスプレッドシートへ共有済み');
         } catch (error) {
             console.error('Failed to save shared inventory', error);
             setIsSheetsAuthenticated(false);
-            setSharedError('Googleスプレッドシートへの保存に失敗しました');
+            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '保存に失敗しました'}`);
         } finally {
             setIsSavingSharedInventory(false);
         }
@@ -571,7 +547,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                 setSharedStatus('Googleスプレッドシートへ共有済み');
             } catch (error) {
                 console.error('Failed to auto sync inventory', error);
-                setSharedError('共有同期に失敗したためローカルデータを保持しています');
+                setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有同期に失敗しました'}`);
             }
         }, 800);
 
@@ -997,6 +973,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             storeName={getSharedStoreName()}
                             status={null}
                             error={null}
+                            needsLogin={needsSheetsLogin}
                             showStatusCard={false}
                             onLogin={handleSheetsLogin}
                             onReload={handleReloadSharedInventory}
@@ -1039,6 +1016,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     storeName={getSharedStoreName()}
                     status={sharedStatus}
                     error={sharedError}
+                    needsLogin={needsSheetsLogin}
                     onLogin={handleSheetsLogin}
                     onReload={handleReloadSharedInventory}
                     onSave={handleSaveSharedInventory}
