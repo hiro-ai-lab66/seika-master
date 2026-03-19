@@ -83,6 +83,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             bestFruits: [],
         };
     });
+    const [promotionItemInput, setPromotionItemInput] = useState(form.promotionItem || '');
+    const [promotionTargetSalesInput, setPromotionTargetSalesInput] = useState(formatThousandInput(form.promotionTargetSales));
+    const [promotionActual12SalesInput, setPromotionActual12SalesInput] = useState(formatThousandInput(form.promotionActual12Sales));
+    const [promotionActual17SalesInput, setPromotionActual17SalesInput] = useState(formatThousandInput(form.promotionActual17Sales));
+    const [actual12Input, setActual12Input] = useState(formatThousandInput(form.actual12));
 
     useEffect(() => {
         const updateCalculations = () => {
@@ -150,6 +155,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         handleChange(field, parseThousandInput(value));
     };
 
+    const handlePromotionItemInputChange = (value: string) => {
+        console.log('[InspectionForm] promotionItem change', value);
+        setPromotionItemInput(value);
+        setForm((prev) => ({ ...prev, promotionItem: value }));
+    };
+
+    const handleDraftAmountInputChange = (
+        field: keyof InspectionEntry,
+        value: string,
+        setDraft: React.Dispatch<React.SetStateAction<string>>
+    ) => {
+        const sanitized = sanitizeThousandInput(value);
+        console.log('[InspectionForm] amount change', { field, raw: value, sanitized });
+        setDraft(sanitized);
+        setForm((prev) => ({
+            ...prev,
+            [field]: sanitized === '' ? null : Number(sanitized) * 1000
+        }));
+    };
+
     const buildSharedCheckRows = (): SharedCheckRow[] => {
         const baseRows: SharedCheckRow[] = [
             {
@@ -169,6 +194,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 { date: currentDate, store: STORE_NAME, item: '12時消化率', content: form.rate12?.toString() || '', status: form.rate12 !== null && form.rate12 !== undefined ? '入力済' : '未入力', owner: '', time: '12:00' },
                 { date: currentDate, store: STORE_NAME, item: '12時客数', content: form.customers12?.toString() || '', status: form.customers12 !== null && form.customers12 !== undefined ? '入力済' : '未入力', owner: '', time: '12:00' },
                 { date: currentDate, store: STORE_NAME, item: '売り込み品', content: form.promotionItem || '', status: form.promotionItem ? '入力済' : '未入力', owner: '', time: '12:00' },
+                { date: currentDate, store: STORE_NAME, item: '売上目標', content: formatCheckValue(form.promotionTargetSales), status: form.promotionTargetSales ? '入力済' : '未入力', owner: '', time: '12:00' },
+                { date: currentDate, store: STORE_NAME, item: '12時時点売上', content: formatCheckValue(form.promotionActual12Sales), status: form.promotionActual12Sales ? '入力済' : '未入力', owner: '', time: '12:00' },
                 { date: currentDate, store: STORE_NAME, item: '12時気づき', content: form.notes12 || '', status: form.notes12 ? '入力済' : '未入力', owner: '', time: '12:00' }
             );
         }
@@ -179,6 +206,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 { date: currentDate, store: STORE_NAME, item: '17時消化率', content: form.rate17?.toString() || '', status: form.rate17 !== null && form.rate17 !== undefined ? '入力済' : '未入力', owner: '', time: '17:00' },
                 { date: currentDate, store: STORE_NAME, item: '17時客数', content: form.customers17?.toString() || '', status: form.customers17 !== null && form.customers17 !== undefined ? '入力済' : '未入力', owner: '', time: '17:00' },
                 { date: currentDate, store: STORE_NAME, item: '売り込み品', content: form.promotionItem || '', status: form.promotionItem ? '入力済' : '未入力', owner: '', time: '17:00' },
+                { date: currentDate, store: STORE_NAME, item: '売上目標', content: formatCheckValue(form.promotionTargetSales), status: form.promotionTargetSales ? '入力済' : '未入力', owner: '', time: '17:00' },
+                { date: currentDate, store: STORE_NAME, item: '17時時点売上', content: formatCheckValue(form.promotionActual17Sales), status: form.promotionActual17Sales ? '入力済' : '未入力', owner: '', time: '17:00' },
                 { date: currentDate, store: STORE_NAME, item: '17時気づき', content: form.notes17 || '', status: form.notes17 ? '入力済' : '未入力', owner: '', time: '17:00' }
             );
         }
@@ -216,6 +245,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         break;
                     case '12時実績':
                         next.actual12 = parseThousandInput(row.content);
+                        setActual12Input(row.content);
                         break;
                     case '12時消化率':
                         next.rate12 = row.content ? Number(row.content) : null;
@@ -240,6 +270,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         break;
                     case '売り込み品':
                         next.promotionItem = row.content;
+                        setPromotionItemInput(row.content);
+                        break;
+                    case '売上目標':
+                        next.promotionTargetSales = parseThousandInput(row.content) || 0;
+                        setPromotionTargetSalesInput(row.content);
+                        break;
+                    case '12時時点売上':
+                        next.promotionActual12Sales = parseThousandInput(row.content) || 0;
+                        setPromotionActual12SalesInput(row.content);
+                        break;
+                    case '17時時点売上':
+                        next.promotionActual17Sales = parseThousandInput(row.content) || 0;
+                        setPromotionActual17SalesInput(row.content);
                         break;
                     case '最終実績':
                         next.actualFinal = parseThousandInput(row.content);
@@ -536,6 +579,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
     }, [currentDate]);
 
+    useEffect(() => {
+        setPromotionItemInput(form.promotionItem || '');
+        setPromotionTargetSalesInput(formatThousandInput(form.promotionTargetSales));
+        setPromotionActual12SalesInput(formatThousandInput(form.promotionActual12Sales));
+        setPromotionActual17SalesInput(formatThousandInput(form.promotionActual17Sales));
+        setActual12Input(formatThousandInput(form.actual12));
+    }, [currentDate, existingEntry?.id]);
+
     const handleSaveToSharedCheck = async () => {
         setSharedError(null);
         setSharedStatus(null);
@@ -650,8 +701,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     type="text"
                                     inputMode="numeric"
                                     pattern="[0-9]*"
-                                    value={formatThousandInput(form.actual12)}
-                                    onChange={e => handleAmountChange('actual12', e.target.value)}
+                                    value={actual12Input}
+                                    onChange={e => handleDraftAmountInputChange('actual12', e.target.value, setActual12Input)}
                                     placeholder="0"
                                 />
                             </div>
@@ -684,8 +735,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>売り込み品名</label>
                                 <input
                                     type="text"
-                                    value={form.promotionItem || ''}
-                                    onChange={e => handleChange('promotionItem', e.target.value)}
+                                    value={promotionItemInput}
+                                    onChange={e => handlePromotionItemInputChange(e.target.value)}
                                     placeholder="品名を入力"
                                 />
                             </div>
@@ -696,8 +747,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
-                                        value={formatThousandInput(form.promotionTargetSales)}
-                                        onChange={e => handleAmountChange('promotionTargetSales', e.target.value)}
+                                        value={promotionTargetSalesInput}
+                                        onChange={e => handleDraftAmountInputChange('promotionTargetSales', e.target.value, setPromotionTargetSalesInput)}
                                         placeholder="目標額"
                                     />
                                 </div>
@@ -707,8 +758,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
-                                        value={formatThousandInput(form.promotionActual12Sales)}
-                                        onChange={e => handleAmountChange('promotionActual12Sales', e.target.value)}
+                                        value={promotionActual12SalesInput}
+                                        onChange={e => handleDraftAmountInputChange('promotionActual12Sales', e.target.value, setPromotionActual12SalesInput)}
                                         placeholder="実績額"
                                     />
                                 </div>
@@ -795,8 +846,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>売り込み品名</label>
                                 <input
                                     type="text"
-                                    value={form.promotionItem || ''}
-                                    onChange={e => handleChange('promotionItem', e.target.value)}
+                                    value={promotionItemInput}
+                                    onChange={e => handlePromotionItemInputChange(e.target.value)}
                                     placeholder="品名を入力"
                                 />
                             </div>
@@ -807,8 +858,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
-                                        value={formatThousandInput(form.promotionTargetSales)}
-                                        onChange={e => handleAmountChange('promotionTargetSales', e.target.value)}
+                                        value={promotionTargetSalesInput}
+                                        onChange={e => handleDraftAmountInputChange('promotionTargetSales', e.target.value, setPromotionTargetSalesInput)}
                                         placeholder="目標額"
                                     />
                                 </div>
@@ -818,8 +869,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
-                                        value={formatThousandInput(form.promotionActual17Sales)}
-                                        onChange={e => handleAmountChange('promotionActual17Sales', e.target.value)}
+                                        value={promotionActual17SalesInput}
+                                        onChange={e => handleDraftAmountInputChange('promotionActual17Sales', e.target.value, setPromotionActual17SalesInput)}
                                         placeholder="実績額"
                                     />
                                 </div>
