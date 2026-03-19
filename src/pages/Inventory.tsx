@@ -379,7 +379,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             if (!restored) {
                 setNeedsSheetsLogin(true);
                 setIsSheetsAuthenticated(false);
-                setSharedStatus('Google Sheets に再ログインすると共有データを表示できます');
+                setSharedStatus(`Google Sheets に再ログインすると共有データを表示できます（シート: ${getSharedInventorySheetName()}）`);
                 return;
             }
 
@@ -394,14 +394,14 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     const latestRows = await fetchSharedInventoryItems();
                     const latestItems = convertSharedRowsToInventoryItems(latestRows, productsByName);
                     setInventoryItems(latestItems);
-                    setSharedStatus('共有シートが空のためローカル棚卸しデータを初回移行しました');
+                    setSharedStatus(`共有シートが空のためローカル棚卸しデータを初回移行しました（シート: ${getSharedInventorySheetName()}）`);
                 } else {
                     setInventoryItems([]);
-                    setSharedStatus('共有データを表示中');
+                    setSharedStatus(`共有データを表示中（シート: ${getSharedInventorySheetName()}）`);
                 }
             } else {
                 setInventoryItems(sharedItems);
-                setSharedStatus('共有データを表示中');
+                setSharedStatus(`共有データを表示中（シート: ${getSharedInventorySheetName()}）`);
             }
 
             hasSharedInventoryLoadedRef.current = true;

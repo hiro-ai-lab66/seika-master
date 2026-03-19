@@ -5,7 +5,6 @@ const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SPREADSHEET_ID = (import.meta as any).env?.VITE_SHARED_SHEET_ID?.trim() || '';
 const SHEET_NAME =
     (import.meta as any).env?.VITE_INVENTORY_SHEET_TAB?.trim() ||
-    (import.meta as any).env?.VITE_SHARED_SHEET_TAB?.trim() ||
     'inventory';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
