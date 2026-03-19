@@ -4,7 +4,7 @@ import Papa from 'papaparse';
 import type { Product } from '../types';
 import { loadProducts, saveProducts } from '../storage/products';
 import { fetchSharedProducts, replaceProductsInGoogleSheets, syncProductToGoogleSheets } from '../services/googleSheetsProductService';
-import { hasSheetsAccessToken, initializeSheetsAuth, isSheetsConfigured, tryRestoreSheetsSession } from '../services/googleSheetsInventoryService';
+import { hasSheetsAccessToken, initializeSheetsAuth, isSheetsConfigured, loginToGoogleSheets, tryRestoreSheetsSession } from '../services/googleSheetsInventoryService';
 
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
@@ -27,6 +27,7 @@ export const ProductMaster: React.FC = () => {
     const [sharedError, setSharedError] = useState<string | null>(null);
     const [isSharedLoading, setIsSharedLoading] = useState(false);
     const [isSheetsReady, setIsSheetsReady] = useState(false);
+    const [needsSheetsLogin, setNeedsSheetsLogin] = useState(false);
 
     // CSV取込用ステート
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,44 +49,59 @@ export const ProductMaster: React.FC = () => {
         setProducts(loadedProducts);
     }, []);
 
-    useEffect(() => {
+    const loadSharedProductsIntoState = async (interactiveLogin: boolean) => {
         if (!isSheetsConfigured()) {
-            setSharedStatus('ローカルデータを表示中');
+            setSharedStatus('Google Sheets 未設定のためローカルデータを表示中');
+            setNeedsSheetsLogin(false);
             return;
         }
 
-        const initializeSharedProducts = async () => {
-            setIsSharedLoading(true);
-            try {
-                await initializeSheetsAuth(() => undefined);
-                const restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
-                if (!restored) {
-                    console.log('[ProductMaster] product sheet not authenticated yet');
-                    setSharedStatus('Google Sheets 未ログインのためローカルデータを表示中');
-                    setIsSheetsReady(false);
-                    return;
-                }
+        setIsSharedLoading(true);
+        setSharedError(null);
 
-                const sharedProducts = await fetchSharedProducts();
-                isHydratingFromSheetsRef.current = true;
-                setProducts(sharedProducts);
-                saveProducts(sharedProducts);
-                setIsSheetsReady(true);
-                setSharedError(null);
-                setSharedStatus('Google Sheets 共有データを表示中');
-            } catch (error) {
-                console.error('[ProductMaster] failed to load shared products', error);
-                setIsSheetsReady(false);
-                setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
-            } finally {
-                setIsSharedLoading(false);
-                window.setTimeout(() => {
-                    isHydratingFromSheetsRef.current = false;
-                }, 0);
+        try {
+            await initializeSheetsAuth(() => undefined);
+
+            let restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
+            console.log('[ProductMaster] shared product restore result', { restored, interactiveLogin });
+
+            if (!restored && interactiveLogin) {
+                await loginToGoogleSheets('select_account consent');
+                restored = true;
+                console.log('[ProductMaster] interactive sheets login completed for shared products');
             }
-        };
 
-        void initializeSharedProducts();
+            if (!restored) {
+                setNeedsSheetsLogin(true);
+                setSharedStatus('Google Sheets に再ログインすると共有データを表示できます');
+                setIsSheetsReady(false);
+                return;
+            }
+
+            const sharedProducts = await fetchSharedProducts();
+            isHydratingFromSheetsRef.current = true;
+            setProducts(sharedProducts);
+            saveProducts(sharedProducts);
+            setIsSheetsReady(true);
+            setNeedsSheetsLogin(false);
+            setSharedError(null);
+            setSharedStatus('共有データを表示中');
+        } catch (error) {
+            console.error('[ProductMaster] failed to load shared products', error);
+            const message = error instanceof Error ? error.message : '取得に失敗しました';
+            setNeedsSheetsLogin(message.includes('未ログイン'));
+            setIsSheetsReady(false);
+            setSharedError(`Google Sheets接続エラー: ${message}`);
+        } finally {
+            setIsSharedLoading(false);
+            window.setTimeout(() => {
+                isHydratingFromSheetsRef.current = false;
+            }, 0);
+        }
+    };
+
+    useEffect(() => {
+        void loadSharedProductsIntoState(false);
     }, []);
 
     useEffect(() => {
@@ -519,7 +535,29 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                     fontSize: '0.9rem',
                     fontWeight: 600
                 }}>
-                    {isSharedLoading ? 'Google Sheets 共有データを読み込み中です' : sharedError || sharedStatus}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                        <span>{isSharedLoading ? 'Google Sheets 共有データを読み込み中です' : sharedError || sharedStatus}</span>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {needsSheetsLogin && (
+                                <button
+                                    type="button"
+                                    className="button-outline"
+                                    style={{ minHeight: '40px', padding: '6px 12px', fontSize: '0.85rem' }}
+                                    onClick={() => void loadSharedProductsIntoState(true)}
+                                >
+                                    再ログイン
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                className="button-outline"
+                                style={{ minHeight: '40px', padding: '6px 12px', fontSize: '0.85rem' }}
+                                onClick={() => void loadSharedProductsIntoState(false)}
+                            >
+                                共有データ再取得
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
