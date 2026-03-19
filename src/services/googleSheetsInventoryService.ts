@@ -3,7 +3,10 @@ import { loadGisScript } from './gmailService';
 
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SPREADSHEET_ID = (import.meta as any).env?.VITE_SHARED_SHEET_ID?.trim() || '';
-const SHEET_NAME = (import.meta as any).env?.VITE_SHARED_SHEET_TAB?.trim() || 'shared_inventory';
+const SHEET_NAME =
+    (import.meta as any).env?.VITE_INVENTORY_SHEET_TAB?.trim() ||
+    (import.meta as any).env?.VITE_SHARED_SHEET_TAB?.trim() ||
+    'inventory';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const TOKEN_STORAGE_KEY = 'seika_sheets_access_token';
@@ -43,6 +46,11 @@ let pendingTokenReject: ((error: Error) => void) | null = null;
 const encodeRange = (range: string) => encodeURIComponent(range);
 const getValuesUrl = (range: string) =>
     `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeRange(range)}`;
+
+const buildSheetsError = async (response: Response, fallbackMessage: string) => {
+    const detail = await response.text().catch(() => '');
+    return new Error(detail ? `${fallbackMessage} (${response.status}): ${detail}` : `${fallbackMessage} (${response.status})`);
+};
 
 const ensureConfigured = () => {
     if (!CLIENT_ID) throw new Error('VITE_GOOGLE_CLIENT_ID が未設定です');
@@ -183,7 +191,7 @@ const fetchSheetValues = async (range: string) => {
     const response = await authorizedSheetsFetch(getValuesUrl(range));
 
     if (!response.ok) {
-        throw new Error(`Google Sheets の取得に失敗しました (${response.status})`);
+        throw await buildSheetsError(response, `Google Sheets の取得に失敗しました [${range}]`);
     }
 
     return response.json();
@@ -203,7 +211,7 @@ const updateSheetValues = async (range: string, values: string[][]) => {
     });
 
     if (!response.ok) {
-        throw new Error(`Google Sheets の更新に失敗しました (${response.status})`);
+        throw await buildSheetsError(response, `Google Sheets の更新に失敗しました [${range}]`);
     }
 };
 
@@ -220,7 +228,7 @@ const appendSheetValues = async (range: string, values: string[][]) => {
     });
 
     if (!response.ok) {
-        throw new Error(`Google Sheets への追加に失敗しました (${response.status})`);
+        throw await buildSheetsError(response, `Google Sheets への追加に失敗しました [${range}]`);
     }
 };
 
@@ -278,6 +286,7 @@ const buildInventoryRowValues = (item: InventoryItem): string[] => {
 
 export const isSheetsConfigured = (): boolean => Boolean(CLIENT_ID && SPREADSHEET_ID);
 export const getSharedStoreName = (): string => STORE_NAME;
+export const getSharedInventorySheetName = (): string => SHEET_NAME;
 export const hasSheetsAccessToken = (): boolean => hasValidAccessToken();
 
 export const initSheetsTokenClient = (onTokenResponse: (resp: TokenResponse) => void) => {
@@ -323,6 +332,33 @@ export const initializeSheetsAuth = async (onTokenResponse: (resp: TokenResponse
     ensureConfigured();
     await loadGisScript();
     initSheetsTokenClient(onTokenResponse);
+};
+
+export const ensureSharedSheetsSession = async (
+    interactive: boolean,
+    onTokenResponse: (resp: TokenResponse) => void = () => undefined
+): Promise<boolean> => {
+    ensureConfigured();
+    await initializeSheetsAuth(onTokenResponse);
+
+    if (hasSheetsAccessToken()) {
+        console.log('[SharedSheets] using existing session token');
+        return true;
+    }
+
+    const restored = await tryRestoreSheetsSession();
+    console.log('[SharedSheets] restore session result', { restored, interactive });
+    if (restored) {
+        return true;
+    }
+
+    if (!interactive) {
+        return false;
+    }
+
+    await loginToGoogleSheets('select_account consent');
+    console.log('[SharedSheets] interactive login completed');
+    return true;
 };
 
 export const loginToGoogleSheets = (prompt: string = 'select_account consent') => {

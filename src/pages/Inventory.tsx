@@ -6,15 +6,13 @@ import { loadInventory, saveInventory } from '../storage/inventory';
 import { exportInventoryToExcel } from '../utils/excelExport';
 import {
     convertSharedRowsToInventoryItems,
+    ensureSharedSheetsSession,
     fetchSharedInventoryItems,
     getSharedStoreName,
-    hasSheetsAccessToken,
-    initializeSheetsAuth,
+    getSharedInventorySheetName,
     isSheetsConfigured,
-    loginToGoogleSheets,
     migrateLocalInventoryOnce,
-    replaceSharedInventoryItems,
-    tryRestoreSheetsSession
+    replaceSharedInventoryItems
 } from '../services/googleSheetsInventoryService';
 
 interface InventoryProps {
@@ -312,7 +310,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [manualItemQty, setManualItemQty] = useState('');
     const [executionTime, setExecutionTime] = useState('16：00　　　～　18：00');
     const [isSheetsConfiguredState] = useState(isSheetsConfigured());
-    const [isSheetsAuthenticated, setIsSheetsAuthenticated] = useState(hasSheetsAccessToken());
+    const [isSheetsAuthenticated, setIsSheetsAuthenticated] = useState(false);
     const [isLoadingSharedInventory, setIsLoadingSharedInventory] = useState(false);
     const [isSavingSharedInventory, setIsSavingSharedInventory] = useState(false);
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
@@ -366,21 +364,17 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
         setSharedError(null);
 
         try {
-            await initializeSheetsAuth((resp) => {
+            const restored = await ensureSharedSheetsSession(interactiveLogin, (resp) => {
                 if (resp.access_token) {
                     console.log('[Inventory] sheets token received');
                     setIsSheetsAuthenticated(true);
                 }
             });
-
-            let restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
-            console.log('[Inventory] restore session result', { restored, interactiveLogin });
-
-            if (!restored && interactiveLogin) {
-                await loginToGoogleSheets('select_account consent');
-                restored = true;
-                console.log('[Inventory] interactive login completed');
-            }
+            console.log('[Inventory] restore session result', {
+                restored,
+                interactiveLogin,
+                sheetName: getSharedInventorySheetName()
+            });
 
             if (!restored) {
                 setNeedsSheetsLogin(true);

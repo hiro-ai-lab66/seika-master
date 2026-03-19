@@ -1,13 +1,10 @@
 import type { Product } from '../types';
 import {
     appendSharedSheetValues,
+    ensureSharedSheetsSession,
     getSharedSpreadsheetId,
-    hasSheetsAccessToken,
-    initializeSheetsAuth,
     isSheetsConfigured,
-    loginToGoogleSheets,
     readSharedSheetValues,
-    tryRestoreSheetsSession,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
 
@@ -46,30 +43,12 @@ const ensureProductSheetsSession = async (interactive: boolean) => {
     console.log('[ProductSheets] ensure session', {
         interactive,
         spreadsheetId: getSharedSpreadsheetId(),
-        sheetName: PRODUCT_SHEET_NAME,
-        hasToken: hasSheetsAccessToken()
+        sheetName: PRODUCT_SHEET_NAME
     });
-
-    await initializeSheetsAuth(() => undefined);
-
-    if (hasSheetsAccessToken()) {
-        console.log('[ProductSheets] valid token already exists');
-        return;
-    }
-
-    const restored = await tryRestoreSheetsSession();
-    console.log('[ProductSheets] restore session result:', restored);
-
-    if (restored) {
-        return;
-    }
-
-    if (!interactive) {
+    const ready = await ensureSharedSheetsSession(interactive);
+    if (!ready) {
         throw new Error('Google Sheets 未ログイン');
     }
-
-    await loginToGoogleSheets('select_account consent');
-    console.log('[ProductSheets] interactive login completed');
 };
 
 const ensureProductHeader = async () => {

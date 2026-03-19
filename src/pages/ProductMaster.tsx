@@ -4,7 +4,7 @@ import Papa from 'papaparse';
 import type { Product } from '../types';
 import { loadProducts, saveProducts } from '../storage/products';
 import { fetchSharedProducts, replaceProductsInGoogleSheets, syncProductToGoogleSheets } from '../services/googleSheetsProductService';
-import { hasSheetsAccessToken, initializeSheetsAuth, isSheetsConfigured, loginToGoogleSheets, tryRestoreSheetsSession } from '../services/googleSheetsInventoryService';
+import { ensureSharedSheetsSession, isSheetsConfigured } from '../services/googleSheetsInventoryService';
 
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
@@ -60,16 +60,8 @@ export const ProductMaster: React.FC = () => {
         setSharedError(null);
 
         try {
-            await initializeSheetsAuth(() => undefined);
-
-            let restored = hasSheetsAccessToken() || await tryRestoreSheetsSession();
+            const restored = await ensureSharedSheetsSession(interactiveLogin);
             console.log('[ProductMaster] shared product restore result', { restored, interactiveLogin });
-
-            if (!restored && interactiveLogin) {
-                await loginToGoogleSheets('select_account consent');
-                restored = true;
-                console.log('[ProductMaster] interactive sheets login completed for shared products');
-            }
 
             if (!restored) {
                 setNeedsSheetsLogin(true);
