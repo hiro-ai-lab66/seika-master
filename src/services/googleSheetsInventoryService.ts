@@ -3,7 +3,7 @@ import { loadGisScript } from './gmailService';
 
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SPREADSHEET_ID = (import.meta as any).env?.VITE_SHARED_SHEET_ID?.trim() || '';
-const SHEET_NAME =
+const REQUESTED_SHEET_NAME =
     (import.meta as any).env?.VITE_INVENTORY_SHEET_TAB?.trim() ||
     'inventory';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
@@ -41,15 +41,30 @@ let tokenResponseHandler: ((resp: TokenResponse) => void) | null = null;
 let pendingTokenRequest: Promise<string> | null = null;
 let pendingTokenResolve: ((token: string) => void) | null = null;
 let pendingTokenReject: ((error: Error) => void) | null = null;
+let resolvedSheetNameCache: string | null = null;
+let pendingSheetNameResolution: Promise<string> | null = null;
 
 const encodeRange = (range: string) => encodeURIComponent(range);
 const getValuesUrl = (range: string) =>
     `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeRange(range)}`;
+const getSpreadsheetMetadataUrl = () =>
+    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties.title`;
 
 const buildSheetsError = async (response: Response, fallbackMessage: string) => {
     const detail = await response.text().catch(() => '');
     return new Error(detail ? `${fallbackMessage} (${response.status}): ${detail}` : `${fallbackMessage} (${response.status})`);
 };
+
+const logSheetsRequest = (operation: string, sheetName: string, range: string) => {
+    console.log(`[InventorySheets] ${operation}`, {
+        spreadsheetId: SPREADSHEET_ID,
+        sheetName,
+        range
+    });
+};
+
+const escapeSheetName = (sheetName: string) => `'${sheetName.replace(/'/g, "''")}'`;
+const buildSheetRange = (sheetName: string, a1Range: string) => `${escapeSheetName(sheetName)}!${a1Range}`;
 
 const ensureConfigured = () => {
     if (!CLIENT_ID) throw new Error('VITE_GOOGLE_CLIENT_ID が未設定です');
@@ -186,7 +201,69 @@ const authorizedSheetsFetch = async (url: string, init?: RequestInit) => {
     return response;
 };
 
+const fetchSpreadsheetSheetTitles = async (): Promise<string[]> => {
+    const response = await authorizedSheetsFetch(getSpreadsheetMetadataUrl());
+    if (!response.ok) {
+        throw await buildSheetsError(response, 'Google Sheets のメタデータ取得に失敗しました');
+    }
+
+    const payload = await response.json();
+    return (payload.sheets || [])
+        .map((sheet: any) => sheet?.properties?.title)
+        .filter((title: string | undefined) => Boolean(title));
+};
+
+const resolveInventorySheetName = async (): Promise<string> => {
+    if (resolvedSheetNameCache) {
+        return resolvedSheetNameCache;
+    }
+
+    if (pendingSheetNameResolution) {
+        return pendingSheetNameResolution;
+    }
+
+    pendingSheetNameResolution = (async () => {
+        const availableSheetNames = await fetchSpreadsheetSheetTitles();
+        const candidates = Array.from(new Set([
+            REQUESTED_SHEET_NAME,
+            'inventory',
+            'inv',
+            'shared_inventory'
+        ].filter(Boolean)));
+
+        const exactMatch = candidates.find((candidate) => availableSheetNames.includes(candidate));
+        const normalizedMap = new Map(availableSheetNames.map((name) => [name.toLowerCase(), name]));
+        const caseInsensitiveMatch = !exactMatch
+            ? candidates.map((candidate) => normalizedMap.get(candidate.toLowerCase())).find(Boolean) || null
+            : null;
+
+        const resolved = exactMatch || caseInsensitiveMatch;
+        console.log('[InventorySheets] resolve sheet name', {
+            spreadsheetId: SPREADSHEET_ID,
+            requestedSheetName: REQUESTED_SHEET_NAME,
+            candidates,
+            availableSheetNames,
+            resolvedSheetName: resolved || null
+        });
+
+        if (!resolved) {
+            throw new Error(`棚卸しシートが見つかりません requested=${REQUESTED_SHEET_NAME} available=${availableSheetNames.join(', ')}`);
+        }
+
+        resolvedSheetNameCache = resolved;
+        return resolved;
+    })();
+
+    try {
+        return await pendingSheetNameResolution;
+    } finally {
+        pendingSheetNameResolution = null;
+    }
+};
+
 const fetchSheetValues = async (range: string) => {
+    const sheetName = range.split('!')[0];
+    logSheetsRequest('read range', sheetName, range);
     const response = await authorizedSheetsFetch(getValuesUrl(range));
 
     if (!response.ok) {
@@ -197,6 +274,8 @@ const fetchSheetValues = async (range: string) => {
 };
 
 const updateSheetValues = async (range: string, values: string[][]) => {
+    const sheetName = range.split('!')[0];
+    logSheetsRequest('write range', sheetName, range);
     const response = await authorizedSheetsFetch(`${getValuesUrl(range)}?valueInputOption=USER_ENTERED`, {
         method: 'PUT',
         headers: {
@@ -215,6 +294,8 @@ const updateSheetValues = async (range: string, values: string[][]) => {
 };
 
 const appendSheetValues = async (range: string, values: string[][]) => {
+    const sheetName = range.split('!')[0];
+    logSheetsRequest('append range', sheetName, range);
     const response = await authorizedSheetsFetch(`${getValuesUrl(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
         method: 'POST',
         headers: {
@@ -237,17 +318,20 @@ export const appendSharedSheetValues = async (range: string, values: string[][])
 export const getSharedSpreadsheetId = () => SPREADSHEET_ID;
 
 const ensureHeaderRow = async () => {
-    const result = await fetchSheetValues(`${SHEET_NAME}!A1:F1`);
+    const sheetName = await resolveInventorySheetName();
+    const headerRange = buildSheetRange(sheetName, 'A1:F1');
+    const result = await fetchSheetValues(headerRange);
     const header = result.values?.[0] || [];
     const hasValidHeader = HEADER_ROW.every((label, index) => header[index] === label);
     if (!hasValidHeader) {
-        await updateSheetValues(`${SHEET_NAME}!A1:F1`, [HEADER_ROW]);
+        await updateSheetValues(headerRange, [HEADER_ROW]);
     }
 };
 
 const listRows = async (): Promise<SharedInventoryRow[]> => {
     await ensureHeaderRow();
-    const result = await fetchSheetValues(`${SHEET_NAME}!A2:F`);
+    const sheetName = await resolveInventorySheetName();
+    const result = await fetchSheetValues(buildSheetRange(sheetName, 'A2:F'));
     const rows = result.values || [];
 
     return rows
@@ -285,7 +369,7 @@ const buildInventoryRowValues = (item: InventoryItem): string[] => {
 
 export const isSheetsConfigured = (): boolean => Boolean(CLIENT_ID && SPREADSHEET_ID);
 export const getSharedStoreName = (): string => STORE_NAME;
-export const getSharedInventorySheetName = (): string => SHEET_NAME;
+export const getSharedInventorySheetName = (): string => resolvedSheetNameCache || REQUESTED_SHEET_NAME;
 export const hasSheetsAccessToken = (): boolean => hasValidAccessToken();
 
 export const initSheetsTokenClient = (onTokenResponse: (resp: TokenResponse) => void) => {
@@ -388,6 +472,7 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
 
     const existingRows = await listRows();
     const existingMap = new Map(existingRows.map(row => [buildRowKey(row), row.rowNumber]));
+    const sheetName = await resolveInventorySheetName();
 
     for (const item of items) {
         const row: SharedInventoryRow = {
@@ -410,9 +495,9 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
         const existingRowNumber = existingMap.get(rowKey);
 
         if (existingRowNumber) {
-            await updateSheetValues(`${SHEET_NAME}!A${existingRowNumber}:F${existingRowNumber}`, values);
+            await updateSheetValues(buildSheetRange(sheetName, `A${existingRowNumber}:F${existingRowNumber}`), values);
         } else {
-            await appendSheetValues(`${SHEET_NAME}!A:F`, values);
+            await appendSheetValues(buildSheetRange(sheetName, 'A:F'), values);
         }
     }
 };
@@ -420,13 +505,14 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
 export const replaceSharedInventoryItems = async (items: InventoryItem[]) => {
     await ensureHeaderRow();
     const existingRows = await listRows();
+    const sheetName = await resolveInventorySheetName();
     const rowCount = Math.max(existingRows.length, items.length, 1);
     console.log('[InventorySheets] replace rows', { existingRows: existingRows.length, items: items.length, rowCount });
     const values = Array.from({ length: rowCount }, (_, index) => {
         const item = items[index];
         return item ? buildInventoryRowValues(item) : ['', '', '', '', '', ''];
     });
-    await updateSheetValues(`${SHEET_NAME}!A2:F${rowCount + 1}`, values);
+    await updateSheetValues(buildSheetRange(sheetName, `A2:F${rowCount + 1}`), values);
 };
 
 export const shouldMigrateLocalInventory = (): boolean => {
