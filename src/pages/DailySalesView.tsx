@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { DailySalesRecord, InspectionEntry, DailyBudget } from '../types';
+import type { DailySalesRecord, InspectionEntry, DailyBudget, SharedSalesEntry } from '../types';
 import { loadDailySales, saveDailySales } from '../storage/dailySales';
+import { getLocalTodayDateString } from '../utils/calculations';
+import { appendSharedSales, fetchSharedSales, getSharedSalesSheetName } from '../services/googleSheetsSalesService';
 
 interface Props {
     inspections: InspectionEntry[];
@@ -10,6 +12,14 @@ interface Props {
 
 export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onOpenPopGem }) => {
     const [allRecords, setAllRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
+    const [sharedSales, setSharedSales] = useState<SharedSalesEntry[]>([]);
+    const [salesAmountInput, setSalesAmountInput] = useState('');
+    const [salesCustomersInput, setSalesCustomersInput] = useState('');
+    const [salesAuthorInput, setSalesAuthorInput] = useState('');
+    const [sharedSalesStatus, setSharedSalesStatus] = useState('');
+    const [sharedSalesError, setSharedSalesError] = useState('');
+    const [isSharedSalesLoading, setIsSharedSalesLoading] = useState(false);
+    const [isSharedSalesSaving, setIsSharedSalesSaving] = useState(false);
 
     // 点検データとCSVデータの両方から日付を収集
     const dates = useMemo(() => {
@@ -26,6 +36,77 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     const [tempBand, setTempBand] = useState<string>('');
     const [customerCount, setCustomerCount] = useState<string>('');
     const [avgPrice, setAvgPrice] = useState<string>('');
+
+    const loadSharedSales = async () => {
+        setIsSharedSalesLoading(true);
+        setSharedSalesError('');
+        try {
+            const items = await fetchSharedSales();
+            setSharedSales(items);
+            setSharedSalesStatus(`共有データを表示中（シート: ${getSharedSalesSheetName()}）`);
+        } catch (error) {
+            console.error('[DailySalesView] failed to load shared sales', error);
+            setSharedSalesError(error instanceof Error ? error.message : 'Google Sheets から売上履歴を取得できませんでした');
+            setSharedSalesStatus('Google Sheets接続エラー');
+        } finally {
+            setIsSharedSalesLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setSalesAuthorInput(window.localStorage.getItem('seika_sales_author') || '');
+        }
+        void loadSharedSales();
+    }, []);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            void loadSharedSales();
+        }, 30000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    const handleSaveSharedSales = async () => {
+        const normalizedSales = Number(salesAmountInput.replace(/,/g, '').trim());
+        const normalizedCustomers = salesCustomersInput.trim()
+            ? Number(salesCustomersInput.replace(/,/g, '').trim())
+            : null;
+
+        if (!Number.isFinite(normalizedSales) || normalizedSales <= 0) {
+            setSharedSalesError('売上を入力してください');
+            return;
+        }
+
+        if (normalizedCustomers !== null && (!Number.isFinite(normalizedCustomers) || normalizedCustomers < 0)) {
+            setSharedSalesError('客数の入力値を確認してください');
+            return;
+        }
+
+        setIsSharedSalesSaving(true);
+        setSharedSalesError('');
+        try {
+            const author = salesAuthorInput.trim();
+            await appendSharedSales({
+                date: getLocalTodayDateString(),
+                sales: normalizedSales,
+                customers: normalizedCustomers,
+                author
+            });
+            if (typeof window !== 'undefined') {
+                window.localStorage.setItem('seika_sales_author', author);
+            }
+            await loadSharedSales();
+            setSalesAmountInput('');
+            setSalesCustomersInput('');
+            setSharedSalesStatus('保存しました');
+        } catch (error) {
+            console.error('[DailySalesView] failed to save shared sales', error);
+            setSharedSalesError(error instanceof Error ? error.message : 'Google Sheets への保存に失敗しました');
+        } finally {
+            setIsSharedSalesSaving(false);
+        }
+    };
 
     // 選択日変更時に既存値をロード
     const dateRecords = useMemo(() => {
@@ -125,6 +206,10 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     const fmtYen = (n: number | null | undefined) => {
         if (n === null || n === undefined) return '-';
         return `¥${n.toLocaleString()}`;
+    };
+    const fmtSharedYen = (n: number | null | undefined) => {
+        if (n === null || n === undefined) return '-';
+        return `${n.toLocaleString()}円`;
     };
 
     const renderTable = (items: DailySalesRecord[], label: string, emoji: string) => {
@@ -275,6 +360,84 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     return (
         <div className="page-container">
             <h2>売上履歴</h2>
+
+            <div style={{ ...sharedCardStyle, marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                        <h3 style={{ margin: 0, color: '#0f172a' }}>共有売上履歴</h3>
+                        <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.9rem' }}>
+                            shared_sales に保存し、全端末で同じ売上履歴を表示します。30秒ごとに自動更新します。
+                        </p>
+                    </div>
+                    <button
+                        className="button-secondary"
+                        style={{ width: 'auto', padding: '10px 16px' }}
+                        onClick={() => void loadSharedSales()}
+                        disabled={isSharedSalesLoading}
+                    >
+                        再取得
+                    </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginTop: '12px' }}>
+                    <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        placeholder="売上（必須）"
+                        value={salesAmountInput}
+                        onChange={(e) => setSalesAmountInput(e.target.value)}
+                    />
+                    <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        placeholder="客数（任意）"
+                        value={salesCustomersInput}
+                        onChange={(e) => setSalesCustomersInput(e.target.value)}
+                    />
+                    <input
+                        type="text"
+                        placeholder="作成者（任意）"
+                        value={salesAuthorInput}
+                        onChange={(e) => setSalesAuthorInput(e.target.value)}
+                    />
+                    <button
+                        className="button-primary"
+                        style={{ width: '100%', padding: '10px 18px' }}
+                        onClick={() => void handleSaveSharedSales()}
+                        disabled={isSharedSalesSaving}
+                    >
+                        保存する
+                    </button>
+                </div>
+
+                {sharedSalesStatus && <div style={{ color: '#0369a1', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{sharedSalesStatus}</div>}
+                {sharedSalesError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{sharedSalesError}</div>}
+
+                <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
+                    {sharedSales.length === 0 ? (
+                        <p style={{ margin: 0, color: '#64748b' }}>まだ共有売上履歴がありません。</p>
+                    ) : (
+                        sharedSales.map((item) => (
+                            <div key={`${item.id}-${item.updatedAt}`} style={sharedSalesItemStyle}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span>{item.date}</span>
+                                        <span>｜</span>
+                                        <span>{item.author || '作成者未入力'}</span>
+                                    </div>
+                                    <span>{item.updatedAt ? new Date(item.updatedAt).toLocaleString('ja-JP') : '-'}</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '10px', color: '#0f172a', fontWeight: 700 }}>
+                                    <span>売上: {fmtSharedYen(item.sales)}</span>
+                                    <span>客数: {item.customers === null ? '-' : `${item.customers.toLocaleString()}名`}</span>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
 
             <div className="ds-date-select">
                 <label>日付：</label>
@@ -644,4 +807,19 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
             `}</style>
         </div>
     );
+};
+
+const sharedCardStyle: React.CSSProperties = {
+    background: '#ffffff',
+    borderRadius: '16px',
+    border: '1px solid #e2e8f0',
+    padding: '18px',
+    boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)'
+};
+
+const sharedSalesItemStyle: React.CSSProperties = {
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '12px 14px',
+    background: '#f8fafc'
 };

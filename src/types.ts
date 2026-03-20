@@ -256,6 +256,16 @@ export interface SharedNoticeEntry {
     createdAt: string;
 }
 
+export interface SharedSalesEntry {
+    id: number;
+    rowNumber?: number;
+    date: string;
+    sales: number;
+    customers: number | null;
+    author: string;
+    updatedAt: string;
+}
+
 export interface SharedDailyNotesEntry {
     id: number;
     date: string;
