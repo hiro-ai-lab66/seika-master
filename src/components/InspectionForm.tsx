@@ -362,6 +362,55 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         fruitCsvInputRef.current?.click();
     };
+
+    const preprocessCsvText = (rawText: string) => {
+        const normalizedText = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const lines = normalizedText
+            .split('\n')
+            .map((line) => line.replace(/^\uFEFF/, '').trimEnd());
+
+        const headerIndex = lines.findIndex((line) => {
+            const normalizedLine = line.normalize('NFKC');
+            return (
+                (normalizedLine.includes('名称') || normalizedLine.includes('商品名') || normalizedLine.includes('品名')) &&
+                (normalizedLine.includes('コード') || normalizedLine.includes('商品コード') || normalizedLine.includes('JAN'))
+            );
+        });
+
+        const effectiveLines = headerIndex >= 0 ? lines.slice(headerIndex) : lines;
+        return effectiveLines.filter((line, index) => index === 0 || line.trim() !== '').join('\n');
+    };
+
+    const isTotalRow = (value: string) => {
+        const normalized = value.replace(/\s/g, '').normalize('NFKC');
+        return normalized.includes('総合計') || normalized === '合計' || normalized.startsWith('合計') || normalized === '計';
+    };
+
+    const normalizeJanCode = (rawCode?: string) => {
+        if (!rawCode) return undefined;
+        const normalized = rawCode.trim().replace(/^="/, '').replace(/"$/, '');
+        if (!normalized) return undefined;
+
+        const scientificMatch = normalized.match(/^(\d+(?:\.\d+)?)E\+?(\d+)$/i);
+        if (scientificMatch) {
+            const mantissa = scientificMatch[1].replace('.', '');
+            const decimals = (scientificMatch[1].split('.')[1] || '').length;
+            const exponent = Number(scientificMatch[2]);
+            const zeroCount = Math.max(exponent - decimals, 0);
+            const expanded = `${mantissa}${'0'.repeat(zeroCount)}`;
+            const digits = expanded.replace(/\D/g, '');
+            if (digits.length >= 13) return digits.slice(0, 13);
+        }
+
+        const decimalLike = normalized.match(/^\d+\.0+$/);
+        const digits = (decimalLike ? normalized.split('.')[0] : normalized).replace(/\D/g, '');
+        if (!digits) return undefined;
+        if (digits.length === 13) return digits;
+        if (digits.length === 12) return calcJAN13(digits);
+        if (digits.length > 13) return digits.slice(0, 13);
+        return digits;
+    };
+
     // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
     const calcJAN13 = (rawCode: string): string => {
         const digits = rawCode.replace(/[^0-9]/g, '');
@@ -405,7 +454,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 text = decoder.decode(arrayBuffer);
             }
 
-            Papa.parse(text, {
+            const preprocessedText = preprocessCsvText(text);
+
+            Papa.parse(preprocessedText, {
                 header: true,
                 skipEmptyLines: true,
                 complete: (results) => {
@@ -446,10 +497,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         const itemName = nameKey ? cleanRow[nameKey] : '';
                         const rawCode = codeKey ? cleanRow[codeKey] : undefined;
 
-                        if (!itemName || itemName === '合計' || !rawCode) return;
+                        if (!itemName || isTotalRow(itemName)) return;
 
-                        // チェックデジット付きコードを生成
-                        const code = calcJAN13(rawCode);
+                        const code = normalizeJanCode(rawCode);
+                        if (!code) return;
 
                         const parseNumeric = (val: string | undefined) => {
                             if (!val) return undefined;
