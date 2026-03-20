@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { DailyNotesEntry } from '../types';
+import { NoticeForm } from '../components/NoticeForm';
 
 type Props = {
   currentDate: string;
@@ -168,6 +169,8 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
           </div>
         )}
       </section>
+
+      <NoticeForm />
     </div>
   );
 };
