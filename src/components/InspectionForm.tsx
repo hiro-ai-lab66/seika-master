@@ -1422,34 +1422,36 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         .best-table {
             width: 100%;
-            min-width: 760px;
+            min-width: 780px;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.82rem;
         }
-        /* 列幅: 26% / 24% / 15% / 15% / 20% */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 26%; }
+        /* 列幅: 28% / 24% / 14% / 14% / 20% */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 28%; }
         .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 24%; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 14%; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 14%; }
         .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 20%; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
             font-weight: 700;
             text-align: left;
-            padding: 8px 6px;
+            padding: 9px 10px;
             border-bottom: 2px solid #cbd5e1;
             position: sticky;
             top: 0;
             z-index: 1;
         }
         .best-table td {
-            padding: 6px;
+            padding: 8px 10px;
             border-bottom: 1px solid #f1f5f9;
             color: #334155;
+            vertical-align: middle;
         }
         .best-table .col-code {
+            text-align: left;
             white-space: nowrap;
             word-break: normal;
             overflow: visible;
@@ -1459,14 +1461,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             font-variant-numeric: tabular-nums;
         }
         .best-table .col-name {
+            text-align: left;
             font-weight: 600;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         .best-table .col-num {
-            text-align: right;
+            text-align: center;
             white-space: nowrap;
+        }
+        .best-table th:nth-child(3),
+        .best-table th:nth-child(4),
+        .best-table th:nth-child(5) {
+            text-align: center;
         }
         /* 色分け: 行背景 */
         .best-table .row-warn td { background-color: #fef2f2; }
@@ -1479,7 +1487,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                min-width: 820px;
+                min-width: 840px;
                 font-size: 0.8rem;
             }
             .best-table .col-code {
