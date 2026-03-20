@@ -522,7 +522,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         e.target.value = '';
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!form.totalBudget || form.totalBudget <= 0) {
             alert("予算を入力してください");
@@ -607,7 +607,24 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         });
         saveDailySales(updatedSales);
 
+        let completionMessage = '報告を保存しました';
+        try {
+            const rows = buildSharedCheckRows();
+            await upsertSharedCheckRowsForDateTimes(currentDate, [period], rows);
+            const sharedRows = await fetchSharedCheckRows();
+            applySharedRowsToForm(sharedRows);
+            applySharedCsvRows(sharedRows);
+            setSharedError(null);
+            setSharedStatus(`報告を保存し、共有データも更新しました（シート: ${getSharedCheckSheetName()}）`);
+            completionMessage = '報告を保存し、共有データも更新しました';
+        } catch (error) {
+            console.error('[InspectionForm] failed to sync report submit to shared_check', error);
+            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '報告共有に失敗しました'}`);
+            completionMessage = '報告は保存しましたが、共有保存に失敗しました';
+        }
+
         onSave(entryToSave);
+        alert(completionMessage);
     };
 
     // 解析データ独立state
