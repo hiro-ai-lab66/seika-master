@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { DailyNotesEntry } from '../types';
 import { NoticeForm } from '../components/NoticeForm';
+import { appendSharedNotice } from '../services/googleSheetsNoticeService';
 
 type Props = {
   currentDate: string;
@@ -37,6 +38,7 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [savedMessage, setSavedMessage] = useState('');
+  const [noticeRefreshKey, setNoticeRefreshKey] = useState(0);
 
   useEffect(() => {
     setForm({
@@ -58,7 +60,7 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     onSave({
       date: currentDate,
       schedule: form.schedule.trim(),
@@ -66,7 +68,26 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
       announcements: form.announcements.trim(),
       updatedAt: new Date().toISOString(),
     });
-    setSavedMessage('保存しました');
+
+    try {
+      if (form.announcements.trim()) {
+        console.log('[DailyNotesPage] append shared notice', {
+          date: currentDate,
+          contentLength: form.announcements.trim().length
+        });
+        await appendSharedNotice({
+          date: currentDate,
+          content: form.announcements.trim(),
+          author: ''
+        });
+        setNoticeRefreshKey((prev) => prev + 1);
+      }
+      setSavedMessage('保存しました');
+    } catch (error) {
+      console.error('[DailyNotesPage] failed to append shared notice', error);
+      setSavedMessage('ローカル保存は完了、共有保存は失敗しました');
+    }
+
     window.setTimeout(() => setSavedMessage(''), 1500);
   };
 
@@ -170,7 +191,7 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
         )}
       </section>
 
-      <NoticeForm />
+      <NoticeForm refreshKey={noticeRefreshKey} />
     </div>
   );
 };

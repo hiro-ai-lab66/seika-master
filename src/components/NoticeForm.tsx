@@ -11,7 +11,7 @@ const cardStyle: React.CSSProperties = {
     boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)'
 };
 
-export const NoticeForm: React.FC = () => {
+export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }) => {
     const [content, setContent] = useState('');
     const [author, setAuthor] = useState('');
     const [items, setItems] = useState<SharedNoticeEntry[]>([]);
@@ -37,7 +37,7 @@ export const NoticeForm: React.FC = () => {
 
     useEffect(() => {
         void loadNotices();
-    }, []);
+    }, [refreshKey]);
 
     const handleSave = async () => {
         const trimmedContent = content.trim();
