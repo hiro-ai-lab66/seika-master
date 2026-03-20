@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
 import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dailySales';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
+import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesService';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -18,6 +19,10 @@ interface Props {
 export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBudgets, currentDate, onChangeDate }) => {
     const AMOUNT_NOTE = '※金額は千円単位';
     const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
+    const FINAL_SALES_AUTHOR =
+        (typeof window !== 'undefined' && window.localStorage.getItem('seika_sales_author')) ||
+        (import.meta as any).env?.VITE_SALES_AUTHOR?.trim() ||
+        '点検最終';
     const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
     const parseThousandInput = (value: string) => {
         const digits = sanitizeThousandInput(value);
@@ -696,9 +701,36 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             const sharedRows = await fetchSharedCheckRows();
             applySharedRowsToForm(sharedRows);
             applySharedCsvRows(sharedRows);
-            setSharedError(null);
+
+            if (period === 'final' && form.actualFinal !== null && form.actualFinal !== undefined && form.actualFinal > 0) {
+                try {
+                    const salesSyncResult = await upsertFinalInspectionSharedSales({
+                        date: currentDate,
+                        sales: form.actualFinal,
+                        customers: form.customersFinal ?? null,
+                        author: FINAL_SALES_AUTHOR
+                    });
+                    console.log('[InspectionForm] synced final inspection to shared_sales', {
+                        date: currentDate,
+                        sales: form.actualFinal,
+                        customers: form.customersFinal ?? null,
+                        author: FINAL_SALES_AUTHOR,
+                        action: salesSyncResult.action
+                    });
+                } catch (salesError) {
+                    console.error('[InspectionForm] failed to sync final inspection to shared_sales', salesError);
+                    setSharedError(`売上履歴の共有保存に失敗しました: ${salesError instanceof Error ? salesError.message : 'shared_sales 更新に失敗しました'}`);
+                    completionMessage = '報告は保存しましたが、売上履歴の共有保存に失敗しました';
+                }
+            }
+
+            if (!completionMessage.includes('失敗')) {
+                setSharedError(null);
+            }
             setSharedStatus(`報告を保存し、共有データも更新しました（シート: ${getSharedCheckSheetName()}）`);
-            completionMessage = '報告を保存し、共有データも更新しました';
+            if (!completionMessage.includes('失敗')) {
+                completionMessage = '報告を保存し、共有データも更新しました';
+            }
         } catch (error) {
             console.error('[InspectionForm] failed to sync report submit to shared_check', error);
             setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '報告共有に失敗しました'}`);

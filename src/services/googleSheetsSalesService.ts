@@ -120,4 +120,46 @@ export const appendSharedSales = async (entry: Omit<SharedSalesEntry, 'id' | 'ro
     ]]);
 };
 
+export const upsertFinalInspectionSharedSales = async (entry: Omit<SharedSalesEntry, 'id' | 'rowNumber' | 'updatedAt'>) => {
+    const ready = await ensureSharedSheetsSession(true);
+    if (!ready) {
+        throw new Error('Google Sheets 未ログイン');
+    }
+
+    await ensureSalesHeader();
+    const sheetName = await resolveSalesSheetName();
+    const existing = await fetchSharedSales();
+    const matched = existing.find((row) => row.date === entry.date && row.author === entry.author);
+    const updatedAt = new Date().toISOString();
+
+    if (matched) {
+        if (matched.sales === entry.sales && matched.customers === entry.customers) {
+            console.log('[SalesSheets] skip duplicate final sales sync', {
+                spreadsheetId: getSharedSpreadsheetId(),
+                sheetName,
+                date: entry.date,
+                sales: entry.sales,
+                customers: entry.customers,
+                author: entry.author
+            });
+            return { action: 'skipped' as const };
+        }
+
+        const range = buildSheetRange(sheetName, `A${matched.rowNumber}:F${matched.rowNumber}`);
+        logSalesRequest('update-final-row', sheetName, range);
+        await writeSharedSheetValues(range, [[
+            String(matched.id),
+            entry.date,
+            String(entry.sales),
+            entry.customers === null ? '' : String(entry.customers),
+            entry.author || '',
+            updatedAt
+        ]]);
+        return { action: 'updated' as const };
+    }
+
+    await appendSharedSales(entry);
+    return { action: 'appended' as const };
+};
+
 export const getSharedSalesSheetName = () => resolvedSalesSheetNameCache || SALES_SHEET_NAME;
