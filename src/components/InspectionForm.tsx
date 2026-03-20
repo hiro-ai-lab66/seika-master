@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { InspectionEntry, DailyBudget, BestItem, Product, DailySalesRecord } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
 import { Upload, Cloud, RefreshCw } from 'lucide-react';
@@ -88,6 +88,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [promotionActual12SalesInput, setPromotionActual12SalesInput] = useState(formatThousandInput(form.promotionActual12Sales));
     const [promotionActual17SalesInput, setPromotionActual17SalesInput] = useState(formatThousandInput(form.promotionActual17Sales));
     const [actual12Input, setActual12Input] = useState(formatThousandInput(form.actual12));
+    const veggieCsvInputRef = useRef<HTMLInputElement>(null);
+    const fruitCsvInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const updateCalculations = () => {
@@ -352,6 +354,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAnalysisFruits(sharedFruits);
         }
     };
+
+    const openCsvImportPicker = (type: 'veggie' | 'fruit') => {
+        if (type === 'veggie') {
+            veggieCsvInputRef.current?.click();
+            return;
+        }
+        fruitCsvInputRef.current?.click();
+    };
     // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
     const calcJAN13 = (rawCode: string): string => {
         const digits = rawCode.replace(/[^0-9]/g, '');
@@ -371,7 +381,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const typeName = type === 'veggie' ? '野菜' : '果物';
         console.log(`${type} csv selected`);
 
         // CSV再取込時は旧データを完全初期化
@@ -421,7 +430,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     const amtKey = findKey(['売上高', '金額', '販売金額']);
 
                     if (!nameKey) {
-                        alert("解析に失敗しました。必須列（名称など）が見つかりません。\n検出されたヘッダー: " + cleanHeaders.join(', '));
+                        alert('CSV形式が違います');
                         return;
                     }
 
@@ -490,22 +499,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             try {
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
-                                setSharedStatus(`CSV取込内容を共有保存しました（シート: ${getSharedCheckSheetName()}）`);
+                                const sharedRows = await fetchSharedCheckRows();
+                                applySharedCsvRows(sharedRows);
+                                setSharedStatus(`取込完了（${items.length}件）`);
                                 setSharedError(null);
                             } catch (error) {
                                 console.error('[InspectionForm] failed to sync csv import to shared_check', error);
                                 setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : 'CSV共有に失敗しました'}`);
                             }
                         })();
-
-                        alert(`${typeName}CSV ${items.length}件を抽出しました（${salesRecords.length}件を売上履歴に保存）\n※「報告を保存する」で商品マスターに登録されます`);
                     } else {
-                        alert("データの抽出に失敗しました（有効なデータが0件です）。\n検出されたヘッダー: " + cleanHeaders.join(', '));
+                        alert('CSV形式が違います');
                     }
                 },
                 error: (error: any) => {
                     console.error("CSV Parse Error:", error);
-                    alert("CSVファイルの読み込み中にエラーが発生しました。");
+                    alert('CSV形式が違います');
                 }
             });
         };
@@ -1054,11 +1063,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <h4>単品ベスト設定 (CSVアップロード)</h4>
                             <div className="csv-upload-grid">
                                 <div className="csv-upload-box">
-                                    <label className="csv-label">
+                                    <button type="button" className="csv-label" onClick={() => openCsvImportPicker('veggie')}>
                                         <Upload size={16} />
-                                        <span>野菜ベストCSV</span>
-                                        <input type="file" accept=".csv" onChange={e => handleCsvUpload(e, 'veggie')} hidden />
-                                    </label>
+                                        <span>野菜CSV取込→共有保存</span>
+                                    </button>
+                                    <input ref={veggieCsvInputRef} type="file" accept=".csv" onChange={e => handleCsvUpload(e, 'veggie')} hidden />
                                     <div className="best-list-preview">
                                         {analysisVeggies.length > 0 ? (
                                             <>
@@ -1069,11 +1078,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     </div>
                                 </div>
                                 <div className="csv-upload-box">
-                                    <label className="csv-label">
+                                    <button type="button" className="csv-label" onClick={() => openCsvImportPicker('fruit')}>
                                         <Upload size={16} />
-                                        <span>果物ベストCSV</span>
-                                        <input type="file" accept=".csv" onChange={e => handleCsvUpload(e, 'fruit')} hidden />
-                                    </label>
+                                        <span>果物CSV取込→共有保存</span>
+                                    </button>
+                                    <input ref={fruitCsvInputRef} type="file" accept=".csv" onChange={e => handleCsvUpload(e, 'fruit')} hidden />
                                     <div className="best-list-preview">
                                         {analysisFruits.length > 0 ? (
                                             <>
