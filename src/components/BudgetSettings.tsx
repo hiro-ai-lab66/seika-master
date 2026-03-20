@@ -12,9 +12,13 @@ interface Props {
 }
 
 export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, onChangeDate }) => {
+  const normalizeNumericInput = (value: string) =>
+    value
+      .replace(/[０-９]/g, (char) => String(char.charCodeAt(0) - 0xfee0))
+      .replace(/[^\d]/g, '');
   const formatThousandValue = (amount: number) => amount > 0 ? String(Math.round(amount / 1000)) : '';
   const parseThousandValue = (value: string) => {
-    const digits = value.replace(/[^\d]/g, '');
+    const digits = normalizeNumericInput(value);
     if (!digits) return 0;
     return Number(digits) * 1000;
   };
@@ -295,19 +299,32 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
   };
 
   const handleSharedBudgetSave = async () => {
+    const salesTargetRaw = sharedSalesTargetInput;
+    const grossProfitRaw = sharedGrossProfitInput;
     const salesTarget = parseThousandValue(sharedSalesTargetInput);
     const grossProfitTarget = parseThousandValue(sharedGrossProfitInput);
+    const payload = {
+      date: todayDate,
+      salesTarget,
+      grossProfitTarget,
+      author: sharedBudgetAuthor.trim()
+    };
+
+    console.log('[BudgetSettings] shared budget save payload', {
+      salesTargetRaw,
+      grossProfitRaw,
+      salesTargetNormalized: normalizeNumericInput(salesTargetRaw),
+      grossProfitNormalized: normalizeNumericInput(grossProfitRaw),
+      salesTarget,
+      grossProfitTarget,
+      payload
+    });
 
     setIsSharedBudgetSaving(true);
     setSharedBudgetError('');
     try {
-      const author = sharedBudgetAuthor.trim();
-      await upsertSharedBudget({
-        date: todayDate,
-        salesTarget,
-        grossProfitTarget,
-        author
-      });
+      const author = payload.author;
+      await upsertSharedBudget(payload);
 
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('seika_budget_author', author);
@@ -364,7 +381,14 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
               inputMode="numeric"
               pattern="[0-9]*"
               value={sharedSalesTargetInput}
-              onChange={(e) => setSharedSalesTargetInput(e.target.value.replace(/[^\d]/g, ''))}
+              onChange={(e) => {
+                const nextValue = normalizeNumericInput(e.target.value);
+                console.log('[BudgetSettings] sales target input change', {
+                  raw: e.target.value,
+                  normalized: nextValue
+                });
+                setSharedSalesTargetInput(nextValue);
+              }}
               placeholder="0"
             />
           </div>
@@ -375,7 +399,14 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
               inputMode="numeric"
               pattern="[0-9]*"
               value={sharedGrossProfitInput}
-              onChange={(e) => setSharedGrossProfitInput(e.target.value.replace(/[^\d]/g, ''))}
+              onChange={(e) => {
+                const nextValue = normalizeNumericInput(e.target.value);
+                console.log('[BudgetSettings] gross profit input change', {
+                  raw: e.target.value,
+                  normalized: nextValue
+                });
+                setSharedGrossProfitInput(nextValue);
+              }}
               placeholder="0"
             />
           </div>
