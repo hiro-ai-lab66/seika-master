@@ -45,6 +45,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
     const [sharedError, setSharedError] = useState<string | null>(null);
+    const [csvWarning, setCsvWarning] = useState<string | null>(null);
     const [isSharedSaving, setIsSharedSaving] = useState(false);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
 
@@ -387,9 +388,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const normalizeJanCode = (rawCode?: string) => {
-        if (!rawCode) return undefined;
+        if (!rawCode) {
+            return { code: undefined, warning: null as string | null, scientific: false };
+        }
         const normalized = rawCode.trim().replace(/^="/, '').replace(/"$/, '');
-        if (!normalized) return undefined;
+        if (!normalized) {
+            return { code: undefined, warning: null as string | null, scientific: false };
+        }
 
         const scientificMatch = normalized.match(/^(\d+(?:\.\d+)?)E\+?(\d+)$/i);
         if (scientificMatch) {
@@ -399,16 +404,32 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             const zeroCount = Math.max(exponent - decimals, 0);
             const expanded = `${mantissa}${'0'.repeat(zeroCount)}`;
             const digits = expanded.replace(/\D/g, '');
-            if (digits.length >= 13) return digits.slice(0, 13);
+            if (digits.length === 13) {
+                return { code: digits, warning: 'JANコードが指数表記でした。元CSVでは文字列形式を推奨します。', scientific: true };
+            }
+            return {
+                code: undefined,
+                warning: 'JANコードが指数表記のため正しく読み取れませんでした。CSV作成時にJANコード列を文字列形式にしてください。',
+                scientific: true
+            };
         }
 
         const decimalLike = normalized.match(/^\d+\.0+$/);
         const digits = (decimalLike ? normalized.split('.')[0] : normalized).replace(/\D/g, '');
-        if (!digits) return undefined;
-        if (digits.length === 13) return digits;
-        if (digits.length === 12) return calcJAN13(digits);
-        if (digits.length > 13) return digits.slice(0, 13);
-        return digits;
+        if (!digits) {
+            return { code: undefined, warning: 'JANコード形式が不正です', scientific: false };
+        }
+        if (digits.length === 13) {
+            return { code: digits, warning: null as string | null, scientific: false };
+        }
+        if (digits.length === 12) {
+            return { code: calcJAN13(digits), warning: null as string | null, scientific: false };
+        }
+        return {
+            code: undefined,
+            warning: `JANコード形式が不正です（${digits.length}桁）`,
+            scientific: false
+        };
     };
 
     // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
@@ -439,6 +460,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAnalysisFruits([]);
         }
         setMasterResult(null);
+        setCsvWarning(null);
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -486,6 +508,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     }
 
                     const items: BestItem[] = [];
+                    const janWarnings: string[] = [];
 
                     results.data.forEach((row: any) => {
                         const cleanRow: Record<string, string> = {};
@@ -499,8 +522,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                         if (!itemName || isTotalRow(itemName)) return;
 
-                        const code = normalizeJanCode(rawCode);
-                        if (!code) return;
+                        const janResult = normalizeJanCode(rawCode);
+                        if (janResult.warning) {
+                            janWarnings.push(`${itemName}: ${janResult.warning}`);
+                            console.warn('[InspectionForm] JAN warning', { itemName, rawCode, ...janResult });
+                        }
+                        if (!janResult.code) return;
 
                         const parseNumeric = (val: string | undefined) => {
                             if (!val) return undefined;
@@ -514,13 +541,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                         items.push({
                             name: itemName,
-                            code: code,
+                            code: janResult.code,
                             salesQty: qty,
                             salesYoY: yoy,
                             salesAmt: amt,
                             sales: amt || 0
                         });
                     });
+
+                    if (janWarnings.length > 0) {
+                        setCsvWarning('JANコード形式が不正です。元CSVで指数表記になっているため、正確に読み取れない可能性があります。CSV作成時にJANコード列を文字列形式にしてください。');
+                    }
 
                     if (items.length > 0) {
                         items.sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
@@ -792,6 +823,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     fontWeight: 600
                 }}>
                     {sharedError || sharedStatus}
+                </div>
+            )}
+            {csvWarning && (
+                <div style={{
+                    marginTop: '8px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    background: '#fff7ed',
+                    color: '#c2410c',
+                    fontSize: '0.85rem',
+                    fontWeight: 600
+                }}>
+                    {csvWarning}
                 </div>
             )}
 
