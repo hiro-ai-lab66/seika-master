@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { DailyNotesEntry } from '../types';
+import type { DailyNotesEntry, SharedDailyNotesEntry } from '../types';
 import { NoticeForm } from '../components/NoticeForm';
+import { fetchSharedDailyNotes, getSharedDailyNotesSheetName, upsertSharedDailyNotes } from '../services/googleSheetsDailyNotesService';
 import { appendSharedNotice } from '../services/googleSheetsNoticeService';
 
 type Props = {
@@ -35,25 +36,51 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
     () => entries.find((entry) => entry.date === currentDate),
     [entries, currentDate]
   );
+  const [sharedEntries, setSharedEntries] = useState<SharedDailyNotesEntry[]>([]);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [savedMessage, setSavedMessage] = useState('');
   const [noticeRefreshKey, setNoticeRefreshKey] = useState(0);
+  const [author, setAuthor] = useState('');
+  const [sharedStatus, setSharedStatus] = useState('');
+  const [sharedError, setSharedError] = useState('');
+
+  const currentSharedEntry = useMemo(
+    () => sharedEntries.find((entry) => entry.date === currentDate),
+    [sharedEntries, currentDate]
+  );
+
+  const loadSharedDailyNotes = async () => {
+    setSharedError('');
+    try {
+      const items = await fetchSharedDailyNotes();
+      setSharedEntries(items);
+      setSharedStatus(`共有データを表示中（シート: ${getSharedDailyNotesSheetName()}）`);
+    } catch (error) {
+      console.error('[DailyNotesPage] failed to load shared daily notes', error);
+      setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
+    }
+  };
+
+  useEffect(() => {
+    void loadSharedDailyNotes();
+  }, []);
 
   useEffect(() => {
     setForm({
-      schedule: currentEntry?.schedule || '',
-      inspectionNotes: currentEntry?.inspectionNotes || '',
-      announcements: currentEntry?.announcements || '',
+      schedule: currentSharedEntry?.schedule || currentEntry?.schedule || '',
+      inspectionNotes: currentSharedEntry?.inspectionNotes || currentEntry?.inspectionNotes || '',
+      announcements: currentSharedEntry?.announcements || currentEntry?.announcements || '',
     });
-  }, [currentEntry, currentDate]);
+    setAuthor(currentSharedEntry?.author || '');
+  }, [currentEntry, currentSharedEntry, currentDate]);
 
   const recentEntries = useMemo(
     () =>
-      [...entries]
+      [...(sharedEntries.length > 0 ? sharedEntries : entries)]
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 7),
-    [entries]
+    [entries, sharedEntries]
   );
 
   const updateField = (key: keyof FormState, value: string) => {
@@ -70,6 +97,15 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
     });
 
     try {
+      await upsertSharedDailyNotes({
+        date: currentDate,
+        schedule: form.schedule.trim(),
+        inspectionNotes: form.inspectionNotes.trim(),
+        announcements: form.announcements.trim(),
+        author: author.trim()
+      });
+      await loadSharedDailyNotes();
+
       if (form.announcements.trim()) {
         console.log('[DailyNotesPage] append shared notice', {
           date: currentDate,
@@ -78,7 +114,7 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
         await appendSharedNotice({
           date: currentDate,
           content: form.announcements.trim(),
-          author: ''
+          author: author.trim()
         });
         setNoticeRefreshKey((prev) => prev + 1);
       }
@@ -118,11 +154,23 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
             onChange={(e) => onChangeDate(e.target.value)}
             style={{ maxWidth: '220px' }}
           />
+          <input
+            type="text"
+            value={author}
+            onChange={(e) => setAuthor(e.target.value)}
+            placeholder="作成者（任意）"
+            style={{ maxWidth: '220px' }}
+          />
           <button className="button-primary" style={{ width: 'auto', padding: '12px 18px', fontSize: '1rem' }} onClick={handleSave}>
             保存する
           </button>
+          <button className="button-secondary" style={{ width: 'auto', padding: '12px 18px', fontSize: '1rem' }} onClick={() => void loadSharedDailyNotes()}>
+            共有データ再取得
+          </button>
           {savedMessage && <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.9rem' }}>{savedMessage}</span>}
         </div>
+        {sharedStatus && <div style={{ color: '#0369a1', fontSize: '0.85rem', fontWeight: 700 }}>{sharedStatus}</div>}
+        {sharedError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700 }}>{sharedError}</div>}
       </div>
 
       <div style={{ display: 'grid', gap: '16px' }}>

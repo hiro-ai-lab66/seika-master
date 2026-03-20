@@ -252,6 +252,16 @@ export interface SharedNoticeEntry {
     updatedAt: string;
 }
 
+export interface SharedDailyNotesEntry {
+    id: number;
+    date: string;
+    schedule: string;
+    inspectionNotes: string;
+    announcements: string;
+    author: string;
+    updatedAt: string;
+}
+
 export interface AppState {
     sales: SalesData[];
     todos: ToDoItem[];
