@@ -266,6 +266,16 @@ export interface SharedSalesEntry {
     updatedAt: string;
 }
 
+export interface SharedBudgetEntry {
+    id: number;
+    rowNumber?: number;
+    date: string;
+    salesTarget: number;
+    grossProfitTarget: number;
+    author: string;
+    updatedAt: string;
+}
+
 export interface SharedDailyNotesEntry {
     id: number;
     date: string;

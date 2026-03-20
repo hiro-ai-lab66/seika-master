@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { AppState, DailyBudget } from '../types';
 import { getDayOfWeek, getLocalTodayDateString } from '../utils/calculations';
 import { Calendar, ChevronLeft, ChevronRight, Save, Upload } from 'lucide-react';
+import { fetchSharedBudgetForDate, getSharedBudgetSheetName, upsertSharedBudget } from '../services/googleSheetsBudgetService';
 
 interface Props {
   state: AppState;
@@ -22,6 +23,52 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
   const initDate = new Date(`${currentDate}T00:00:00`);
   const [viewDate, setViewDate] = useState(new Date(initDate.getFullYear(), initDate.getMonth(), 1));
   const [modifiedDates, setModifiedDates] = useState<Set<string>>(new Set());
+  const todayDate = getLocalTodayDateString();
+  const [sharedSalesTargetInput, setSharedSalesTargetInput] = useState('');
+  const [sharedGrossProfitInput, setSharedGrossProfitInput] = useState('');
+  const [sharedBudgetAuthor, setSharedBudgetAuthor] = useState('');
+  const [sharedBudgetStatus, setSharedBudgetStatus] = useState('');
+  const [sharedBudgetError, setSharedBudgetError] = useState('');
+  const [isSharedBudgetLoading, setIsSharedBudgetLoading] = useState(false);
+  const [isSharedBudgetSaving, setIsSharedBudgetSaving] = useState(false);
+
+  const loadSharedBudget = async () => {
+    setIsSharedBudgetLoading(true);
+    setSharedBudgetError('');
+    try {
+      const entry = await fetchSharedBudgetForDate(todayDate);
+      setSharedSalesTargetInput(entry ? formatThousandValue(entry.salesTarget) : '');
+      setSharedGrossProfitInput(entry ? formatThousandValue(entry.grossProfitTarget) : '');
+      setSharedBudgetAuthor(entry?.author || (typeof window !== 'undefined' ? window.localStorage.getItem('seika_budget_author') || '' : ''));
+      setSharedBudgetStatus(`共有データを表示中（シート: ${getSharedBudgetSheetName()}）`);
+
+      setLocalBudgets((prev) => prev.map((budget) => (
+        budget.date === todayDate && entry
+          ? { ...budget, totalBudget: entry.salesTarget, veggieBudget: 0, fruitBudget: 0 }
+          : budget
+      )));
+    } catch (error) {
+      console.error('[BudgetSettings] failed to load shared budget', error);
+      setSharedBudgetError(error instanceof Error ? error.message : 'Google Sheets から予算を取得できませんでした');
+      setSharedBudgetStatus('Google Sheets接続エラー');
+    } finally {
+      setIsSharedBudgetLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setSharedBudgetAuthor(window.localStorage.getItem('seika_budget_author') || '');
+    }
+    void loadSharedBudget();
+  }, [todayDate]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadSharedBudget();
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [todayDate]);
 
   const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -247,6 +294,41 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
     alert('予算を保存しました');
   };
 
+  const handleSharedBudgetSave = async () => {
+    const salesTarget = parseThousandValue(sharedSalesTargetInput);
+    const grossProfitTarget = parseThousandValue(sharedGrossProfitInput);
+
+    setIsSharedBudgetSaving(true);
+    setSharedBudgetError('');
+    try {
+      const author = sharedBudgetAuthor.trim();
+      await upsertSharedBudget({
+        date: todayDate,
+        salesTarget,
+        grossProfitTarget,
+        author
+      });
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('seika_budget_author', author);
+      }
+
+      setLocalBudgets((prev) => prev.map((budget) => (
+        budget.date === todayDate
+          ? { ...budget, totalBudget: salesTarget, veggieBudget: 0, fruitBudget: 0 }
+          : budget
+      )));
+
+      await loadSharedBudget();
+      setSharedBudgetStatus('保存しました');
+    } catch (error) {
+      console.error('[BudgetSettings] failed to save shared budget', error);
+      setSharedBudgetError(error instanceof Error ? error.message : 'Google Sheets への保存に失敗しました');
+    } finally {
+      setIsSharedBudgetSaving(false);
+    }
+  };
+
   return (
     <div className="budget-settings-container">
       <header className="page-header">
@@ -262,6 +344,60 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
           </label>
         </div>
       </header>
+
+      <div className="card shared-budget-card">
+        <div className="shared-budget-header">
+          <div>
+            <h3>今日の共有予算</h3>
+            <p>{todayDate} の売上目標と粗利目標を全端末で共有します。30秒ごとに自動更新します。</p>
+          </div>
+          <button className="button-outline" type="button" onClick={() => void loadSharedBudget()} disabled={isSharedBudgetLoading}>
+            再取得
+          </button>
+        </div>
+
+        <div className="shared-budget-grid">
+          <div className="shared-budget-field">
+            <label>売上目標（千円）</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={sharedSalesTargetInput}
+              onChange={(e) => setSharedSalesTargetInput(e.target.value.replace(/[^\d]/g, ''))}
+              placeholder="0"
+            />
+          </div>
+          <div className="shared-budget-field">
+            <label>粗利目標（千円）</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={sharedGrossProfitInput}
+              onChange={(e) => setSharedGrossProfitInput(e.target.value.replace(/[^\d]/g, ''))}
+              placeholder="0"
+            />
+          </div>
+          <div className="shared-budget-field">
+            <label>作成者</label>
+            <input
+              type="text"
+              value={sharedBudgetAuthor}
+              onChange={(e) => setSharedBudgetAuthor(e.target.value)}
+              placeholder="任意"
+            />
+          </div>
+        </div>
+
+        <p className="shared-budget-note">※金額は千円単位</p>
+        {sharedBudgetStatus && <div className="shared-budget-status">{sharedBudgetStatus}</div>}
+        {sharedBudgetError && <div className="shared-budget-error">{sharedBudgetError}</div>}
+
+        <button className="button-primary shared-budget-save" type="button" onClick={() => void handleSharedBudgetSave()} disabled={isSharedBudgetSaving}>
+          共有予算を保存する
+        </button>
+      </div>
 
       <div className="month-selector card">
         <button className="nav-month-btn" onClick={() => handleMonthChange(-1)} title="前の月へ">
@@ -341,6 +477,74 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
         .header-actions {
           display: flex;
           gap: var(--space-sm);
+        }
+        .shared-budget-card {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .shared-budget-header {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+        }
+        .shared-budget-header h3 {
+          margin: 0;
+          color: var(--text-main);
+        }
+        .shared-budget-header p {
+          margin: 4px 0 0;
+          color: var(--text-muted);
+          font-size: 0.9rem;
+        }
+        .shared-budget-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px;
+        }
+        .shared-budget-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .shared-budget-field label {
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: var(--text-main);
+        }
+        .shared-budget-field input {
+          width: 100%;
+          padding: 10px 12px;
+          border-radius: var(--radius-sm);
+          border: 1px solid #e2e8f0;
+          font-weight: 700;
+          font-size: 1rem;
+        }
+        .shared-budget-field input:focus {
+          border-color: var(--primary);
+          outline: none;
+          background: #f0fdf4;
+        }
+        .shared-budget-note {
+          margin: 0;
+          font-size: 0.85rem;
+          color: #64748b;
+          font-weight: 700;
+        }
+        .shared-budget-status {
+          color: #0369a1;
+          font-size: 0.85rem;
+          font-weight: 700;
+        }
+        .shared-budget-error {
+          color: #b91c1c;
+          font-size: 0.85rem;
+          font-weight: 700;
+        }
+        .shared-budget-save {
+          width: 100%;
+          justify-content: center;
         }
         .button-outline {
           background: white;
@@ -484,6 +688,11 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
           0% { transform: scale(1); box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); }
           50% { transform: scale(1.02); box-shadow: 0 4px 20px rgba(220, 38, 38, 0.5); }
           100% { transform: scale(1); box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); }
+        }
+        @media (max-width: 768px) {
+          .shared-budget-header {
+            flex-direction: column;
+          }
         }
       `}</style>
     </div>
