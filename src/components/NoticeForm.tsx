@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { SharedNoticeEntry } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { appendSharedNotice, fetchSharedNotices, getSharedNoticeSheetName } from '../services/googleSheetsNoticeService';
+import { appendSharedNotice, fetchSharedNotices, getSharedNoticeSheetName, updateSharedNoticeReadUsers } from '../services/googleSheetsNoticeService';
 
 const cardStyle: React.CSSProperties = {
     background: '#ffffff',
@@ -14,18 +14,37 @@ const cardStyle: React.CSSProperties = {
 export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }) => {
     const [content, setContent] = useState('');
     const [author, setAuthor] = useState('');
+    const [isPriority, setIsPriority] = useState(false);
     const [items, setItems] = useState<SharedNoticeEntry[]>([]);
     const [status, setStatus] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const currentUser =
+        (typeof window !== 'undefined' && window.localStorage.getItem('seika_notice_user')) ||
+        (import.meta as any).env?.VITE_NOTICE_USER?.trim() ||
+        'hiro';
+    const allUsers = (
+        (import.meta as any).env?.VITE_NOTICE_USERS?.trim() ||
+        currentUser
+    )
+        .split(',')
+        .map((user: string) => user.trim())
+        .filter(Boolean);
 
     const loadNotices = async () => {
         setIsLoading(true);
         setError('');
         try {
             const notices = await fetchSharedNotices();
-            setItems(notices);
+            const unreadItems = notices.filter((notice) => !notice.readUsers.includes(currentUser));
+            if (unreadItems.length > 0) {
+                await Promise.all(
+                    unreadItems.map((notice) => updateSharedNoticeReadUsers(notice, currentUser))
+                );
+            }
+            const refreshedNotices = unreadItems.length > 0 ? await fetchSharedNotices() : notices;
+            setItems(refreshedNotices);
             setStatus(`共有連絡事項を表示中（シート: ${getSharedNoticeSheetName()}）`);
         } catch (err) {
             console.error('[NoticeForm] failed to load notices', err);
@@ -37,6 +56,13 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
 
     useEffect(() => {
         void loadNotices();
+    }, [refreshKey]);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            void loadNotices();
+        }, 30000);
+        return () => window.clearInterval(timer);
     }, [refreshKey]);
 
     const handleSave = async () => {
@@ -52,11 +78,16 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
             await appendSharedNotice({
                 date: getLocalTodayDateString(),
                 content: trimmedContent,
-                author: author.trim()
+                author: author.trim() || currentUser,
+                priority: isPriority
             });
             await loadNotices();
             setContent('');
-            setAuthor('');
+            if (typeof window !== 'undefined') {
+                window.localStorage.setItem('seika_notice_user', author.trim() || currentUser);
+            }
+            setAuthor(author.trim() || currentUser);
+            setIsPriority(false);
             setStatus('保存しました');
         } catch (err) {
             console.error('[NoticeForm] failed to save notice', err);
@@ -74,7 +105,7 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                 <div>
                     <h3 style={{ margin: 0, color: '#0f172a' }}>共有連絡事項</h3>
                     <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.9rem' }}>
-                        アプリから入力した連絡事項を shared_notice に保存して全端末で共有します。
+                        アプリから入力した連絡事項を shared_notice に保存して全端末で共有します。30秒ごとに自動更新します。
                     </p>
                 </div>
 
@@ -92,6 +123,10 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                         placeholder="作成者（任意）"
                         style={{ flex: '1 1 180px' }}
                     />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: '#334155' }}>
+                        <input type="checkbox" checked={isPriority} onChange={(e) => setIsPriority(e.target.checked)} />
+                        重要
+                    </label>
                     <button
                         className="button-primary"
                         style={{ width: 'auto', padding: '12px 18px' }}
@@ -121,16 +156,29 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                             <div
                                 key={`${item.id}-${item.updatedAt}`}
                                 style={{
-                                    border: '1px solid #e2e8f0',
+                                    border: item.priority ? '1px solid #fca5a5' : '1px solid #e2e8f0',
                                     borderRadius: '12px',
                                     padding: '12px 14px',
-                                    background: '#f8fafc'
+                                    background: item.priority ? '#fef2f2' : '#f8fafc',
+                                    opacity: allUsers.every((user: string) => item.readUsers.includes(user)) ? 0.65 : 1
                                 }}
                             >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span>{item.date}</span>
+                                        <span>｜</span>
+                                        <span>{item.author || '作成者未入力'}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        {item.priority && <span style={{ color: '#b91c1c', fontWeight: 700 }}>重要</span>}
+                                        {!item.readUsers.includes(currentUser) && <span style={{ color: '#b45309', fontWeight: 700 }}>未読</span>}
+                                        {item.readUsers.includes(currentUser) && <span style={{ color: '#0369a1', fontWeight: 700 }}>既読</span>}
+                                    </div>
+                                </div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
                                     <span>{item.date}</span>
                                     <span>｜</span>
-                                    <span>{item.author || '作成者未入力'}</span>
+                                    <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('ja-JP') : '-'}</span>
                                 </div>
                                 <div style={{ whiteSpace: 'pre-wrap', color: '#0f172a', lineHeight: 1.6 }}>{item.content}</div>
                             </div>

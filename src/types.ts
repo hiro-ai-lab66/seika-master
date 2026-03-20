@@ -246,10 +246,14 @@ export interface DailyNotesEntry {
 
 export interface SharedNoticeEntry {
     id: number;
+    rowNumber?: number;
     date: string;
     content: string;
     author: string;
     updatedAt: string;
+    priority: boolean;
+    readUsers: string[];
+    createdAt: string;
 }
 
 export interface SharedDailyNotesEntry {

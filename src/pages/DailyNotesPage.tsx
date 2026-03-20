@@ -114,7 +114,8 @@ export const DailyNotesPage: React.FC<Props> = ({ currentDate, onChangeDate, ent
         await appendSharedNotice({
           date: currentDate,
           content: form.announcements.trim(),
-          author: author.trim()
+          author: author.trim(),
+          priority: false
         });
         setNoticeRefreshKey((prev) => prev + 1);
       }
