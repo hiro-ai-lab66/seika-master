@@ -1148,7 +1148,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                     const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                                                     return (
                                                         <tr key={idx} className={rowClass}>
-                                                            <td className="col-code">{item.code || '-'}</td>
+                                                            <td className="col-code" title={item.code || '-'}>{item.code || '-'}</td>
                                                             <td className="col-name">{item.name}</td>
                                                             <td className="col-num">{formatNum(item.salesQty)}</td>
                                                             <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
@@ -1183,7 +1183,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                                     const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                                                     return (
                                                         <tr key={idx} className={rowClass}>
-                                                            <td className="col-code">{item.code || '-'}</td>
+                                                            <td className="col-code" title={item.code || '-'}>{item.code || '-'}</td>
                                                             <td className="col-name">{item.name}</td>
                                                             <td className="col-num">{formatNum(item.salesQty)}</td>
                                                             <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
@@ -1422,13 +1422,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         .best-table {
             width: 100%;
+            min-width: 760px;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.82rem;
         }
-        /* 列幅: 20% / 30% / 15% / 15% / 20% */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 20%; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 30%; }
+        /* 列幅: 26% / 24% / 15% / 15% / 20% */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 26%; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 24%; }
         .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
         .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
         .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 20%; }
@@ -1449,8 +1450,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             color: #334155;
         }
         .best-table .col-code {
-            word-break: break-all;
-            white-space: normal;
+            white-space: nowrap;
+            word-break: normal;
+            overflow: visible;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+            letter-spacing: 0.02em;
+            font-variant-numeric: tabular-nums;
         }
         .best-table .col-name {
             font-weight: 600;
@@ -1470,6 +1476,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .best-table .yoy-good { color: #2563eb; font-weight: 700; }
         .best-table tbody tr:hover td {
             background-color: #f8fafc;
+        }
+        @media (max-width: 768px) {
+            .best-table {
+                min-width: 820px;
+                font-size: 0.8rem;
+            }
+            .best-table .col-code {
+                font-size: 0.76rem;
+            }
         }
         /* マスター登録結果ボックス */
         .master-result-box {
