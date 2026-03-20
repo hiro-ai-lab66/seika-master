@@ -1416,23 +1416,23 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         .best-table-scroll {
             max-height: 400px;
-            overflow-y: auto;
+            overflow: auto;
             border: 1px solid #e2e8f0;
             border-radius: 6px;
         }
         .best-table {
-            width: 100%;
-            min-width: 780px;
+            width: 860px;
+            min-width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.82rem;
         }
-        /* 列幅: 28% / 24% / 14% / 14% / 20% */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 28%; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 24%; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 14%; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 14%; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 20%; }
+        /* 列幅: JAN優先、商品名は少し圧縮 */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 190px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 170px; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 110px; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 120px; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 130px; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
@@ -1487,7 +1487,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                min-width: 840px;
+                width: 860px;
                 font-size: 0.8rem;
             }
             .best-table .col-code {
