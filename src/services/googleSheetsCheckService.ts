@@ -113,3 +113,39 @@ export const appendSharedCheckRows = async (rows: SharedCheckRow[]) => {
         row.time
     ]));
 };
+
+export const replaceSharedCheckRows = async (rows: SharedCheckRow[]) => {
+    const ready = await ensureSharedSheetsSession(true);
+    if (!ready) {
+        throw new Error('Google Sheets 未ログイン');
+    }
+
+    await ensureCheckHeader();
+    const sheetName = await resolveCheckSheetName();
+    const existingRows = await fetchSharedCheckRows();
+    const rowCount = Math.max(existingRows.length, rows.length, 1);
+    const replaceRange = buildSheetRange(sheetName, `A2:G${rowCount + 1}`);
+    logCheckRequest('replace rows', sheetName, replaceRange);
+    await writeSharedSheetValues(replaceRange, Array.from({ length: rowCount }, (_, index) => {
+        const row = rows[index];
+        return row ? [
+            row.date,
+            row.store || STORE_NAME,
+            row.item,
+            row.content,
+            row.status,
+            row.owner,
+            row.time
+        ] : ['', '', '', '', '', '', ''];
+    }));
+};
+
+export const upsertSharedCheckRowsForDateTimes = async (
+    date: string,
+    times: string[],
+    rows: SharedCheckRow[]
+) => {
+    const existingRows = await fetchSharedCheckRows();
+    const preservedRows = existingRows.filter((row) => !(row.date === date && times.includes(row.time)));
+    await replaceSharedCheckRows([...preservedRows, ...rows]);
+};

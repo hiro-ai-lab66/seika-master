@@ -5,7 +5,7 @@ import { Upload, Cloud, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
 import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dailySales';
-import { appendSharedCheckRows, fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow } from '../services/googleSheetsCheckService';
+import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -227,6 +227,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         return baseRows.filter((row) => row.content !== '' || row.item === '本日の売上予算');
     };
 
+    const buildSharedCsvRows = (type: 'veggie' | 'fruit', items: BestItem[]): SharedCheckRow[] => {
+        const typeLabel = type === 'veggie' ? '野菜' : '果物';
+        const time = `csv-${type}`;
+        return items.map((item, index) => ({
+            date: currentDate,
+            store: STORE_NAME,
+            item: `${typeLabel}CSV:${index + 1}:${item.name}`,
+            content: JSON.stringify(item),
+            status: '取込済',
+            owner: item.code || '',
+            time
+        }));
+    };
+
     const applySharedRowsToForm = (rows: SharedCheckRow[]) => {
         if (rows.length === 0) return;
 
@@ -309,6 +323,34 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
 
         setSharedStatus(`共有データを再取得しました（シート: ${getSharedCheckSheetName()}）`);
+    };
+
+    const applySharedCsvRows = (rows: SharedCheckRow[]) => {
+        const parseRows = (type: 'veggie' | 'fruit') => {
+            const time = `csv-${type}`;
+            return rows
+                .filter((row) => row.date === currentDate && row.time === time && row.content)
+                .map((row) => {
+                    try {
+                        return JSON.parse(row.content) as BestItem;
+                    } catch (error) {
+                        console.error('[InspectionForm] failed to parse shared csv row', { row, error });
+                        return null;
+                    }
+                })
+                .filter((item): item is BestItem => Boolean(item))
+                .sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
+        };
+
+        const sharedVeggies = parseRows('veggie');
+        const sharedFruits = parseRows('fruit');
+
+        if (sharedVeggies.length > 0) {
+            setAnalysisVeggies(sharedVeggies);
+        }
+        if (sharedFruits.length > 0) {
+            setAnalysisFruits(sharedFruits);
+        }
     };
     // JAN-13 チェックデジット計算（モジュラス10 ウェイト3方式）
     const calcJAN13 = (rawCode: string): string => {
@@ -443,6 +485,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 department: dept,
                             }));
                         upsertDailySales(currentDate, dept, salesRecords);
+
+                        void (async () => {
+                            try {
+                                const csvRows = buildSharedCsvRows(type, items);
+                                await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
+                                setSharedStatus(`CSV取込内容を共有保存しました（シート: ${getSharedCheckSheetName()}）`);
+                                setSharedError(null);
+                            } catch (error) {
+                                console.error('[InspectionForm] failed to sync csv import to shared_check', error);
+                                setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : 'CSV共有に失敗しました'}`);
+                            }
+                        })();
 
                         alert(`${typeName}CSV ${items.length}件を抽出しました（${salesRecords.length}件を売上履歴に保存）\n※「報告を保存する」で商品マスターに登録されます`);
                     } else {
@@ -593,7 +647,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         setIsSharedSaving(true);
         try {
             const rows = buildSharedCheckRows();
-            await appendSharedCheckRows(rows);
+            await upsertSharedCheckRowsForDateTimes(currentDate, [period], rows);
             setSharedStatus(`Googleシートへ共有保存しました（シート: ${getSharedCheckSheetName()}）`);
         } catch (error) {
             console.error('[CheckSheets] save failed', error);
@@ -610,6 +664,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         try {
             const rows = await fetchSharedCheckRows();
             applySharedRowsToForm(rows);
+            applySharedCsvRows(rows);
         } catch (error) {
             console.error('[CheckSheets] reload failed', error);
             setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
