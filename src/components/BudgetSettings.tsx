@@ -12,6 +12,17 @@ interface Props {
 }
 
 export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, onChangeDate }) => {
+  // Excel シリアル値（例: 46102）を YYYY-MM-DD に変換
+  const serialDateToYMD = (serial: number): string => {
+    // Excel の日付起点は 1900-01-01（シリアル値1）。ただし Lotus 123 互換バグで 1900-02-29 が存在するため +1 補正不要
+    const excelEpoch = new Date(1899, 11, 30); // 1899-12-30
+    const d = new Date(excelEpoch.getTime() + serial * 86400000);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+
   const normalizeNumericInput = (value: string) =>
     value
       .replace(/[０-９]/g, (char) => String(char.charCodeAt(0) - 0xfee0))
@@ -131,7 +142,13 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
             let targetDate = '';
             const jpMatch = dateRaw.match(/(\d{1,2})月(\d{1,2})日/);
 
-            if (/^\d{1,2}$/.test(dateRaw)) {
+            // Excel シリアル値（純粋な数値 40000〜60000 程度の範囲）を検出
+            if (/^\d{5,6}$/.test(dateRaw)) {
+              const serial = parseInt(dateRaw, 10);
+              if (serial >= 40000 && serial <= 60000) {
+                targetDate = serialDateToYMD(serial);
+              }
+            } else if (/^\d{1,2}$/.test(dateRaw)) {
               const day = dateRaw.padStart(2, '0');
               targetDate = `${year}-${String(month + 1).padStart(2, '0')}-${day}`;
             } else if (jpMatch) {
