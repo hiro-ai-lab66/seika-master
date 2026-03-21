@@ -7,6 +7,7 @@ import {
     readSharedSpreadsheetMetadata,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
+import { isInlineImageDataUrl, isRemoteImageUrl } from './storageService';
 
 const POPIBRARY_SHEET_NAME = (import.meta as any).env?.VITE_POPIBRARY_SHEET_TAB?.trim() || 'shared_popibrary';
 const HEADER_ROW = ['id', '日付', 'タイトル', 'カテゴリ', '説明', '画像URL', '作成者', '更新日時'];
@@ -118,6 +119,13 @@ export const appendSharedPopibraryItem = async (pop: PopItem) => {
     const nextId = existing.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1;
     const date = (pop.createdAt || new Date().toISOString()).slice(0, 10);
     const updatedAt = new Date().toISOString();
+    const normalizedImageSource = (() => {
+        const source = (pop.thumbUrl || '').trim();
+        if (!source) return '';
+        if (isRemoteImageUrl(source)) return source;
+        if (isInlineImageDataUrl(source)) return source;
+        return '';
+    })();
     const range = buildSheetRange(sheetName, 'A:H');
     logPopibraryRequest('append-row', sheetName, range);
     await appendSharedSheetValues(range, [[
@@ -126,7 +134,7 @@ export const appendSharedPopibraryItem = async (pop: PopItem) => {
         pop.title || '',
         pop.categoryLarge || '',
         pop.improvementComment || '',
-        pop.thumbUrl || '',
+        normalizedImageSource,
         pop.author || '',
         updatedAt
     ]]);

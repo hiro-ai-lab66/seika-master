@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { CheckCircle, Save } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle, Image as ImageIcon, RefreshCw, Save } from 'lucide-react';
 import type { PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
+import { isRemoteImageUrl, uploadPopImageAsset } from '../services/storageService';
 
 interface PopLibraryFormProps {
   onSave: (pop: PopItem) => Promise<{ message: string }>;
@@ -27,8 +28,28 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [author, setAuthor] = useState(defaultAuthor);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    const previewUrl = URL.createObjectURL(file);
+    setImagePreview(previewUrl);
+    setSaveSuccess(false);
+  };
 
   const handleSave = async () => {
     if (!title.trim() || !category.trim() || !description.trim()) {
@@ -41,6 +62,19 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
 
     try {
       const isoDate = new Date(`${date}T00:00:00`).toISOString();
+      const normalizedUrl = imageUrl.trim();
+      const preferredImageSource = normalizedUrl
+        ? normalizedUrl
+        : imageFile
+          ? await uploadPopImageAsset(imageFile)
+          : '';
+
+      if (normalizedUrl && !isRemoteImageUrl(normalizedUrl) && !normalizedUrl.startsWith('data:image/')) {
+        alert('画像URL は http(s) URL を入力してください');
+        setIsSaving(false);
+        return;
+      }
+
       const result = await onSave({
         id: '',
         title: title.trim(),
@@ -49,7 +83,7 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
         season: '',
         usage: '',
         size: '',
-        thumbUrl: imageUrl.trim(),
+        thumbUrl: preferredImageSource,
         pdfUrl: '',
         improvementComment: description.trim(),
         author: author.trim(),
@@ -126,6 +160,34 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
               画像URL
             </label>
             <input type="url" className="modern-input" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." style={{ width: '100%' }} />
+            <div style={{ marginTop: '8px', fontSize: '0.8rem', color: '#64748b' }}>
+              URL がある場合は URL を優先保存します。URL がない場合のみ、アップロード画像を圧縮して保存します。
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
+              画像アップロード（URL未設定時のみ）
+            </label>
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              style={{ minHeight: '160px', backgroundColor: '#f8fafc', border: imagePreview ? '1px solid #e2e8f0' : '2px dashed #cbd5e1', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}
+            >
+              {imagePreview ? (
+                <>
+                  <img src={imagePreview} alt="POPプレビュー" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  <div style={{ position: 'absolute', right: '12px', bottom: '12px', backgroundColor: 'rgba(0,0,0,0.65)', color: 'white', padding: '6px 12px', borderRadius: '999px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <RefreshCw size={14} /> 画像変更
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: '#64748b' }}>
+                  <ImageIcon size={30} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>アップロード画像を圧縮して保存</span>
+                </div>
+              )}
+            </div>
           </div>
 
           <div>

@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, LogIn, Plus, RefreshCw, Search, Tag } from 'lucide-react';
 import type { PopItem } from '../types';
+import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
 
 interface PopibraryListProps {
   onSelectPop: (pop: PopItem) => void;
@@ -122,16 +123,7 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
             onClick={() => onSelectPop(pop)}
             style={{ background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           >
-            <div style={{ position: 'relative', height: '180px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {pop.thumbUrl ? (
-                <img src={pop.thumbUrl} alt={pop.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
-              ) : (
-                <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                  <ImageIcon size={30} />
-                  <span style={{ fontSize: '0.85rem' }}>画像なし</span>
-                </div>
-              )}
-            </div>
+            <PopCardImage pop={pop} />
 
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
@@ -173,6 +165,61 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
       {filteredPops.length === 0 && (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', backgroundColor: 'white', borderRadius: '12px', border: '1px dashed #cbd5e1', marginTop: '20px' }}>
           POP がありません。
+        </div>
+      )}
+    </div>
+  );
+};
+
+const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
+  const [thumbnailSrc, setThumbnailSrc] = useState(pop.thumbUrl || '');
+
+  useEffect(() => {
+    let active = true;
+
+    const resolveThumbnail = async () => {
+      if (!pop.thumbUrl) {
+        setThumbnailSrc('');
+        return;
+      }
+
+      if (isRemoteImageUrl(pop.thumbUrl)) {
+        setThumbnailSrc(pop.thumbUrl);
+        return;
+      }
+
+      if (isInlineImageDataUrl(pop.thumbUrl)) {
+        const lightweight = await buildLightweightThumbnail(pop.thumbUrl);
+        if (active) {
+          setThumbnailSrc(lightweight);
+        }
+        return;
+      }
+
+      setThumbnailSrc(pop.thumbUrl);
+    };
+
+    void resolveThumbnail();
+
+    return () => {
+      active = false;
+    };
+  }, [pop.thumbUrl]);
+
+  return (
+    <div style={{ position: 'relative', height: '180px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {thumbnailSrc ? (
+        <img
+          src={thumbnailSrc}
+          alt={pop.title}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+          <ImageIcon size={30} />
+          <span style={{ fontSize: '0.85rem' }}>画像なし</span>
         </div>
       )}
     </div>

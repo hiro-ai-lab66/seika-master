@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Tag, MessageCircle, Calendar, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import type { PopItem } from '../types';
+import { isRemoteImageUrl } from '../services/storageService';
 
 interface PopDetailProps {
   pop: PopItem;
@@ -8,6 +9,9 @@ interface PopDetailProps {
 }
 
 export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
+  const imageSource = pop.thumbUrl || '';
+  const hasRemoteImage = isRemoteImageUrl(imageSource);
+
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
       
@@ -21,9 +25,9 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
       <div style={{ background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
         {/* Header Image */}
         <div style={{ width: '100%', backgroundColor: '#f8fafc', position: 'relative' }}>
-          {pop.thumbUrl ? (
+          {imageSource ? (
             <img
-              src={pop.thumbUrl}
+              src={imageSource}
               alt={pop.title}
               style={{ width: '100%', maxHeight: '400px', objectFit: 'contain' }}
             />
@@ -72,14 +76,14 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {pop.thumbUrl ? (
+                {imageSource ? (
                   <a
-                    href={pop.thumbUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={imageSource}
+                    target={hasRemoteImage ? '_blank' : undefined}
+                    rel={hasRemoteImage ? 'noopener noreferrer' : undefined}
                     style={{ flex: 1, minWidth: '200px', backgroundColor: 'var(--primary)', color: 'white', padding: '14px', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textDecoration: 'none' }}
                   >
-                    <ExternalLink size={20} /> 画像を開く
+                    <ExternalLink size={20} /> {hasRemoteImage ? '画像URLを開く' : '画像を表示中'}
                   </a>
                 ) : (
                   <div style={{ minWidth: '200px', backgroundColor: '#f8fafc', color: '#64748b', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
