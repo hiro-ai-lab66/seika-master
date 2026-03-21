@@ -57,11 +57,23 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
       setSharedBudgetAuthor(entry?.author || (typeof window !== 'undefined' ? window.localStorage.getItem('seika_budget_author') || '' : ''));
       setSharedBudgetStatus(`共有データを表示中（シート: ${getSharedBudgetSheetName()}）`);
 
-      setLocalBudgets((prev) => prev.map((budget) => (
-        budget.date === todayDate && entry
-          ? { ...budget, totalBudget: entry.salesTarget, veggieBudget: 0, fruitBudget: 0 }
-          : budget
-      )));
+      // shared_budget の値で localBudgets を更新する。
+      // ただし、CSV取込等で既に値がある場合は上書きしない（shared_budgetの 0 で CSV値を破壊するのを防ぐ）
+      if (entry) {
+        setLocalBudgets((prev) => prev.map((budget) => {
+          if (budget.date !== todayDate) return budget;
+          // 既に値がある日は上書きしない
+          if (budget.totalBudget > 0) {
+            console.log('[BudgetSettings] loadSharedBudget: 既存値ありのためスキップ', {
+              date: budget.date,
+              existing: budget.totalBudget,
+              sharedValue: entry.salesTarget
+            });
+            return budget;
+          }
+          return { ...budget, totalBudget: entry.salesTarget, veggieBudget: 0, fruitBudget: 0 };
+        }));
+      }
     } catch (error) {
       console.error('[BudgetSettings] failed to load shared budget', error);
       setSharedBudgetError(error instanceof Error ? error.message : 'Google Sheets から予算を取得できませんでした');
@@ -317,12 +329,26 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
   };
 
   const handleSave = () => {
+    const todayBudgetInLocal = localBudgets.find(b => b.date === todayDate);
+    console.log('[BudgetSettings] handleSave 開始: localBudgets の内容', {
+      todayDate,
+      todayBudget: todayBudgetInLocal?.totalBudget,
+      allBudgets: localBudgets.map(b => ({ date: b.date, totalBudget: b.totalBudget }))
+    });
+
     const otherMonthBudgets = state.dailyBudgets.filter(b => {
       const [bYear, bMonth] = b.date.split('-');
       return parseInt(bYear, 10) !== year || (parseInt(bMonth, 10) - 1) !== month;
     });
 
-    onSave([...otherMonthBudgets, ...localBudgets.filter(b => b.totalBudget > 0)]);
+    const thisMonthBudgets = localBudgets.filter(b => b.totalBudget > 0);
+    console.log('[BudgetSettings] handleSave: 保存対象', {
+      otherMonthCount: otherMonthBudgets.length,
+      thisMonthCount: thisMonthBudgets.length,
+      thisMonthBudgets: thisMonthBudgets.map(b => ({ date: b.date, totalBudget: b.totalBudget }))
+    });
+
+    onSave([...otherMonthBudgets, ...thisMonthBudgets]);
     setModifiedDates(new Set());
     alert('予算を保存しました');
   };
