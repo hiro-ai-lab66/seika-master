@@ -4,24 +4,31 @@ import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { uploadSellfloorPhoto } from '../services/storageService';
 
-// To fetch dummy data quickly for now, reuse the same mock data as PopibraryList
-// In a real app, this should come via props from `state.popData`
-const MOCK_POPS: PopItem[] = [
-  { id: "pop-001", title: "春キャベツ特売", categoryLarge: "野菜", categorySmall: "葉物", season: "春", usage: "定番平台", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Cabbage+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "価格を大きくし、鮮度感を出すキャッチコピーに変更。前年比120%達成。", createdAt: new Date().toISOString() },
-  { id: "pop-002", title: "新玉ねぎ レシピ付き", categoryLarge: "野菜", categorySmall: "土物", season: "春", usage: "エンド", size: "B5", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Onion+Recipe+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "食べ方提案を入れることで、まとめ買いが増加。", createdAt: new Date().toISOString() },
-  { id: "pop-003", title: "厳選いちご ギフト用", categoryLarge: "果物", categorySmall: "いちご", season: "冬", usage: "平台一番地", size: "A4", thumbUrl: "https://placehold.co/400x300/e2e8f0/475569?text=Strawberry+Gift+POP", pdfUrl: "https://example.com/dummy.pdf", improvementComment: "ギフト用途を強調し、高単価商品の売行きが改善。", createdAt: new Date().toISOString() }
-];
-
 interface SellfloorRecordFormProps {
-  onSave: (record: SellfloorRecord) => void;
+  onSave: (record: SellfloorRecord) => Promise<{ message: string }>;
   currentDate: string;
+  savedPops?: PopItem[];
+  defaultAuthor?: string;
+  sharedStatus?: string | null;
+  sharedError?: string | null;
+  isSharedLoading?: boolean;
   onBack?: () => void;
 }
 
-export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave, currentDate, onBack }) => {
+export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
+  onSave,
+  currentDate,
+  savedPops = [],
+  defaultAuthor = '',
+  sharedStatus,
+  sharedError,
+  isSharedLoading = false,
+  onBack
+}) => {
   const [product, setProduct] = useState('');
   const [location, setLocation] = useState('');
   const [comment, setComment] = useState('');
+  const [author, setAuthor] = useState(defaultAuthor);
   const [selectedPopId, setSelectedPopId] = useState<string>('');
   
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -52,6 +59,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
     setProduct('');
     setLocation('');
     setComment('');
+    setAuthor(defaultAuthor);
     setPhotoFile(null);
     if (photoPreview) {
       URL.revokeObjectURL(photoPreview);
@@ -84,11 +92,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
             comment,
             photoUrl,
             popId: selectedPopId,
-            createdAt: new Date().toISOString()
+            author: author.trim(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         };
         
-        onSave(newRecord);
+        const result = await onSave(newRecord);
         setSaveSuccess(true);
+        if (result.message) {
+          console.log('[SellfloorRecordForm] save result', result.message);
+        }
         setTimeout(() => {
             clearForm();
             if (onBack) onBack();
@@ -115,7 +128,12 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
         )}
       </div>
 
-      <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: 'var(--shadow-md)' }}>
+        <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: 'var(--shadow-md)' }}>
+        {(sharedStatus || sharedError || isSharedLoading) && (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: sharedError ? '#fef2f2' : '#eff6ff', color: sharedError ? '#b91c1c' : '#0369a1', fontSize: '0.85rem', fontWeight: 700 }}>
+            {isSharedLoading ? 'Google Sheets 共有データを確認中です' : sharedError || sharedStatus}
+          </div>
+        )}
         
         {/* Photo Upload Area */}
         <div style={{ marginBottom: '24px' }}>
@@ -199,6 +217,20 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
           />
         </div>
 
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
+            記録者
+          </label>
+          <input
+            type="text"
+            className="modern-input"
+            value={author}
+            onChange={(e) => setAuthor(e.target.value)}
+            placeholder="例: 田中"
+            style={{ width: '100%' }}
+          />
+        </div>
+
         {/* Location Input */}
         <div style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
@@ -241,11 +273,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({ onSave
                 style={{ width: '100%', padding: '12px', border: 'none', backgroundColor: 'transparent', fontSize: '0.9rem', color: 'var(--text-main)', appearance: 'none', outline: 'none' }}
              >
                 <option value="">-- 使用したPOPを選択 --</option>
-                {MOCK_POPS.map(pop => (
+                {savedPops.map(pop => (
                     <option key={pop.id} value={pop.id}>{pop.title} ({pop.size})</option>
                 ))}
              </select>
           </div>
+          {savedPops.length === 0 && (
+            <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              連携できる POP がまだ登録されていません。
+            </div>
+          )}
           {selectedPopId && (
               <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <ImageIcon size={24} color="#166534" />

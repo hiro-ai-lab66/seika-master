@@ -136,6 +136,22 @@ export interface SellfloorRecord {
     comment: string;
     popId: string;
     createdAt: string;
+    updatedAt?: string;
+    author?: string;
+}
+
+export interface SharedSellfloorRecordEntry {
+    rowNumber?: number;
+    id: string;
+    date: string;
+    product: string;
+    location: string;
+    comment: string;
+    photoUrl: string;
+    popId: string;
+    author: string;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface PopItem {

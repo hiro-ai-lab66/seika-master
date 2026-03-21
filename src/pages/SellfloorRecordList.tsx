@@ -1,16 +1,34 @@
 import React, { useState } from 'react';
-import { Search, MapPin, Camera, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn } from 'lucide-react';
 import type { SellfloorRecord } from '../types';
 
 interface SellfloorRecordListProps {
   records: SellfloorRecord[];
   onSelectRecord: (record: SellfloorRecord) => void;
   onNewRecord: () => void;
+  onReloadShared?: () => void;
+  onLoginShared?: () => void;
   onViewAiHistory?: () => void;
   aiHistoryCount?: number;
+  sharedStatus?: string | null;
+  sharedError?: string | null;
+  isSharedLoading?: boolean;
+  needsSheetsLogin?: boolean;
 }
 
-export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ records, onSelectRecord, onNewRecord, onViewAiHistory, aiHistoryCount = 0 }) => {
+export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
+  records,
+  onSelectRecord,
+  onNewRecord,
+  onReloadShared,
+  onLoginShared,
+  onViewAiHistory,
+  aiHistoryCount = 0,
+  sharedStatus,
+  sharedError,
+  isSharedLoading = false,
+  needsSheetsLogin = false
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredRecords = records.filter(record => 
@@ -60,6 +78,32 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ record
         </div>
       </div>
 
+      {(sharedStatus || sharedError || isSharedLoading) && (
+        <div style={{ background: sharedError ? '#fef2f2' : '#eff6ff', border: `1px solid ${sharedError ? '#fecaca' : '#bfdbfe'}`, color: sharedError ? '#b91c1c' : '#0369a1', padding: '14px 16px', borderRadius: '12px', marginBottom: '20px' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '10px' }}>
+            {isSharedLoading ? 'Google Sheets 共有データを更新中です' : sharedError || sharedStatus}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {needsSheetsLogin && onLoginShared && (
+              <button
+                onClick={onLoginShared}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <LogIn size={16} /> Google Sheets にログイン
+              </button>
+            )}
+            {onReloadShared && (
+              <button
+                onClick={onReloadShared}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'white', color: 'inherit', border: '1px solid currentColor', padding: '8px 12px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <RefreshCw size={16} /> 共有データ再取得
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {filteredRecords.map(record => (
             <div 
@@ -97,6 +141,7 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({ record
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{record.date}</span>
+                        {record.author && <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700 }}>{record.author}</span>}
                     </div>
 
                     <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

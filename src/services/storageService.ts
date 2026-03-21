@@ -5,8 +5,8 @@ export const uploadSellfloorPhoto = async (file: File): Promise<string> => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
+        const MAX_WIDTH = 480;
+        const MAX_HEIGHT = 480;
         let width = img.width;
         let height = img.height;
 
@@ -32,8 +32,8 @@ export const uploadSellfloorPhoto = async (file: File): Promise<string> => {
         // Draw the uploaded image onto the canvas, resized
         ctx.drawImage(img, 0, 0, width, height);
         
-        // Compress the image to JPEG with 0.6 quality to save localStorage space
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        // Keep the payload small enough for localStorage and Sheets cell limits.
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
         
         // Simulate slight network delay for realistic feel
         setTimeout(() => {

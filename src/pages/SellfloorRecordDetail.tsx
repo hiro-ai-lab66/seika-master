@@ -146,6 +146,11 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Clock size={16} /> {createdDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                 </span>
+                {record.author && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        記録者: {record.author}
+                    </span>
+                )}
             </div>
 
            {/* Comment Section */}
