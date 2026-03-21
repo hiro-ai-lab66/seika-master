@@ -222,6 +222,18 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
         }
       });
 
+      // CSV取込後、当日分が含まれていれば shared 予算入力欄にも反映（共有保存時に 0 上書きされるのを防ぐ）
+      const todayParsed = parsedBudgets.find(p => p.date === todayDate);
+      if (todayParsed) {
+        const todayInThousands = String(Math.round(Math.floor(todayParsed.budget / 1000) * 1000 / 1000));
+        setSharedSalesTargetInput(todayInThousands);
+        console.log('[BudgetSettings] CSV取込: todayDateの値を sharedSalesTargetInput に反映', {
+          todayDate,
+          todayBudget: todayParsed.budget,
+          thousandsValue: todayInThousands
+        });
+      }
+
       if (updateCount > 0) {
         setLocalBudgets([...currentMonthBudgets]);
         setModifiedDates(newModifiedDates);
@@ -320,22 +332,37 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
     const grossProfitRaw = sharedGrossProfitInput;
     const salesTarget = parseThousandValue(sharedSalesTargetInput);
     const grossProfitTarget = parseThousandValue(sharedGrossProfitInput);
+
+    // salesTarget が 0（未入力）の場合、localBudgets の当日分をフォールバックに使用
+    const todayLocalBudget = localBudgets.find(b => b.date === todayDate);
+    const effectiveSalesTarget = salesTarget > 0
+      ? salesTarget
+      : (todayLocalBudget?.totalBudget ?? 0);
+
     const payload = {
       date: todayDate,
-      salesTarget,
+      salesTarget: effectiveSalesTarget,
       grossProfitTarget,
       author: sharedBudgetAuthor.trim()
     };
 
-    console.log('[BudgetSettings] shared budget save payload', {
+    console.log('[BudgetSettings] shared_budget 保存 payload', {
       salesTargetRaw,
       grossProfitRaw,
       salesTargetNormalized: normalizeNumericInput(salesTargetRaw),
       grossProfitNormalized: normalizeNumericInput(grossProfitRaw),
-      salesTarget,
-      grossProfitTarget,
+      salesTargetParsed: salesTarget,
+      grossProfitParsed: grossProfitTarget,
+      todayLocalBudget: todayLocalBudget?.totalBudget,
+      effectiveSalesTarget,
       payload
     });
+
+    // effectiveSalesTarget が 0 の場合は保存しない（既存値を保護）
+    if (effectiveSalesTarget <= 0) {
+      alert('売上目標が未入力のため、共有保存をスキップしました。0 で上書きされるのを防ぐため、まず CSV の取込または入力を行ってください。');
+      return;
+    }
 
     setIsSharedBudgetSaving(true);
     setSharedBudgetError('');
