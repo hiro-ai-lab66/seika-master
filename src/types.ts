@@ -168,6 +168,8 @@ export interface PopItem {
     recommendedLocation?: string;
     tags?: string[];
     createdAt: string;
+    updatedAt?: string;
+    author?: string;
 }
 
 export interface MarketAttachment {

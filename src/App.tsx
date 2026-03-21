@@ -25,10 +25,12 @@ import { DailyNotesPage } from './pages/DailyNotesPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { ensureSharedSheetsSession, isSheetsConfigured } from './services/googleSheetsInventoryService';
+import { appendSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName } from './services/googleSheetsPopibraryService';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 const MARKET_REDIRECT_KEY = 'seika_market_redirect';
 const SELLFLOOR_AUTHOR_KEY = 'seika_sellfloor_author';
+const POPIBRARY_AUTHOR_KEY = 'seika_popibrary_author';
 
 const mergeSellfloorRecords = (localRecords: SellfloorRecord[], sharedRecords: SellfloorRecord[]) => {
   const merged = new Map<string, SellfloorRecord>();
@@ -95,6 +97,14 @@ function App() {
   
   const [popibraryView, setPopibraryView] = useState<'list' | 'detail' | 'form'>('list');
   const [selectedPop, setSelectedPop] = useState<import('./types').PopItem | null>(null);
+  const [popibrarySharedStatus, setPopibrarySharedStatus] = useState<string | null>(null);
+  const [popibrarySharedError, setPopibrarySharedError] = useState<string | null>(null);
+  const [isPopibrarySharedLoading, setIsPopibrarySharedLoading] = useState(false);
+  const [needsPopibrarySheetsLogin, setNeedsPopibrarySheetsLogin] = useState(false);
+  const [popibraryAuthor, setPopibraryAuthor] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem(POPIBRARY_AUTHOR_KEY) || '';
+  });
   
   const [marketView, setMarketView] = useState<'list' | 'detail' | 'analysis'>('list');
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(null);
@@ -105,6 +115,7 @@ function App() {
   });
   const isHydratingSellfloorFromSheetsRef = useRef(false);
   const sellfloorRecordsRef = useRef<SellfloorRecord[]>([]);
+  const popibraryItemsRef = useRef<import('./types').PopItem[]>([]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -184,9 +195,18 @@ function App() {
   }, [state.sellfloorRecords]);
 
   useEffect(() => {
+    popibraryItemsRef.current = state.popData || [];
+  }, [state.popData]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(SELLFLOOR_AUTHOR_KEY, sellfloorAuthor);
   }, [sellfloorAuthor]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(POPIBRARY_AUTHOR_KEY, popibraryAuthor);
+  }, [popibraryAuthor]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -273,6 +293,55 @@ function App() {
     return () => window.clearInterval(timer);
   }, [activeTab]);
 
+  const loadPopibraryFromSheets = async (interactiveLogin: boolean) => {
+    if (!isSheetsConfigured()) {
+      setPopibrarySharedStatus('Google Sheets 未設定のためローカルデータを表示中');
+      setPopibrarySharedError(null);
+      setNeedsPopibrarySheetsLogin(false);
+      return;
+    }
+
+    setIsPopibrarySharedLoading(true);
+    setPopibrarySharedError(null);
+
+    try {
+      const ready = await ensureSharedSheetsSession(interactiveLogin);
+      if (!ready) {
+        setNeedsPopibrarySheetsLogin(true);
+        setPopibrarySharedStatus('Google Sheets に再ログインすると共有 POP を表示できます');
+        return;
+      }
+
+      const sharedPops = await fetchSharedPopibraryItems();
+      setState((prev) => ({
+        ...prev,
+        popData: sharedPops
+      }));
+      setPopibrarySharedStatus(`共有データを表示中（シート: ${getSharedPopibrarySheetName()}）`);
+      setNeedsPopibrarySheetsLogin(false);
+    } catch (error) {
+      console.error('[App] failed to load shared popibrary', error);
+      const message = error instanceof Error ? error.message : '取得に失敗しました';
+      setNeedsPopibrarySheetsLogin(message.includes('未ログイン'));
+      setPopibrarySharedError(`Google Sheets接続エラー: ${message}`);
+    } finally {
+      setIsPopibrarySharedLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'popibrary') return;
+    void loadPopibraryFromSheets(false);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'popibrary') return;
+    const timer = window.setInterval(() => {
+      void loadPopibraryFromSheets(false);
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [activeTab]);
+
   const saveInspection = (entry: InspectionEntry) => {
     setState(prev => {
       const exists = prev.inspections.findIndex(i => i.date === entry.date);
@@ -348,12 +417,49 @@ function App() {
     showToast('AI分析結果を保存しました');
   };
 
-  const savePop = (pop: import('./types').PopItem) => {
-    setState(prev => ({
-      ...prev,
-      popData: [...(prev.popData || []), pop]
-    }));
-    showToast('POPを保存しました');
+  const savePop = async (pop: import('./types').PopItem) => {
+    setPopibraryAuthor(pop.author || '');
+
+    if (!isSheetsConfigured()) {
+      const fallbackPop = {
+        ...pop,
+        id: pop.id || String(Date.now()),
+        updatedAt: new Date().toISOString()
+      };
+      setState(prev => ({
+        ...prev,
+        popData: [fallbackPop, ...(prev.popData || [])]
+      }));
+      setPopibrarySharedStatus('ローカルに保存しました');
+      showToast('POPを保存しました');
+      return { message: 'ローカルに保存しました' };
+    }
+
+    try {
+      const ready = await ensureSharedSheetsSession(true);
+      if (!ready) {
+        setNeedsPopibrarySheetsLogin(true);
+        setPopibrarySharedStatus('Google Sheets に再ログインすると共有できます');
+        return { message: '共有は保留です' };
+      }
+
+      const savedPop = await appendSharedPopibraryItem(pop);
+      const latestPops = [savedPop, ...popibraryItemsRef.current.filter((item) => item.id !== savedPop.id)]
+        .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+
+      setState(prev => ({
+        ...prev,
+        popData: latestPops
+      }));
+      setPopibrarySharedError(null);
+      setPopibrarySharedStatus('保存しました');
+      showToast('POPを保存しました');
+      return { message: '保存しました' };
+    } catch (error) {
+      console.error('[App] failed to save shared pop', error);
+      setPopibrarySharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有保存に失敗しました'}`);
+      return { message: '共有保存に失敗しました' };
+    }
   };
 
   const deleteSellfloorRecord = async (id: string) => {
@@ -521,15 +627,31 @@ function App() {
                />;
       case 'popibrary':
         if (popibraryView === 'form') {
-           return <PopLibraryForm onSave={savePop} onBack={() => setPopibraryView('list')} />;
+           return (
+             <PopLibraryForm
+               onSave={savePop}
+               defaultAuthor={popibraryAuthor}
+               sharedStatus={popibrarySharedStatus}
+               sharedError={popibrarySharedError}
+               isSharedLoading={isPopibrarySharedLoading}
+               onBack={() => setPopibraryView('list')}
+             />
+           );
         }
         if (popibraryView === 'detail' && selectedPop) {
-           return <PopDetail pop={selectedPop} onBack={() => setPopibraryView('list')} />;
+           const latestSelectedPop = (state.popData || []).find((pop) => pop.id === selectedPop.id) || selectedPop;
+           return <PopDetail pop={latestSelectedPop} onBack={() => setPopibraryView('list')} />;
         }
         return <PopibraryList 
                  savedPops={state.popData || []} 
                  onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
                  onAddPop={() => setPopibraryView('form')}
+                 onReloadShared={() => void loadPopibraryFromSheets(false)}
+                 onLoginShared={() => void loadPopibraryFromSheets(true)}
+                 sharedStatus={popibrarySharedStatus}
+                 sharedError={popibrarySharedError}
+                 isSharedLoading={isPopibrarySharedLoading}
+                 needsSheetsLogin={needsPopibrarySheetsLogin}
                />;
       case 'market':
         if (marketView === 'analysis' && selectedMarket) {
