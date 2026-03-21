@@ -7,6 +7,7 @@ import { loadProducts, saveProducts } from '../storage/products';
 import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dailySales';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
 import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesService';
+import { fetchSharedBudgetForDate } from '../services/googleSheetsBudgetService';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -53,6 +54,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [csvWarning, setCsvWarning] = useState<string | null>(null);
     const [isSharedSaving, setIsSharedSaving] = useState(false);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
+    // shared_budget から取得した売上目標（0 = 未取得）
+    const [sharedBudgetTarget, setSharedBudgetTarget] = useState<number>(0);
 
     const [form, setForm] = useState<Partial<InspectionEntry>>(() => {
         const targetDate = currentDate;
@@ -773,6 +776,25 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
     }, [currentDate]);
 
+    // 画面表示時に shared_budget から当日の売上目標を取得して自動反映
+    useEffect(() => {
+        void (async () => {
+            try {
+                const entry = await fetchSharedBudgetForDate(currentDate);
+                if (entry && entry.salesTarget > 0) {
+                    setSharedBudgetTarget(entry.salesTarget);
+                    setForm(prev => ({ ...prev, totalBudget: entry.salesTarget }));
+                    console.log('[InspectionForm] shared_budget 自動反映', { date: currentDate, salesTarget: entry.salesTarget });
+                } else {
+                    setSharedBudgetTarget(0);
+                }
+            } catch (e) {
+                console.warn('[InspectionForm] shared_budget 取得スキップ（未ログイン等）', e);
+                setSharedBudgetTarget(0);
+            }
+        })();
+    }, [currentDate]);
+
     useEffect(() => {
         setPromotionItemInput(form.promotionItem || '');
         setPromotionTargetSalesInput(formatThousandInput(form.promotionTargetSales));
@@ -805,6 +827,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             const rows = await fetchSharedCheckRows();
             applySharedRowsToForm(rows);
             applySharedCsvRows(rows);
+            // shared_budget も再取得して予算欄を同期
+            try {
+                const budgetEntry = await fetchSharedBudgetForDate(currentDate);
+                if (budgetEntry && budgetEntry.salesTarget > 0) {
+                    setSharedBudgetTarget(budgetEntry.salesTarget);
+                    setForm(prev => ({ ...prev, totalBudget: budgetEntry.salesTarget }));
+                } else {
+                    setSharedBudgetTarget(0);
+                }
+            } catch (budgetErr) {
+                console.warn('[InspectionForm] shared_budget 再取得スキップ', budgetErr);
+            }
         } catch (error) {
             console.error('[CheckSheets] reload failed', error);
             setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
@@ -895,7 +929,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             onChange={e => handleAmountChange('totalBudget', e.target.value)}
                             placeholder="予算を入力"
                             required
+                            readOnly={sharedBudgetTarget > 0}
+                            style={sharedBudgetTarget > 0 ? { backgroundColor: '#f0fdf4', color: '#15803d', cursor: 'not-allowed' } : undefined}
                         />
+                        {sharedBudgetTarget > 0 && (
+                            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#15803d', fontWeight: 600 }}>
+                                ✔ shared_budget から自動取得（{formatThousandInput(sharedBudgetTarget)}千円）
+                            </p>
+                        )}
                     </div>
                 </div>
 
