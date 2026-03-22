@@ -173,28 +173,33 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
 
 const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
   const [thumbnailSrc, setThumbnailSrc] = useState('');
-  const [hasImageError, setHasImageError] = useState(false);
+  const [normalizedSrc, setNormalizedSrc] = useState('');
+  const [didFallbackToOriginal, setDidFallbackToOriginal] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     const resolveThumbnail = async () => {
       const originalUrl = pop.thumbUrl || '';
+      const normalizedUrl = normalizeDriveImageUrl(originalUrl);
       const fileId = extractGoogleDriveFileId(originalUrl);
       const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
       console.log('[PopibraryList] thumbnail src', {
         originalUrl,
+        normalizedUrl,
         fileId,
         displayUrl,
       });
 
       if (!displayUrl) {
         setThumbnailSrc('');
-        setHasImageError(false);
+        setNormalizedSrc('');
+        setDidFallbackToOriginal(false);
         return;
       }
 
-      setHasImageError(false);
+      setNormalizedSrc(normalizedUrl);
+      setDidFallbackToOriginal(false);
 
       if (isRemoteImageUrl(displayUrl)) {
         setThumbnailSrc(displayUrl);
@@ -219,6 +224,8 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
     };
   }, [pop.thumbUrl]);
 
+  const hasImageSource = Boolean(thumbnailSrc);
+
   return (
     <div
       style={{
@@ -239,7 +246,7 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
         flexShrink: 0
       }}
     >
-      {thumbnailSrc && !hasImageError ? (
+      {hasImageSource ? (
         <img
           src={thumbnailSrc}
           alt={pop.title}
@@ -247,10 +254,21 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
           onError={(event) => {
             console.error('[PopibraryList] thumbnail load failed', {
               originalUrl: pop.thumbUrl,
+              normalizedUrl: normalizedSrc,
               attemptedSrc: thumbnailSrc,
               currentSrc: event.currentTarget.currentSrc,
+              didFallbackToOriginal,
             });
-            setHasImageError(true);
+
+            if (!didFallbackToOriginal && normalizedSrc && normalizedSrc !== thumbnailSrc) {
+              console.log('[PopibraryList] fallback to normalized image url', {
+                originalUrl: pop.thumbUrl,
+                normalizedUrl: normalizedSrc,
+              });
+              setDidFallbackToOriginal(true);
+              setThumbnailSrc(normalizedSrc);
+              return;
+            }
           }}
           style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
         />
