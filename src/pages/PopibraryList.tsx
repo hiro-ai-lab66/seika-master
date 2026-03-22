@@ -121,7 +121,7 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
           <div
             key={pop.id}
             onClick={() => onSelectPop(pop)}
-            style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start' }}
+            style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start', minHeight: '100px' }}
           >
             <PopCardImage pop={pop} />
 
@@ -220,7 +220,25 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
   }, [pop.thumbUrl]);
 
   return (
-    <div style={{ position: 'relative', width: '96px', height: '96px', borderRadius: '14px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+    <div
+      style={{
+        position: 'relative',
+        width: 'clamp(72px, 22vw, 96px)',
+        minWidth: '72px',
+        maxWidth: '96px',
+        height: 'clamp(72px, 22vw, 96px)',
+        minHeight: '72px',
+        maxHeight: '96px',
+        aspectRatio: '1 / 1',
+        borderRadius: '14px',
+        backgroundColor: '#f8fafc',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        flexShrink: 0
+      }}
+    >
       {thumbnailSrc && !hasImageError ? (
         <img
           src={thumbnailSrc}
@@ -234,14 +252,12 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
             });
             setHasImageError(true);
           }}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          loading="lazy"
-          decoding="async"
+          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : (
-        <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-          <ImageIcon size={30} />
-          <span style={{ fontSize: '0.85rem' }}>画像なし</span>
+        <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', height: '100%' }}>
+          <ImageIcon size={24} />
+          <span style={{ fontSize: '0.72rem' }}>画像なし</span>
         </div>
       )}
     </div>
