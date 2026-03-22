@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, LogIn, Plus, RefreshCw, Search, Tag } from 'lucide-react';
 import type { PopItem } from '../types';
-import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageDisplayUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopibraryListProps {
   onSelectPop: (pop: PopItem) => void;
@@ -116,19 +116,19 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {filteredPops.map((pop) => (
           <div
             key={pop.id}
             onClick={() => onSelectPop(pop)}
-            style={{ background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+            style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start' }}
           >
             <PopCardImage pop={pop} />
 
-            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.4 }}>{pop.title}</h3>
-                <span style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>{(pop.createdAt || '').slice(0, 10)}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.5 }}>{pop.title}</h3>
+                <span style={{ fontSize: '0.76rem', color: '#64748b', whiteSpace: 'nowrap', flexShrink: 0 }}>{(pop.createdAt || '').slice(0, 10)}</span>
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -142,8 +142,8 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
                 )}
               </div>
 
-              <p style={{ margin: 0, fontSize: '0.9rem', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                {pop.improvementComment}
+              <p style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {pop.improvementComment || '説明は未登録です。'}
               </p>
 
               {isRemoteImageUrl(normalizeDriveImageUrl(pop.thumbUrl || '')) && (
@@ -152,7 +152,7 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(event) => event.stopPropagation()}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 700, textDecoration: 'none', marginTop: 'auto' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none', marginTop: 'auto' }}
                 >
                   <ExternalLink size={14} /> 画像を開く
                 </a>
@@ -172,32 +172,44 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
 };
 
 const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
-  const [thumbnailSrc, setThumbnailSrc] = useState(normalizeDriveImageUrl(pop.thumbUrl || ''));
+  const [thumbnailSrc, setThumbnailSrc] = useState('');
+  const [hasImageError, setHasImageError] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     const resolveThumbnail = async () => {
-      const normalizedUrl = normalizeDriveImageUrl(pop.thumbUrl || '');
-      if (!normalizedUrl) {
+      const originalUrl = pop.thumbUrl || '';
+      const fileId = extractGoogleDriveFileId(originalUrl);
+      const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
+      console.log('[PopibraryList] thumbnail src', {
+        originalUrl,
+        fileId,
+        displayUrl,
+      });
+
+      if (!displayUrl) {
         setThumbnailSrc('');
+        setHasImageError(false);
         return;
       }
 
-      if (isRemoteImageUrl(normalizedUrl)) {
-        setThumbnailSrc(normalizedUrl);
+      setHasImageError(false);
+
+      if (isRemoteImageUrl(displayUrl)) {
+        setThumbnailSrc(displayUrl);
         return;
       }
 
-      if (isInlineImageDataUrl(normalizedUrl)) {
-        const lightweight = await buildLightweightThumbnail(normalizedUrl);
+      if (isInlineImageDataUrl(displayUrl)) {
+        const lightweight = await buildLightweightThumbnail(displayUrl);
         if (active) {
           setThumbnailSrc(lightweight);
         }
         return;
       }
 
-      setThumbnailSrc(normalizedUrl);
+      setThumbnailSrc(displayUrl);
     };
 
     void resolveThumbnail();
@@ -208,11 +220,20 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
   }, [pop.thumbUrl]);
 
   return (
-    <div style={{ position: 'relative', height: '180px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {thumbnailSrc ? (
+    <div style={{ position: 'relative', width: '96px', height: '96px', borderRadius: '14px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+      {thumbnailSrc && !hasImageError ? (
         <img
           src={thumbnailSrc}
           alt={pop.title}
+          referrerPolicy="no-referrer"
+          onError={(event) => {
+            console.error('[PopibraryList] thumbnail load failed', {
+              originalUrl: pop.thumbUrl,
+              attemptedSrc: thumbnailSrc,
+              currentSrc: event.currentTarget.currentSrc,
+            });
+            setHasImageError(true);
+          }}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           loading="lazy"
           decoding="async"

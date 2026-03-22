@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Tag, MessageCircle, Calendar, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import type { PopItem } from '../types';
-import { isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageDisplayUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopDetailProps {
   pop: PopItem;
@@ -9,8 +9,9 @@ interface PopDetailProps {
 }
 
 export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
-  const imageSource = normalizeDriveImageUrl(pop.thumbUrl || '');
+  const imageSource = buildGoogleDriveImageDisplayUrl(pop.thumbUrl || '', 1600);
   const hasRemoteImage = isRemoteImageUrl(imageSource);
+  const originalImageUrl = normalizeDriveImageUrl(pop.thumbUrl || '');
 
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
@@ -78,7 +79,7 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                 {imageSource ? (
                   <a
-                    href={imageSource}
+                    href={originalImageUrl || imageSource}
                     target={hasRemoteImage ? '_blank' : undefined}
                     rel={hasRemoteImage ? 'noopener noreferrer' : undefined}
                     style={{ flex: 1, minWidth: '200px', backgroundColor: 'var(--primary)', color: 'white', padding: '14px', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textDecoration: 'none' }}
