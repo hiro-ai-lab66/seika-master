@@ -3,6 +3,7 @@ import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon, Images } from
 import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
+import { isRemoteImageUrl } from '../services/storageService';
 
 interface SellfloorRecordFormProps {
   onSave: (record: SellfloorRecord) => Promise<{ message: string }>;
@@ -30,6 +31,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   const [comment, setComment] = useState('');
   const [author, setAuthor] = useState(defaultAuthor);
   const [selectedPopId, setSelectedPopId] = useState<string>('');
+  const [imageUrl, setImageUrl] = useState('');
   
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -60,6 +62,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setLocation('');
     setComment('');
     setAuthor(defaultAuthor);
+    setImageUrl('');
     setPhotoFile(null);
     if (photoPreview) {
       URL.revokeObjectURL(photoPreview);
@@ -73,19 +76,27 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   };
 
   const handleSave = async () => {
-    if (!photoFile) {
-        alert("写真を選択してください");
+    const normalizedImageUrl = imageUrl.trim();
+
+    if (!normalizedImageUrl && !photoFile) {
+        alert("画像URLを入力するか、写真を選択してください");
         return;
     }
     
     setIsSaving(true);
     setSaveSuccess(false);
     try {
-        const photoUrl = await uploadImageFileToGoogleDrive(photoFile, {
-            fileNamePrefix: 'sellfloor',
-            maxWidth: 800,
-            maxHeight: 800,
-            quality: 0.65
+        if (normalizedImageUrl && !isRemoteImageUrl(normalizedImageUrl)) {
+            alert("画像URL は http(s) URL を入力してください");
+            setIsSaving(false);
+            return;
+        }
+
+        const photoUrl = normalizedImageUrl || await uploadImageFileToGoogleDrive(photoFile!, {
+          fileNamePrefix: 'sellfloor',
+          maxWidth: 800,
+          maxHeight: 800,
+          quality: 0.65
         });
         
         const newRecord: SellfloorRecord = {
@@ -145,7 +156,21 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
                 写真 <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <div style={{ marginBottom: '8px', fontSize: '0.8rem', color: '#64748b' }}>
-                保存時に画像を圧縮して Google Drive にアップロードし、Google Sheets には URL だけ保存します。
+                画像URLがある場合はそのURLを優先保存します。未入力のときだけ画像をアップロードします。
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    画像URL（Google Drive共有リンク）
+                </label>
+                <input
+                    type="url"
+                    className="modern-input"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    style={{ width: '100%' }}
+                />
             </div>
             
             <input
