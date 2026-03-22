@@ -38,6 +38,8 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,6 +56,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
       const previewUrl = URL.createObjectURL(file);
       setPhotoPreview(previewUrl);
       setSaveSuccess(false);
+      setSaveError('');
     }
   };
 
@@ -69,6 +72,8 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     }
     setPhotoPreview(null);
     setSaveSuccess(false);
+    setSaveMessage('');
+    setSaveError('');
     setSelectedPopId('');
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -83,12 +88,17 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         return;
     }
     
+    console.log("save start");
+    console.log("imageUrl:", normalizedImageUrl);
     setIsSaving(true);
     setSaveSuccess(false);
+    setSaveError('');
+    setSaveMessage('');
     try {
         if (normalizedImageUrl && !isRemoteImageUrl(normalizedImageUrl)) {
             console.log('[SellfloorRecordForm] invalid imageUrl provided', { imageUrl: normalizedImageUrl });
             alert("画像URL は http(s) URL を入力してください");
+            setSaveError('画像URL の形式が不正です');
             return;
         }
         
@@ -123,9 +133,12 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
+        console.log("payload:", newRecord);
         
         const result = await onSave(newRecord);
+        console.log("save success", result);
         setSaveSuccess(true);
+        setSaveMessage(result.message || '保存しました');
         if (result.message) {
           console.log('[SellfloorRecordForm] save result', result.message);
         }
@@ -134,7 +147,9 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             if (onBack) onBack();
         }, 1500);
     } catch (error) {
+        console.log("save fail", error);
         console.error("Failed to save sellfloor record", error);
+        setSaveError(error instanceof Error ? error.message : "保存に失敗しました");
         alert(error instanceof Error ? error.message : "保存に失敗しました");
     } finally {
         setIsSaving(false);
@@ -159,6 +174,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         {(sharedStatus || sharedError || isSharedLoading) && (
           <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: sharedError ? '#fef2f2' : '#eff6ff', color: sharedError ? '#b91c1c' : '#0369a1', fontSize: '0.85rem', fontWeight: 700 }}>
             {isSharedLoading ? 'Google Sheets 共有データを確認中です' : sharedError || sharedStatus}
+          </div>
+        )}
+        {saveMessage && (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#f0fdf4', color: '#166534', fontSize: '0.85rem', fontWeight: 700 }}>
+            {saveMessage}
+          </div>
+        )}
+        {saveError && (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#fef2f2', color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700 }}>
+            {saveError}
           </div>
         )}
         
@@ -351,10 +376,10 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         {/* Action Button */}
         <button
           onClick={handleSave}
-          disabled={!photoFile || isSaving || saveSuccess}
+          disabled={(!photoFile && !imageUrl.trim()) || isSaving || saveSuccess}
           style={{
             width: '100%',
-            backgroundColor: saveSuccess ? '#10b981' : (photoFile && !isSaving ? 'var(--primary)' : '#cbd5e1'),
+            backgroundColor: saveSuccess ? '#10b981' : ((photoFile || imageUrl.trim()) && !isSaving ? 'var(--primary)' : '#cbd5e1'),
             color: 'white',
             border: 'none',
             padding: '16px',
@@ -365,7 +390,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            cursor: (!photoFile || isSaving || saveSuccess) ? 'not-allowed' : 'pointer',
+            cursor: ((!photoFile && !imageUrl.trim()) || isSaving || saveSuccess) ? 'not-allowed' : 'pointer',
             transition: 'all 0.3s'
           }}
         >

@@ -375,6 +375,7 @@ function App() {
   };
 
   const saveSellfloorRecord = async (record: SellfloorRecord) => {
+    console.log('[App] saveSellfloorRecord start', record);
     setSellfloorAuthor(record.author || '');
     setState(prev => ({
       ...prev,
@@ -399,6 +400,7 @@ function App() {
       await upsertSharedSellfloorRecord(record);
       setSellfloorSharedError(null);
       setSellfloorSharedStatus(`Google Sheets に共有済み（シート: ${getSharedSellfloorSheetName()}）`);
+      void loadSellfloorRecordsFromSheets(false);
       showToast('売場記録を保存しました');
       return { message: 'Google Sheets に共有保存しました' };
     } catch (error) {
