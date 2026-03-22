@@ -112,6 +112,23 @@ export const buildLightweightThumbnail = async (source: string): Promise<string>
   });
 };
 
+export const normalizeDriveImageUrl = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+  if (fileMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+  }
+
+  const openMatch = trimmed.match(/[?&]id=([^&]+)/i);
+  if (/drive\.google\.com/i.test(trimmed) && openMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
+  }
+
+  return trimmed;
+};
+
 export const isRemoteImageUrl = (value: string): boolean => /^https?:\/\//i.test(value.trim());
 export const isInlineImageDataUrl = (value: string): boolean => /^data:image\//i.test(value.trim());
 export const uploadGenericFile = async (file: File): Promise<string> => {

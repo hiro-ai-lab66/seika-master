@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, LogIn, Plus, RefreshCw, Search, Tag } from 'lucide-react';
 import type { PopItem } from '../types';
-import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
+import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopibraryListProps {
   onSelectPop: (pop: PopItem) => void;
@@ -146,9 +146,9 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
                 {pop.improvementComment}
               </p>
 
-              {isRemoteImageUrl(pop.thumbUrl || '') && (
+              {isRemoteImageUrl(normalizeDriveImageUrl(pop.thumbUrl || '')) && (
                 <a
-                  href={pop.thumbUrl}
+                  href={normalizeDriveImageUrl(pop.thumbUrl || '')}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(event) => event.stopPropagation()}
@@ -172,31 +172,32 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
 };
 
 const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
-  const [thumbnailSrc, setThumbnailSrc] = useState(pop.thumbUrl || '');
+  const [thumbnailSrc, setThumbnailSrc] = useState(normalizeDriveImageUrl(pop.thumbUrl || ''));
 
   useEffect(() => {
     let active = true;
 
     const resolveThumbnail = async () => {
-      if (!pop.thumbUrl) {
+      const normalizedUrl = normalizeDriveImageUrl(pop.thumbUrl || '');
+      if (!normalizedUrl) {
         setThumbnailSrc('');
         return;
       }
 
-      if (isRemoteImageUrl(pop.thumbUrl)) {
-        setThumbnailSrc(pop.thumbUrl);
+      if (isRemoteImageUrl(normalizedUrl)) {
+        setThumbnailSrc(normalizedUrl);
         return;
       }
 
-      if (isInlineImageDataUrl(pop.thumbUrl)) {
-        const lightweight = await buildLightweightThumbnail(pop.thumbUrl);
+      if (isInlineImageDataUrl(normalizedUrl)) {
+        const lightweight = await buildLightweightThumbnail(normalizedUrl);
         if (active) {
           setThumbnailSrc(lightweight);
         }
         return;
       }
 
-      setThumbnailSrc(pop.thumbUrl);
+      setThumbnailSrc(normalizedUrl);
     };
 
     void resolveThumbnail();

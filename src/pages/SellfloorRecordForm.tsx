@@ -3,7 +3,7 @@ import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon, Images } from
 import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
-import { isRemoteImageUrl } from '../services/storageService';
+import { isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface SellfloorRecordFormProps {
   onSave: (record: SellfloorRecord) => Promise<{ message: string }>;
@@ -81,7 +81,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   };
 
   const handleSave = async () => {
-    const normalizedImageUrl = imageUrl.trim();
+    const normalizedImageUrl = normalizeDriveImageUrl(imageUrl);
 
     if (!normalizedImageUrl && !photoFile) {
         alert("画像URLを入力するか、写真を選択してください");
@@ -205,7 +205,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
                     className="modern-input"
                     value={imageUrl}
                     onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder="https://drive.google.com/..."
+                    placeholder="https://drive.google.com/file/d/..."
                     style={{ width: '100%' }}
                 />
             </div>

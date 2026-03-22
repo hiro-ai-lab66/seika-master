@@ -7,7 +7,7 @@ import {
     readSharedSpreadsheetMetadata,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
-import { isRemoteImageUrl } from './storageService';
+import { isRemoteImageUrl, normalizeDriveImageUrl } from './storageService';
 
 const POPIBRARY_SHEET_NAME = (import.meta as any).env?.VITE_POPIBRARY_SHEET_TAB?.trim() || 'shared_popibrary';
 const HEADER_ROW = ['id', '日付', 'タイトル', 'カテゴリ', '説明', '画像URL', '作成者', '更新日時'];
@@ -79,7 +79,7 @@ const toPopItem = (row: string[]): PopItem => {
         season: '',
         usage: '',
         size: '',
-        thumbUrl: row[5] || '',
+        thumbUrl: normalizeDriveImageUrl(row[5] || ''),
         pdfUrl: '',
         improvementComment: row[4] || '',
         author: row[6] || '',
@@ -120,7 +120,7 @@ export const appendSharedPopibraryItem = async (pop: PopItem) => {
     const date = (pop.createdAt || new Date().toISOString()).slice(0, 10);
     const updatedAt = new Date().toISOString();
     const normalizedImageSource = (() => {
-        const source = (pop.thumbUrl || '').trim();
+        const source = normalizeDriveImageUrl(pop.thumbUrl || '');
         if (!source) return '';
         if (isRemoteImageUrl(source)) return source;
         return '';

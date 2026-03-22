@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn } from 'lucide-react';
 import type { SellfloorRecord } from '../types';
-import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
+import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface SellfloorRecordListProps {
   records: SellfloorRecord[];
@@ -170,31 +170,32 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
 };
 
 const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
-  const [thumbnailSrc, setThumbnailSrc] = useState(photoUrl || '');
+  const [thumbnailSrc, setThumbnailSrc] = useState(normalizeDriveImageUrl(photoUrl || ''));
 
   useEffect(() => {
     let active = true;
 
     const resolveThumbnail = async () => {
-      if (!photoUrl) {
+      const normalizedUrl = normalizeDriveImageUrl(photoUrl || '');
+      if (!normalizedUrl) {
         setThumbnailSrc('');
         return;
       }
 
-      if (isRemoteImageUrl(photoUrl)) {
-        setThumbnailSrc(photoUrl);
+      if (isRemoteImageUrl(normalizedUrl)) {
+        setThumbnailSrc(normalizedUrl);
         return;
       }
 
-      if (isInlineImageDataUrl(photoUrl)) {
-        const thumbnail = await buildLightweightThumbnail(photoUrl);
+      if (isInlineImageDataUrl(normalizedUrl)) {
+        const thumbnail = await buildLightweightThumbnail(normalizedUrl);
         if (active) {
           setThumbnailSrc(thumbnail);
         }
         return;
       }
 
-      setThumbnailSrc(photoUrl);
+      setThumbnailSrc(normalizedUrl);
     };
 
     void resolveThumbnail();

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, CheckCircle, Image as ImageIcon, Images, RefreshCw, Save } from 'lucide-react';
 import type { PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { isRemoteImageUrl } from '../services/storageService';
+import { isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
 
 interface PopLibraryFormProps {
@@ -63,7 +63,7 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
 
     try {
       const isoDate = new Date(`${date}T00:00:00`).toISOString();
-      const normalizedUrl = imageUrl.trim();
+      const normalizedUrl = normalizeDriveImageUrl(imageUrl);
       const preferredImageSource = normalizedUrl
         ? normalizedUrl
         : imageFile

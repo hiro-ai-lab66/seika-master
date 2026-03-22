@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2, Trash2, MoreVertical, Edit } from 'lucide-react';
 import type { SellfloorRecord, PopItem, AIAnalysisResult, InspectionEntry } from '../types';
 import { generateSellfloorAnalysis } from '../services/aiAnalysisService';
+import { normalizeDriveImageUrl } from '../services/storageService';
 
 interface SellfloorRecordDetailProps {
   record: SellfloorRecord;
@@ -27,6 +28,7 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const createdDate = new Date(record.createdAt);
+  const imageSource = normalizeDriveImageUrl(record.photoUrl || '');
 
   const handleAnalyze = async () => {
       if (!onSaveAnalysis) return;
@@ -115,9 +117,9 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
         
         {/* Main Photo */}
         <div style={{ width: '100%', backgroundColor: '#000', position: 'relative', display: 'flex', justifyContent: 'center' }}>
-          {record.photoUrl ? (
+          {imageSource ? (
             <img 
-              src={record.photoUrl} 
+              src={imageSource} 
               alt="売場写真" 
               style={{ width: '100%', maxHeight: '500px', objectFit: 'contain' }} 
             />
@@ -256,8 +258,8 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                          }}
                        >
                            <div style={{ width: '60px', height: '60px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#f1f5f9', flexShrink: 0 }}>
-                               {attachedPop.thumbUrl ? (
-                                 <img src={attachedPop.thumbUrl} alt="POP thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                               {normalizeDriveImageUrl(attachedPop.thumbUrl || '') ? (
+                                 <img src={normalizeDriveImageUrl(attachedPop.thumbUrl || '')} alt="POP thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                ) : (
                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                                    <ImageIcon size={20} />

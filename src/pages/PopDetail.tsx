@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Tag, MessageCircle, Calendar, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import type { PopItem } from '../types';
-import { isRemoteImageUrl } from '../services/storageService';
+import { isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopDetailProps {
   pop: PopItem;
@@ -9,7 +9,7 @@ interface PopDetailProps {
 }
 
 export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
-  const imageSource = pop.thumbUrl || '';
+  const imageSource = normalizeDriveImageUrl(pop.thumbUrl || '');
   const hasRemoteImage = isRemoteImageUrl(imageSource);
 
   return (
