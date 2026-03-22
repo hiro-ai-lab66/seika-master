@@ -87,17 +87,29 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveSuccess(false);
     try {
         if (normalizedImageUrl && !isRemoteImageUrl(normalizedImageUrl)) {
+            console.log('[SellfloorRecordForm] invalid imageUrl provided', { imageUrl: normalizedImageUrl });
             alert("画像URL は http(s) URL を入力してください");
-            setIsSaving(false);
             return;
         }
-
-        const photoUrl = normalizedImageUrl || await uploadImageFileToGoogleDrive(photoFile!, {
-          fileNamePrefix: 'sellfloor',
-          maxWidth: 800,
-          maxHeight: 800,
-          quality: 0.65
-        });
+        
+        let photoUrl = '';
+        if (normalizedImageUrl) {
+          console.log('[SellfloorRecordForm] using manual imageUrl and skipping drive upload', {
+            imageUrl: normalizedImageUrl,
+            hasPhotoFile: Boolean(photoFile)
+          });
+          photoUrl = normalizedImageUrl;
+        } else {
+          console.log('[SellfloorRecordForm] uploading image file to drive', {
+            fileName: photoFile?.name || null
+          });
+          photoUrl = await uploadImageFileToGoogleDrive(photoFile!, {
+            fileNamePrefix: 'sellfloor',
+            maxWidth: 800,
+            maxHeight: 800,
+            quality: 0.65
+          });
+        }
         
         const newRecord: SellfloorRecord = {
             id: crypto.randomUUID(),
