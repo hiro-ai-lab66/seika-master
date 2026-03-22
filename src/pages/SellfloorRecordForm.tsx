@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon, Images } from 'lucide-react';
 import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
@@ -10,6 +10,7 @@ interface SellfloorRecordFormProps {
   currentDate: string;
   savedPops?: PopItem[];
   defaultAuthor?: string;
+  existingRecord?: SellfloorRecord | null;
   sharedStatus?: string | null;
   sharedError?: string | null;
   isSharedLoading?: boolean;
@@ -21,6 +22,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   currentDate,
   savedPops = [],
   defaultAuthor = '',
+  existingRecord = null,
   sharedStatus,
   sharedError,
   isSharedLoading = false,
@@ -41,6 +43,28 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEditMode = Boolean(existingRecord);
+
+  useEffect(() => {
+    setProduct(existingRecord?.product || '');
+    setLocation(existingRecord?.location || '');
+    setComment(existingRecord?.comment || '');
+    setAuthor(existingRecord?.author || defaultAuthor);
+    setSelectedPopId(existingRecord?.popId || '');
+    setImageUrl(existingRecord?.photoUrl || '');
+    setPhotoFile(null);
+    if (photoPreview) {
+      URL.revokeObjectURL(photoPreview);
+    }
+    setPhotoPreview(null);
+    setIsSaving(false);
+    setSaveSuccess(false);
+    setSaveMessage('');
+    setSaveError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [existingRecord, defaultAuthor]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -122,15 +146,15 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         }
         
         const newRecord: SellfloorRecord = {
-            id: crypto.randomUUID(),
-            date: currentDate || getLocalTodayDateString(),
+            id: existingRecord?.id || crypto.randomUUID(),
+            date: existingRecord?.date || currentDate || getLocalTodayDateString(),
             product,
             location,
             comment,
             photoUrl,
             popId: selectedPopId,
             author: author.trim(),
-            createdAt: new Date().toISOString(),
+            createdAt: existingRecord?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
         console.log("payload:", newRecord);
@@ -138,7 +162,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         const result = await onSave(newRecord);
         console.log("save success", result);
         setSaveSuccess(true);
-        setSaveMessage(result.message || '保存しました');
+        setSaveMessage(result.message || (isEditMode ? '更新しました' : '保存しました'));
         if (result.message) {
           console.log('[SellfloorRecordForm] save result', result.message);
         }
@@ -159,7 +183,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   return (
     <div className="page-container" style={{ maxWidth: '600px', margin: '0 auto', paddingBottom: '80px' }}>
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>記録を作成</h2>
+        <h2>{isEditMode ? '記録を編集' : '記録を作成'}</h2>
         {onBack && (
           <button 
              onClick={onBack}
@@ -395,11 +419,11 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
           }}
         >
             {isSaving ? (
-                <>保存中...</>
+                <>{isEditMode ? '更新中...' : '保存中...'}</>
             ) : saveSuccess ? (
-                <><CheckCircle size={22} /> 保存しました！</>
+                <><CheckCircle size={22} /> {isEditMode ? '更新しました！' : '保存しました！'}</>
             ) : (
-                <><Save size={22} /> 売場記録を保存</>
+                <><Save size={22} /> {isEditMode ? '売場記録を更新' : '売場記録を保存'}</>
             )}
         </button>
       </div>

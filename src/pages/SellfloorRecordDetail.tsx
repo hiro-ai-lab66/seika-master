@@ -11,6 +11,7 @@ interface SellfloorRecordDetailProps {
   dailyData?: InspectionEntry;
   onSaveAnalysis?: (result: AIAnalysisResult) => void;
   onDeleteRecord?: (id: string) => void;
+  onEditRecord?: (record: SellfloorRecord) => void;
   onBack: () => void;
   onViewPop?: (pop: PopItem) => void;
 }
@@ -22,6 +23,7 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
   dailyData,
   onSaveAnalysis,
   onDeleteRecord,
+  onEditRecord,
   onBack, 
   onViewPop 
 }) => {
@@ -102,7 +104,10 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                         boxShadow: 'var(--shadow-lg)', zIndex: 100, overflow: 'hidden' 
                     }}>
                         <button 
-                            onClick={() => { setShowMenu(false); alert("編集機能は今後のアップデートで追加予定です。"); }}
+                            onClick={() => {
+                              setShowMenu(false);
+                              onEditRecord?.(record);
+                            }}
                             style={{ 
                                 display: 'flex', alignItems: 'center', gap: '8px', width: '100%', 
                                 padding: '12px 16px', border: 'none', background: 'none', 

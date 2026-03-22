@@ -160,6 +160,38 @@ export const upsertSharedSellfloorRecord = async (record: SellfloorRecord) => {
     await appendSharedSheetValues(appendRange, values);
 };
 
+export const updateSharedSellfloorRecord = async (record: SellfloorRecord) => {
+    const ready = await ensureSharedSheetsSession(true);
+    if (!ready) {
+        throw new Error('Google Sheets 未ログイン');
+    }
+
+    await ensureSellfloorHeader();
+    const sheetName = await resolveSellfloorSheetName();
+    const range = buildSheetRange(sheetName, 'A2:J');
+    logSellfloorRequest('read-existing-rows-for-update', sheetName, range);
+    const result = await readSharedSheetValues(range);
+    const rows: Array<{ rowNumber: number; id: string }> = (result.values || [])
+        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
+        .map((row: string[], index: number) => ({
+            rowNumber: index + 2,
+            id: row[0] || ''
+        }));
+
+    const target = rows.find((row: { rowNumber: number; id: string }) => row.id === record.id);
+    if (!target?.rowNumber) {
+        throw new Error('更新対象の売場記録が見つかりません');
+    }
+
+    const updateRange = buildSheetRange(sheetName, `A${target.rowNumber}:J${target.rowNumber}`);
+    const values = [[...toRowValues({
+        ...record,
+        updatedAt: new Date().toISOString()
+    })]];
+    logSellfloorRequest('update-row-by-id', sheetName, updateRange);
+    await writeSharedSheetValues(updateRange, values);
+};
+
 export const deleteSharedSellfloorRecord = async (recordId: string) => {
     const ready = await ensureSharedSheetsSession(true);
     if (!ready) {

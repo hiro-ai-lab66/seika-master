@@ -23,7 +23,7 @@ import { MarketInfoAnalysis } from './pages/MarketInfoAnalysis';
 import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import { DailyNotesPage } from './pages/DailyNotesPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
-import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
+import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { ensureSharedSheetsSession, isSheetsConfigured } from './services/googleSheetsInventoryService';
 import { appendSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName } from './services/googleSheetsPopibraryService';
 
@@ -86,6 +86,7 @@ function App() {
   // Sub-routing state for sellfloor and popibrary
   const [sellfloorView, setSellfloorView] = useState<'list' | 'form' | 'detail' | 'ai-history'>('list');
   const [selectedSellfloorRecord, setSelectedSellfloorRecord] = useState<SellfloorRecord | null>(null);
+  const [editingSellfloorRecord, setEditingSellfloorRecord] = useState<SellfloorRecord | null>(null);
   const [sellfloorSharedStatus, setSellfloorSharedStatus] = useState<string | null>(null);
   const [sellfloorSharedError, setSellfloorSharedError] = useState<string | null>(null);
   const [isSellfloorSharedLoading, setIsSellfloorSharedLoading] = useState(false);
@@ -376,16 +377,23 @@ function App() {
 
   const saveSellfloorRecord = async (record: SellfloorRecord) => {
     console.log('[App] saveSellfloorRecord start', record);
+    const isEditing = Boolean(editingSellfloorRecord && editingSellfloorRecord.id === record.id);
+    const updatedRecord = {
+      ...record,
+      updatedAt: new Date().toISOString(),
+      createdAt: record.createdAt || new Date().toISOString()
+    };
     setSellfloorAuthor(record.author || '');
     setState(prev => ({
       ...prev,
-      sellfloorRecords: mergeSellfloorRecords(prev.sellfloorRecords || [], [record])
+      sellfloorRecords: mergeSellfloorRecords(prev.sellfloorRecords || [], [updatedRecord])
     }));
+    setSelectedSellfloorRecord(updatedRecord);
 
     if (!isSheetsConfigured()) {
-      setSellfloorSharedStatus('ローカルに保存しました');
-      showToast('売場記録を保存しました');
-      return { message: 'ローカルに保存しました' };
+      setSellfloorSharedStatus(isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました');
+      showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
+      return { message: isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました' };
     }
 
     try {
@@ -397,17 +405,21 @@ function App() {
         return { message: 'ローカル保存は完了しました。共有は保留です' };
       }
 
-      await upsertSharedSellfloorRecord(record);
+      if (isEditing) {
+        await updateSharedSellfloorRecord(updatedRecord);
+      } else {
+        await upsertSharedSellfloorRecord(updatedRecord);
+      }
       setSellfloorSharedError(null);
-      setSellfloorSharedStatus(`Google Sheets に共有済み（シート: ${getSharedSellfloorSheetName()}）`);
+      setSellfloorSharedStatus(isEditing ? '更新しました' : `Google Sheets に共有済み（シート: ${getSharedSellfloorSheetName()}）`);
       void loadSellfloorRecordsFromSheets(false);
-      showToast('売場記録を保存しました');
-      return { message: 'Google Sheets に共有保存しました' };
+      showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
+      return { message: isEditing ? '更新しました' : 'Google Sheets に共有保存しました' };
     } catch (error) {
       console.error('[App] failed to sync sellfloor record', error);
       setSellfloorSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有保存に失敗しました'}`);
-      showToast('売場記録を保存しました');
-      return { message: 'ローカル保存は完了、共有保存は失敗しました' };
+      showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
+      return { message: isEditing ? 'ローカル更新は完了、共有更新は失敗しました' : 'ローカル保存は完了、共有保存は失敗しました' };
     }
   };
 
@@ -574,10 +586,14 @@ function App() {
                currentDate={currentDate}
                savedPops={state.popData || []}
                defaultAuthor={sellfloorAuthor}
+               existingRecord={editingSellfloorRecord}
                sharedStatus={sellfloorSharedStatus}
                sharedError={sellfloorSharedError}
                isSharedLoading={isSellfloorSharedLoading}
-               onBack={() => setSellfloorView('list')}
+               onBack={() => {
+                 setSellfloorView(selectedSellfloorRecord && editingSellfloorRecord ? 'detail' : 'list');
+                 setEditingSellfloorRecord(null);
+               }}
              />
            );
         }
@@ -606,6 +622,11 @@ function App() {
                     dailyData={dailyData}
                     onSaveAnalysis={saveAiAnalysis}
                     onDeleteRecord={deleteSellfloorRecord}
+                    onEditRecord={(record) => {
+                        setEditingSellfloorRecord(record);
+                        setSelectedSellfloorRecord(record);
+                        setSellfloorView('form');
+                    }}
                     onBack={() => setSellfloorView('list')} 
                     onViewPop={(pop) => {
                         setSelectedPop(pop);
@@ -616,7 +637,10 @@ function App() {
         }
         return <SellfloorRecordList 
                  records={state.sellfloorRecords || []} 
-                 onNewRecord={() => setSellfloorView('form')} 
+                 onNewRecord={() => {
+                   setEditingSellfloorRecord(null);
+                   setSellfloorView('form');
+                 }} 
                  onSelectRecord={(r) => { setSelectedSellfloorRecord(r); setSellfloorView('detail'); }} 
                  onReloadShared={() => void loadSellfloorRecordsFromSheets(false)}
                  onLoginShared={() => void loadSellfloorRecordsFromSheets(true)}
