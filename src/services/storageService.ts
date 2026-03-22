@@ -152,6 +152,15 @@ export const buildGoogleDriveImageDisplayUrl = (value: string, width: number): s
   return normalizedValue;
 };
 
+export const buildGoogleDriveImageOpenUrl = (value: string): string => {
+  const normalizedValue = normalizeDriveImageUrl(value);
+  const fileId = extractGoogleDriveFileId(normalizedValue);
+  if (fileId) {
+    return `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
+  }
+  return normalizedValue;
+};
+
 export const isRemoteImageUrl = (value: string): boolean => /^https?:\/\//i.test(value.trim());
 export const isInlineImageDataUrl = (value: string): boolean => /^data:image\//i.test(value.trim());
 export const uploadGenericFile = async (file: File): Promise<string> => {

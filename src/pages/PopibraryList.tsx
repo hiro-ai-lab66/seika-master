@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, LogIn, Plus, RefreshCw, Search, Tag } from 'lucide-react';
 import type { PopItem } from '../types';
-import { buildGoogleDriveImageDisplayUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageOpenUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopibraryListProps {
   onSelectPop: (pop: PopItem) => void;
@@ -118,47 +118,7 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {filteredPops.map((pop) => (
-          <div
-            key={pop.id}
-            onClick={() => onSelectPop(pop)}
-            style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start', minHeight: '100px' }}
-          >
-            <PopCardImage pop={pop} />
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.5 }}>{pop.title}</h3>
-                <span style={{ fontSize: '0.76rem', color: '#64748b', whiteSpace: 'nowrap', flexShrink: 0 }}>{(pop.createdAt || '').slice(0, 10)}</span>
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '999px', color: '#475569' }}>
-                  <Tag size={12} /> {pop.categoryLarge || '未分類'}
-                </span>
-                {pop.author && (
-                  <span style={{ fontSize: '0.75rem', backgroundColor: '#ecfeff', padding: '4px 8px', borderRadius: '999px', color: '#155e75' }}>
-                    {pop.author}
-                  </span>
-                )}
-              </div>
-
-              <p style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                {pop.improvementComment || '説明は未登録です。'}
-              </p>
-
-              {isRemoteImageUrl(normalizeDriveImageUrl(pop.thumbUrl || '')) && (
-                <a
-                  href={normalizeDriveImageUrl(pop.thumbUrl || '')}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => event.stopPropagation()}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none', marginTop: 'auto' }}
-                >
-                  <ExternalLink size={14} /> 画像を開く
-                </a>
-              )}
-            </div>
-          </div>
+          <PopCard key={pop.id} pop={pop} onSelectPop={onSelectPop} />
         ))}
       </div>
 
@@ -167,6 +127,63 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
           POP がありません。
         </div>
       )}
+    </div>
+  );
+};
+
+const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void }> = ({ pop, onSelectPop }) => {
+  const originalUrl = pop.thumbUrl || '';
+  const fileId = extractGoogleDriveFileId(originalUrl);
+  const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
+  const openUrl = buildGoogleDriveImageOpenUrl(originalUrl);
+
+  console.log('[PopibraryList] card urls', {
+    originalUrl,
+    fileId,
+    displayUrl,
+    openUrl,
+  });
+
+  return (
+    <div
+      onClick={() => onSelectPop(pop)}
+      style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start', minHeight: '100px' }}
+    >
+      <PopCardImage pop={pop} />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.5 }}>{pop.title}</h3>
+          <span style={{ fontSize: '0.76rem', color: '#64748b', whiteSpace: 'nowrap', flexShrink: 0 }}>{(pop.createdAt || '').slice(0, 10)}</span>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '999px', color: '#475569' }}>
+            <Tag size={12} /> {pop.categoryLarge || '未分類'}
+          </span>
+          {pop.author && (
+            <span style={{ fontSize: '0.75rem', backgroundColor: '#ecfeff', padding: '4px 8px', borderRadius: '999px', color: '#155e75' }}>
+              {pop.author}
+            </span>
+          )}
+        </div>
+
+        <p style={{ margin: 0, fontSize: '0.88rem', color: '#334155', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {pop.improvementComment || '説明は未登録です。'}
+        </p>
+
+        {isRemoteImageUrl(openUrl) && (
+          <a
+            href={openUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none', marginTop: 'auto' }}
+          >
+            <ExternalLink size={14} /> 画像を開く
+          </a>
+        )}
+      </div>
     </div>
   );
 };
