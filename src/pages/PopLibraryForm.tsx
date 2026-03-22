@@ -8,6 +8,7 @@ import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageServic
 interface PopLibraryFormProps {
   onSave: (pop: PopItem) => Promise<{ message: string }>;
   defaultAuthor?: string;
+  existingPop?: PopItem | null;
   sharedStatus?: string | null;
   sharedError?: string | null;
   isSharedLoading?: boolean;
@@ -17,13 +18,14 @@ interface PopLibraryFormProps {
 export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
   onSave,
   defaultAuthor = '',
+  existingPop = null,
   sharedStatus,
   sharedError,
   isSharedLoading = false,
   onBack
 }) => {
   const today = useMemo(() => getLocalTodayDateString(), []);
-  const [date] = useState(today);
+  const [date, setDate] = useState(today);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('野菜');
   const [description, setDescription] = useState('');
@@ -33,7 +35,10 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
   const [imagePreview, setImagePreview] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEditMode = Boolean(existingPop);
 
   useEffect(() => {
     return () => {
@@ -42,6 +47,27 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
       }
     };
   }, [imagePreview]);
+
+  useEffect(() => {
+    const nextDate = existingPop?.createdAt ? existingPop.createdAt.slice(0, 10) : today;
+    setDate(nextDate);
+    setTitle(existingPop?.title || '');
+    setCategory(existingPop?.categoryLarge || '野菜');
+    setDescription(existingPop?.improvementComment || '');
+    setImageUrl(existingPop?.thumbUrl || '');
+    setAuthor(existingPop?.author || defaultAuthor);
+    setImageFile(null);
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImagePreview('');
+    setSaveSuccess(false);
+    setSaveMessage('');
+    setSaveError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [existingPop, defaultAuthor, today]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -60,6 +86,8 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
 
     setIsSaving(true);
     setSaveSuccess(false);
+    setSaveMessage('');
+    setSaveError('');
 
     try {
       const isoDate = new Date(`${date}T00:00:00`).toISOString();
@@ -77,12 +105,12 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
 
       if (normalizedUrl && !isRemoteImageUrl(normalizedUrl)) {
         alert('画像URL は http(s) URL を入力してください');
-        setIsSaving(false);
+        setSaveError('画像URL は http(s) URL を入力してください');
         return;
       }
 
       const result = await onSave({
-        id: '',
+        id: existingPop?.id || '',
         title: title.trim(),
         categoryLarge: category.trim(),
         categorySmall: '',
@@ -93,10 +121,11 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
         pdfUrl: '',
         improvementComment: description.trim(),
         author: author.trim(),
-        createdAt: isoDate,
+        createdAt: existingPop?.createdAt || isoDate,
         updatedAt: new Date().toISOString()
       });
       setSaveSuccess(true);
+      setSaveMessage(result.message || (isEditMode ? '更新しました' : '保存しました'));
       if (result.message) {
         console.log('[PopLibraryForm] save result', result.message);
       }
@@ -105,7 +134,8 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
       }, 1200);
     } catch (error) {
       console.error('[PopLibraryForm] save failed', error);
-      alert('保存に失敗しました');
+      setSaveError(error instanceof Error ? error.message : '保存に失敗しました');
+      alert(error instanceof Error ? error.message : '保存に失敗しました');
     } finally {
       setIsSaving(false);
     }
@@ -114,7 +144,7 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
   return (
     <div className="page-container" style={{ maxWidth: '640px', margin: '0 auto', paddingBottom: '80px' }}>
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>POPを追加</h2>
+        <h2>{isEditMode ? 'POPを編集' : 'POPを追加'}</h2>
         {onBack && (
           <button
             onClick={onBack}
@@ -129,6 +159,16 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
         {(sharedStatus || sharedError || isSharedLoading) && (
           <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: sharedError ? '#fef2f2' : '#eff6ff', color: sharedError ? '#b91c1c' : '#0369a1', fontSize: '0.85rem', fontWeight: 700 }}>
             {isSharedLoading ? 'Google Sheets 共有データを確認中です' : sharedError || sharedStatus}
+          </div>
+        )}
+        {saveMessage && (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#f0fdf4', color: '#166534', fontSize: '0.85rem', fontWeight: 700 }}>
+            {saveMessage}
+          </div>
+        )}
+        {saveError && (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#fef2f2', color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700 }}>
+            {saveError}
           </div>
         )}
 
@@ -240,7 +280,7 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
             cursor: isSaving || saveSuccess ? 'not-allowed' : 'pointer'
           }}
         >
-          {isSaving ? '保存中...' : saveSuccess ? <><CheckCircle size={20} /> 保存しました</> : <><Save size={20} /> 保存する</>}
+          {isSaving ? (isEditMode ? '更新中...' : '保存中...') : saveSuccess ? <><CheckCircle size={20} /> {isEditMode ? '更新しました' : '保存しました'}</> : <><Save size={20} /> {isEditMode ? '更新する' : '保存する'}</>}
         </button>
       </div>
     </div>

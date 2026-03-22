@@ -25,7 +25,7 @@ import { DailyNotesPage } from './pages/DailyNotesPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { ensureSharedSheetsSession, isSheetsConfigured } from './services/googleSheetsInventoryService';
-import { appendSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName } from './services/googleSheetsPopibraryService';
+import { appendSharedPopibraryItem, deleteSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName, updateSharedPopibraryItem } from './services/googleSheetsPopibraryService';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 const MARKET_REDIRECT_KEY = 'seika_market_redirect';
@@ -98,6 +98,7 @@ function App() {
   
   const [popibraryView, setPopibraryView] = useState<'list' | 'detail' | 'form'>('list');
   const [selectedPop, setSelectedPop] = useState<import('./types').PopItem | null>(null);
+  const [editingPop, setEditingPop] = useState<import('./types').PopItem | null>(null);
   const [popibrarySharedStatus, setPopibrarySharedStatus] = useState<string | null>(null);
   const [popibrarySharedError, setPopibrarySharedError] = useState<string | null>(null);
   const [isPopibrarySharedLoading, setIsPopibrarySharedLoading] = useState(false);
@@ -433,20 +434,24 @@ function App() {
 
   const savePop = async (pop: import('./types').PopItem) => {
     setPopibraryAuthor(pop.author || '');
+    const isEditing = Boolean(editingPop && editingPop.id === pop.id);
+    const normalizedPop = {
+      ...pop,
+      id: pop.id || String(Date.now()),
+      updatedAt: new Date().toISOString()
+    };
 
     if (!isSheetsConfigured()) {
-      const fallbackPop = {
-        ...pop,
-        id: pop.id || String(Date.now()),
-        updatedAt: new Date().toISOString()
-      };
+      const fallbackPop = normalizedPop;
       setState(prev => ({
         ...prev,
-        popData: [fallbackPop, ...(prev.popData || [])]
+        popData: [fallbackPop, ...(prev.popData || []).filter((item) => item.id !== fallbackPop.id)]
+          .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
       }));
-      setPopibrarySharedStatus('ローカルに保存しました');
-      showToast('POPを保存しました');
-      return { message: 'ローカルに保存しました' };
+      setSelectedPop(fallbackPop);
+      setPopibrarySharedStatus(isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました');
+      showToast(isEditing ? 'POPを更新しました' : 'POPを保存しました');
+      return { message: isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました' };
     }
 
     try {
@@ -457,7 +462,9 @@ function App() {
         return { message: '共有は保留です' };
       }
 
-      const savedPop = await appendSharedPopibraryItem(pop);
+      const savedPop = isEditing
+        ? await updateSharedPopibraryItem(normalizedPop)
+        : await appendSharedPopibraryItem(normalizedPop);
       const latestPops = [savedPop, ...popibraryItemsRef.current.filter((item) => item.id !== savedPop.id)]
         .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
 
@@ -465,14 +472,57 @@ function App() {
         ...prev,
         popData: latestPops
       }));
+      setSelectedPop(savedPop);
       setPopibrarySharedError(null);
-      setPopibrarySharedStatus('保存しました');
-      showToast('POPを保存しました');
-      return { message: '保存しました' };
+      setPopibrarySharedStatus(isEditing ? '更新しました' : '保存しました');
+      void loadPopibraryFromSheets(false);
+      showToast(isEditing ? 'POPを更新しました' : 'POPを保存しました');
+      return { message: isEditing ? '更新しました' : '保存しました' };
     } catch (error) {
       console.error('[App] failed to save shared pop', error);
       setPopibrarySharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有保存に失敗しました'}`);
       return { message: '共有保存に失敗しました' };
+    }
+  };
+
+  const deletePop = async (id: string) => {
+    if (!isSheetsConfigured()) {
+      setState(prev => ({
+        ...prev,
+        popData: (prev.popData || []).filter((item) => item.id !== id)
+      }));
+      setSelectedPop(null);
+      setEditingPop(null);
+      setPopibraryView('list');
+      setPopibrarySharedStatus('ローカルで削除しました');
+      setPopibrarySharedError(null);
+      showToast('POPを削除しました');
+      return;
+    }
+
+    try {
+      const ready = await ensureSharedSheetsSession(true);
+      if (!ready) {
+        setNeedsPopibrarySheetsLogin(true);
+        throw new Error('Google Sheets 未ログイン');
+      }
+
+      await deleteSharedPopibraryItem(id);
+      setState(prev => ({
+        ...prev,
+        popData: (prev.popData || []).filter((item) => item.id !== id)
+      }));
+      setSelectedPop(null);
+      setEditingPop(null);
+      setPopibraryView('list');
+      setPopibrarySharedError(null);
+      setPopibrarySharedStatus('削除しました');
+      await loadPopibraryFromSheets(false);
+      showToast('POPを削除しました');
+    } catch (error) {
+      console.error('[App] failed to delete shared pop', error);
+      setPopibrarySharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有削除に失敗しました'}`);
+      throw error;
     }
   };
 
@@ -673,21 +723,37 @@ function App() {
              <PopLibraryForm
                onSave={savePop}
                defaultAuthor={popibraryAuthor}
+               existingPop={editingPop}
                sharedStatus={popibrarySharedStatus}
                sharedError={popibrarySharedError}
                isSharedLoading={isPopibrarySharedLoading}
-               onBack={() => setPopibraryView('list')}
+               onBack={() => {
+                 setPopibraryView(selectedPop && editingPop ? 'detail' : 'list');
+                 setEditingPop(null);
+               }}
              />
            );
         }
         if (popibraryView === 'detail' && selectedPop) {
            const latestSelectedPop = (state.popData || []).find((pop) => pop.id === selectedPop.id) || selectedPop;
-           return <PopDetail pop={latestSelectedPop} onBack={() => setPopibraryView('list')} />;
+           return <PopDetail
+                    pop={latestSelectedPop}
+                    onEdit={(pop) => {
+                      setEditingPop(pop);
+                      setSelectedPop(pop);
+                      setPopibraryView('form');
+                    }}
+                    onDelete={deletePop}
+                    onBack={() => setPopibraryView('list')}
+                  />;
         }
         return <PopibraryList 
                  savedPops={state.popData || []} 
                  onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
-                 onAddPop={() => setPopibraryView('form')}
+                 onAddPop={() => {
+                   setEditingPop(null);
+                   setPopibraryView('form');
+                 }}
                  onReloadShared={() => void loadPopibraryFromSheets(false)}
                  onLoginShared={() => void loadPopibraryFromSheets(true)}
                  sharedStatus={popibrarySharedStatus}

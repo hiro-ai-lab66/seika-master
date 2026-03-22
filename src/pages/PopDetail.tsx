@@ -1,17 +1,37 @@
-import React from 'react';
-import { ArrowLeft, Tag, MessageCircle, Calendar, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, Tag, MessageCircle, Calendar, ExternalLink, Image as ImageIcon, Edit, Trash2 } from 'lucide-react';
 import type { PopItem } from '../types';
 import { buildGoogleDriveImageDisplayUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopDetailProps {
   pop: PopItem;
+  onEdit?: (pop: PopItem) => void;
+  onDelete?: (id: string) => Promise<void>;
   onBack: () => void;
 }
 
-export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
+export const PopDetail: React.FC<PopDetailProps> = ({ pop, onEdit, onDelete, onBack }) => {
   const imageSource = buildGoogleDriveImageDisplayUrl(pop.thumbUrl || '', 1600);
   const hasRemoteImage = isRemoteImageUrl(imageSource);
   const originalImageUrl = normalizeDriveImageUrl(pop.thumbUrl || '');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!window.confirm('本当に削除しますか？')) {
+      return;
+    }
+
+    if (!onDelete) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onDelete(pop.id);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
@@ -77,6 +97,15 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(pop)}
+                    style={{ minWidth: '160px', backgroundColor: 'white', color: 'var(--text-main)', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <Edit size={18} /> 編集
+                  </button>
+                )}
                 {imageSource ? (
                   <a
                     href={originalImageUrl || imageSource}
@@ -90,6 +119,16 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onBack }) => {
                   <div style={{ minWidth: '200px', backgroundColor: '#f8fafc', color: '#64748b', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <ImageIcon size={20} /> 画像URLなし
                   </div>
+                )}
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete()}
+                    disabled={isDeleting}
+                    style={{ minWidth: '160px', backgroundColor: '#fef2f2', color: '#b91c1c', padding: '14px', borderRadius: '8px', border: '1px solid #fecaca', fontWeight: 700, fontSize: '1rem', cursor: isDeleting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <Trash2 size={18} /> {isDeleting ? '削除中...' : '削除'}
+                  </button>
                 )}
             </div>
         </div>
