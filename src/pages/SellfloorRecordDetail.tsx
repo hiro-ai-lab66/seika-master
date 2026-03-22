@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2, Trash2, MoreVertical, Edit } from 'lucide-react';
 import type { SellfloorRecord, PopItem, AIAnalysisResult, InspectionEntry } from '../types';
 import { generateSellfloorAnalysis } from '../services/aiAnalysisService';
-import { normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageDisplayUrl, extractGoogleDriveFileId, normalizeDriveImageUrl } from '../services/storageService';
 
 interface SellfloorRecordDetailProps {
   record: SellfloorRecord;
@@ -32,13 +32,16 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
   const createdDate = new Date(record.createdAt);
 
   useEffect(() => {
-    const normalizedImageUrl = normalizeDriveImageUrl(record.photoUrl || '');
+    const originalUrl = record.photoUrl || '';
+    const fileId = extractGoogleDriveFileId(originalUrl);
+    const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 1600);
     console.log('[SellfloorRecordDetail] image src', {
       recordId: record.id,
-      rawPhotoUrl: record.photoUrl,
-      normalizedPhotoUrl: normalizedImageUrl,
+      originalUrl,
+      fileId,
+      displayUrl,
     });
-    setDisplayImageUrl(normalizedImageUrl);
+    setDisplayImageUrl(displayUrl);
     setHasImageError(false);
   }, [record.id, record.photoUrl]);
 

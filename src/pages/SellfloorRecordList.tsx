@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn } from 'lucide-react';
 import type { SellfloorRecord } from '../types';
-import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageDisplayUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
 
 interface SellfloorRecordListProps {
   records: SellfloorRecord[];
@@ -170,32 +170,44 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
 };
 
 const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
-  const [thumbnailSrc, setThumbnailSrc] = useState(normalizeDriveImageUrl(photoUrl || ''));
+  const [thumbnailSrc, setThumbnailSrc] = useState('');
+  const [hasImageError, setHasImageError] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     const resolveThumbnail = async () => {
-      const normalizedUrl = normalizeDriveImageUrl(photoUrl || '');
-      if (!normalizedUrl) {
+      const originalUrl = photoUrl || '';
+      const fileId = extractGoogleDriveFileId(originalUrl);
+      const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
+      console.log('[SellfloorRecordList] thumbnail src', {
+        originalUrl,
+        fileId,
+        displayUrl,
+      });
+
+      if (!displayUrl) {
         setThumbnailSrc('');
+        setHasImageError(false);
         return;
       }
 
-      if (isRemoteImageUrl(normalizedUrl)) {
-        setThumbnailSrc(normalizedUrl);
+      setHasImageError(false);
+
+      if (isRemoteImageUrl(displayUrl)) {
+        setThumbnailSrc(displayUrl);
         return;
       }
 
-      if (isInlineImageDataUrl(normalizedUrl)) {
-        const thumbnail = await buildLightweightThumbnail(normalizedUrl);
+      if (isInlineImageDataUrl(displayUrl)) {
+        const thumbnail = await buildLightweightThumbnail(displayUrl);
         if (active) {
           setThumbnailSrc(thumbnail);
         }
         return;
       }
 
-      setThumbnailSrc(normalizedUrl);
+      setThumbnailSrc(displayUrl);
     };
 
     void resolveThumbnail();
@@ -205,7 +217,7 @@ const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
     };
   }, [photoUrl]);
 
-  if (!thumbnailSrc) {
+  if (!thumbnailSrc || hasImageError) {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
         <ImageIcon size={32} />
@@ -213,5 +225,22 @@ const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
     );
   }
 
-  return <img src={thumbnailSrc} alt="売場写真" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" decoding="async" />;
+  return (
+    <img
+      src={thumbnailSrc}
+      alt="売場写真"
+      referrerPolicy="no-referrer"
+      onError={(event) => {
+        console.error('[SellfloorRecordList] thumbnail load failed', {
+          originalUrl: photoUrl,
+          attemptedSrc: thumbnailSrc,
+          currentSrc: event.currentTarget.currentSrc,
+        });
+        setHasImageError(true);
+      }}
+      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      loading="lazy"
+      decoding="async"
+    />
+  );
 };

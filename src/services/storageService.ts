@@ -116,17 +116,40 @@ export const normalizeDriveImageUrl = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) return '';
 
-  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
-  if (fileMatch?.[1]) {
-    return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
-  }
-
-  const openMatch = trimmed.match(/[?&]id=([^&]+)/i);
-  if (/drive\.google\.com/i.test(trimmed) && openMatch?.[1]) {
-    return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
+  const fileId = extractGoogleDriveFileId(trimmed);
+  if (fileId) {
+    return `https://drive.google.com/uc?export=view&id=${fileId}`;
   }
 
   return trimmed;
+};
+
+export const extractGoogleDriveFileId = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed || !/drive\.google\.com/i.test(trimmed)) {
+    return '';
+  }
+
+  const fileMatch = trimmed.match(/\/file\/d\/([^/?]+)/i);
+  if (fileMatch?.[1]) {
+    return fileMatch[1];
+  }
+
+  const ucMatch = trimmed.match(/[?&]id=([^&]+)/i);
+  if (ucMatch?.[1]) {
+    return ucMatch[1];
+  }
+
+  return '';
+};
+
+export const buildGoogleDriveImageDisplayUrl = (value: string, width: number): string => {
+  const normalizedValue = normalizeDriveImageUrl(value);
+  const fileId = extractGoogleDriveFileId(normalizedValue);
+  if (fileId) {
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${width}`;
+  }
+  return normalizedValue;
 };
 
 export const isRemoteImageUrl = (value: string): boolean => /^https?:\/\//i.test(value.trim());
