@@ -477,29 +477,45 @@ function App() {
   };
 
   const deleteSellfloorRecord = async (id: string) => {
-    setState(prev => ({
-      ...prev,
-      sellfloorRecords: (prev.sellfloorRecords || []).filter(r => r.id !== id),
-      aiAnalysisHistory: (prev.aiAnalysisHistory || []).filter(a => a.recordId !== id)
-    }));
-    setSellfloorView('list');
-    setSelectedSellfloorRecord(null);
-
-    if (isSheetsConfigured()) {
-      try {
-        const ready = await ensureSharedSheetsSession(true);
-        if (ready) {
-          await deleteSharedSellfloorRecord(id);
-          setSellfloorSharedError(null);
-          setSellfloorSharedStatus(`Google Sheets から削除しました（シート: ${getSharedSellfloorSheetName()}）`);
-        }
-      } catch (error) {
-        console.error('[App] failed to delete shared sellfloor record', error);
-        setSellfloorSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有削除に失敗しました'}`);
-      }
+    if (!isSheetsConfigured()) {
+      setState(prev => ({
+        ...prev,
+        sellfloorRecords: (prev.sellfloorRecords || []).filter(r => r.id !== id),
+        aiAnalysisHistory: (prev.aiAnalysisHistory || []).filter(a => a.recordId !== id)
+      }));
+      setSellfloorView('list');
+      setSelectedSellfloorRecord(null);
+      setSellfloorSharedStatus('ローカルで削除しました');
+      setSellfloorSharedError(null);
+      showToast('売場記録を削除しました');
+      return;
     }
 
-    showToast('売場記録を削除しました');
+    try {
+      const ready = await ensureSharedSheetsSession(true);
+      if (!ready) {
+        setNeedsSellfloorSheetsLogin(true);
+        throw new Error('Google Sheets 未ログイン');
+      }
+
+      await deleteSharedSellfloorRecord(id);
+      setState(prev => ({
+        ...prev,
+        sellfloorRecords: (prev.sellfloorRecords || []).filter(r => r.id !== id),
+        aiAnalysisHistory: (prev.aiAnalysisHistory || []).filter(a => a.recordId !== id)
+      }));
+      setSellfloorView('list');
+      setSelectedSellfloorRecord(null);
+      setEditingSellfloorRecord(null);
+      setSellfloorSharedError(null);
+      setSellfloorSharedStatus('削除しました');
+      await loadSellfloorRecordsFromSheets(false);
+      showToast('売場記録を削除しました');
+    } catch (error) {
+      console.error('[App] failed to delete shared sellfloor record', error);
+      setSellfloorSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有削除に失敗しました'}`);
+      throw error;
+    }
   };
 
   const updateMarketInfo = (updated: MarketInfo) => {

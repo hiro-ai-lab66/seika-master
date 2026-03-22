@@ -201,6 +201,10 @@ export const deleteSharedSellfloorRecord = async (recordId: string) => {
     await ensureSellfloorHeader();
     const sheetName = await resolveSellfloorSheetName();
     const existing = await fetchSharedSellfloorRecords();
+    const target = existing.find((record) => record.id === recordId);
+    if (!target) {
+        throw new Error('削除対象の売場記録が見つかりません');
+    }
     const remaining = existing.filter((record) => record.id !== recordId);
     const rowCount = Math.max(existing.length, 1);
     const replaceRange = buildSheetRange(sheetName, `A2:J${rowCount + 1}`);

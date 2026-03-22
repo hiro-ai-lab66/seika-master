@@ -10,7 +10,7 @@ interface SellfloorRecordDetailProps {
   existingAnalysis?: AIAnalysisResult;
   dailyData?: InspectionEntry;
   onSaveAnalysis?: (result: AIAnalysisResult) => void;
-  onDeleteRecord?: (id: string) => void;
+  onDeleteRecord?: (id: string) => Promise<void>;
   onEditRecord?: (record: SellfloorRecord) => void;
   onBack: () => void;
   onViewPop?: (pop: PopItem) => void;
@@ -31,6 +31,7 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
   const [showMenu, setShowMenu] = useState(false);
   const [displayImageUrl, setDisplayImageUrl] = useState('');
   const [hasImageError, setHasImageError] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const createdDate = new Date(record.createdAt);
 
   useEffect(() => {
@@ -61,11 +62,20 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
       }
   };
 
-  const handleDelete = () => {
-    if (window.confirm('この売場記録を削除しますか？')) {
-        if (onDeleteRecord) {
-            onDeleteRecord(record.id);
-        }
+  const handleDelete = async () => {
+    if (!window.confirm('本当に削除しますか？')) {
+      return;
+    }
+
+    if (!onDeleteRecord) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onDeleteRecord(record.id);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -117,15 +127,16 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                             <Edit size={16} /> 編集
                         </button>
                         <button 
-                            onClick={() => { setShowMenu(false); handleDelete(); }}
+                            onClick={() => { setShowMenu(false); void handleDelete(); }}
                             style={{ 
                                 display: 'flex', alignItems: 'center', gap: '8px', width: '100%', 
                                 padding: '12px 16px', border: 'none', background: 'none', 
                                 textAlign: 'left', fontSize: '0.9rem', cursor: 'pointer', color: '#dc2626',
                                 borderTop: '1px solid #f1f5f9'
                             }}
+                            disabled={isDeleting}
                         >
-                            <Trash2 size={16} /> 削除
+                            <Trash2 size={16} /> {isDeleting ? '削除中...' : '削除'}
                         </button>
                     </div>
                 </>
