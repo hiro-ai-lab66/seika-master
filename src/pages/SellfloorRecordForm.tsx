@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon, Images } from 'lucide-react';
 import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
@@ -148,17 +148,15 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
                 保存時に画像を圧縮して Google Drive にアップロードし、Google Sheets には URL だけ保存します。
             </div>
             
-            <input 
-                type="file" 
-                accept="image/*" 
-                capture="environment" 
-                style={{ display: 'none' }} 
+            <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
                 ref={fileInputRef}
                 onChange={handleFileChange}
             />
             
-            <div 
-                onClick={() => fileInputRef.current?.click()}
+            <div
                 style={{
                     backgroundColor: photoPreview ? '#000' : '#f8fafc',
                     border: photoPreview ? 'none' : '2px dashed #cbd5e1',
@@ -168,7 +166,6 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    cursor: 'pointer',
                     overflow: 'hidden',
                     position: 'relative',
                     transition: 'all 0.2s'
@@ -202,10 +199,26 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
                         <div style={{ backgroundColor: '#e0e7ff', padding: '16px', borderRadius: '50%' }}>
                             <Camera size={32} />
                         </div>
-                        <div style={{ fontWeight: 600 }}>タップしてカメラを起動</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>または画像を選択</div>
+                        <div style={{ fontWeight: 600 }}>写真を撮る / アルバムから選ぶ</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>iPhone / Android の両方で利用できます</div>
                     </div>
                 )}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+                <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1, minWidth: '170px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', padding: '12px 14px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                    <Camera size={18} /> 写真を撮る
+                </button>
+                <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1, minWidth: '170px', backgroundColor: 'white', color: 'var(--text-main)', border: '1px solid #cbd5e1', padding: '12px 14px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                    <Images size={18} /> アルバムから選ぶ
+                </button>
             </div>
         </div>
 

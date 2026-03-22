@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle, Image as ImageIcon, RefreshCw, Save } from 'lucide-react';
+import { Camera, CheckCircle, Image as ImageIcon, Images, RefreshCw, Save } from 'lucide-react';
 import type { PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { isRemoteImageUrl } from '../services/storageService';
@@ -177,7 +177,6 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
             </label>
             <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
             <div
-              onClick={() => fileInputRef.current?.click()}
               style={{ minHeight: '160px', backgroundColor: '#f8fafc', border: imagePreview ? '1px solid #e2e8f0' : '2px dashed #cbd5e1', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}
             >
               {imagePreview ? (
@@ -190,9 +189,26 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: '#64748b' }}>
                   <ImageIcon size={30} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Google Drive にアップロードして URL 保存</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>写真を撮る / アルバムから選ぶ</span>
+                  <span style={{ fontSize: '0.78rem' }}>Google Drive にアップロードして URL 保存</span>
                 </div>
               )}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1, minWidth: '170px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', padding: '12px 14px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <Camera size={18} /> 写真を撮る
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1, minWidth: '170px', backgroundColor: 'white', color: 'var(--text-main)', border: '1px solid #cbd5e1', padding: '12px 14px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <Images size={18} /> アルバムから選ぶ
+              </button>
             </div>
           </div>
 
