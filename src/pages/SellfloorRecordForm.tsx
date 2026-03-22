@@ -108,7 +108,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         }, 1500);
     } catch (error) {
         console.error("Failed to save sellfloor record", error);
-        alert("保存に失敗しました");
+        alert(error instanceof Error ? error.message : "保存に失敗しました");
     } finally {
         setIsSaving(false);
     }
@@ -140,6 +140,9 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
                 写真 <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
+            <div style={{ marginBottom: '8px', fontSize: '0.8rem', color: '#64748b' }}>
+                保存前に自動圧縮し、Google Sheets のセル制限に収まるサイズに調整します。
+            </div>
             
             <input 
                 type="file" 

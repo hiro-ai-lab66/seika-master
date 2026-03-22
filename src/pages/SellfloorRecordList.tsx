@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn } from 'lucide-react';
 import type { SellfloorRecord } from '../types';
+import { buildLightweightThumbnail, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
 
 interface SellfloorRecordListProps {
   records: SellfloorRecord[];
@@ -123,13 +124,7 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
             >
                 {/* Thumbnail */}
                 <div style={{ width: '100px', height: '100px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#f1f5f9', flexShrink: 0, position: 'relative' }}>
-                    {record.photoUrl ? (
-                        <img src={record.photoUrl} alt="売場写真" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
-                    ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
-                            <ImageIcon size={32} />
-                        </div>
-                    )}
+                    <SellfloorThumbnail photoUrl={record.photoUrl} />
                     {record.popId && (
                         <div style={{ position: 'absolute', bottom: '4px', right: '4px', backgroundColor: '#eab308', color: 'white', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
                             POP付き
@@ -172,4 +167,50 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
 
     </div>
   );
+};
+
+const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
+  const [thumbnailSrc, setThumbnailSrc] = useState(photoUrl || '');
+
+  useEffect(() => {
+    let active = true;
+
+    const resolveThumbnail = async () => {
+      if (!photoUrl) {
+        setThumbnailSrc('');
+        return;
+      }
+
+      if (isRemoteImageUrl(photoUrl)) {
+        setThumbnailSrc(photoUrl);
+        return;
+      }
+
+      if (isInlineImageDataUrl(photoUrl)) {
+        const thumbnail = await buildLightweightThumbnail(photoUrl);
+        if (active) {
+          setThumbnailSrc(thumbnail);
+        }
+        return;
+      }
+
+      setThumbnailSrc(photoUrl);
+    };
+
+    void resolveThumbnail();
+
+    return () => {
+      active = false;
+    };
+  }, [photoUrl]);
+
+  if (!thumbnailSrc) {
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
+        <ImageIcon size={32} />
+      </div>
+    );
+  }
+
+  return <img src={thumbnailSrc} alt="売場写真" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" decoding="async" />;
 };

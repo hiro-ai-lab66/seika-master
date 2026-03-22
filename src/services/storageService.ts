@@ -1,49 +1,11 @@
-export const uploadSellfloorPhoto = async (file: File): Promise<string> => {
+const GOOGLE_SHEETS_CELL_CHAR_LIMIT = 50000;
+const SAFE_SHEETS_IMAGE_CHAR_LIMIT = 49000;
+
+const readFileAsDataUrl = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 480;
-        const MAX_HEIGHT = 480;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height = Math.floor(height * (MAX_WIDTH / width));
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width = Math.floor(width * (MAX_HEIGHT / height));
-            height = MAX_HEIGHT;
-          }
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            resolve(e.target?.result as string); // fallback to uncompressed
-            return;
-        }
-        // Draw the uploaded image onto the canvas, resized
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Keep the payload small enough for localStorage and Sheets cell limits.
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
-        
-        // Simulate slight network delay for realistic feel
-        setTimeout(() => {
-            resolve(dataUrl);
-        }, 500);
-      };
-      img.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
     reader.readAsDataURL(file);
   });
 };
@@ -83,6 +45,38 @@ const resizeImageToDataUrl = (
     img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
     img.src = source;
   });
+};
+
+export const uploadSellfloorPhoto = async (file: File): Promise<string> => {
+  const source = await readFileAsDataUrl(file);
+  const attempts = [
+    { maxWidth: 800, maxHeight: 800, quality: 0.7 },
+    { maxWidth: 800, maxHeight: 800, quality: 0.65 },
+    { maxWidth: 800, maxHeight: 800, quality: 0.6 },
+    { maxWidth: 720, maxHeight: 720, quality: 0.65 },
+    { maxWidth: 720, maxHeight: 720, quality: 0.6 },
+    { maxWidth: 640, maxHeight: 640, quality: 0.6 },
+    { maxWidth: 560, maxHeight: 560, quality: 0.55 },
+    { maxWidth: 480, maxHeight: 480, quality: 0.5 },
+  ];
+
+  let bestCandidate = '';
+
+  for (const attempt of attempts) {
+    const candidate = await resizeImageToDataUrl(source, attempt);
+    if (!bestCandidate || candidate.length < bestCandidate.length) {
+      bestCandidate = candidate;
+    }
+    if (candidate.length <= SAFE_SHEETS_IMAGE_CHAR_LIMIT) {
+      return candidate;
+    }
+  }
+
+  if (bestCandidate && bestCandidate.length <= GOOGLE_SHEETS_CELL_CHAR_LIMIT) {
+    return bestCandidate;
+  }
+
+  throw new Error(`画像サイズが大きすぎます（${bestCandidate.length.toLocaleString()}文字）。もう少し小さい写真で再度お試しください。`);
 };
 
 export const uploadPopImageAsset = async (file: File): Promise<string> => {
