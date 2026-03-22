@@ -7,6 +7,7 @@ import {
     readSharedSpreadsheetMetadata,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
+import { isRemoteImageUrl } from './storageService';
 
 const SELLFLOOR_SHEET_NAME = (import.meta as any).env?.VITE_SELLFLOOR_SHEET_TAB?.trim() || 'shared_sellfloor_records';
 const HEADER_ROW = ['id', '日付', '商品カテゴリ・品名', '売場の場所', 'コメント・メモ', '写真', 'POP ID', '作成者', '作成日時', '更新日時'];
@@ -85,7 +86,7 @@ const toRowValues = (record: SellfloorRecord): string[] => [
     record.product || '',
     record.location || '',
     record.comment || '',
-    record.photoUrl || '',
+    isRemoteImageUrl(record.photoUrl || '') ? record.photoUrl : '',
     record.popId || '',
     record.author || '',
     record.createdAt || new Date().toISOString(),

@@ -7,7 +7,10 @@ const REQUESTED_SHEET_NAME =
     (import.meta as any).env?.VITE_INVENTORY_SHEET_TAB?.trim() ||
     'inventory';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
-const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const SHEETS_SCOPE = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive.file'
+].join(' ');
 const TOKEN_STORAGE_KEY = 'seika_sheets_access_token';
 const TOKEN_EXPIRY_STORAGE_KEY = 'seika_sheets_access_token_expiry';
 const MIGRATION_KEY = 'seika_inventory_sheet_migrated_v1';
@@ -199,6 +202,10 @@ const authorizedSheetsFetch = async (url: string, init?: RequestInit) => {
     }
 
     return response;
+};
+
+export const authorizedGoogleApiFetch = async (url: string, init?: RequestInit) => {
+    return authorizedSheetsFetch(url, init);
 };
 
 const fetchSpreadsheetSheetTitles = async (): Promise<string[]> => {

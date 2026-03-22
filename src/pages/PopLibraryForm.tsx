@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle, Image as ImageIcon, RefreshCw, Save } from 'lucide-react';
 import type { PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { isRemoteImageUrl, uploadPopImageAsset } from '../services/storageService';
+import { isRemoteImageUrl } from '../services/storageService';
+import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
 
 interface PopLibraryFormProps {
   onSave: (pop: PopItem) => Promise<{ message: string }>;
@@ -66,10 +67,15 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
       const preferredImageSource = normalizedUrl
         ? normalizedUrl
         : imageFile
-          ? await uploadPopImageAsset(imageFile)
+          ? await uploadImageFileToGoogleDrive(imageFile, {
+              fileNamePrefix: 'popibrary',
+              maxWidth: 1200,
+              maxHeight: 1200,
+              quality: 0.72
+            })
           : '';
 
-      if (normalizedUrl && !isRemoteImageUrl(normalizedUrl) && !normalizedUrl.startsWith('data:image/')) {
+      if (normalizedUrl && !isRemoteImageUrl(normalizedUrl)) {
         alert('画像URL は http(s) URL を入力してください');
         setIsSaving(false);
         return;
@@ -161,7 +167,7 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
             </label>
             <input type="url" className="modern-input" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." style={{ width: '100%' }} />
             <div style={{ marginTop: '8px', fontSize: '0.8rem', color: '#64748b' }}>
-              URL がある場合は URL を優先保存します。URL がない場合のみ、アップロード画像を圧縮して保存します。
+              URL がある場合は URL を優先保存します。URL がない場合のみ、画像を Google Drive にアップロードして URL 保存します。
             </div>
           </div>
 
@@ -184,7 +190,7 @@ export const PopLibraryForm: React.FC<PopLibraryFormProps> = ({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: '#64748b' }}>
                   <ImageIcon size={30} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>アップロード画像を圧縮して保存</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Google Drive にアップロードして URL 保存</span>
                 </div>
               )}
             </div>

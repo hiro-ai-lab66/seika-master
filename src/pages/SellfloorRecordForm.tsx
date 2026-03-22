@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { uploadSellfloorPhoto } from '../services/storageService';
+import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
 
 interface SellfloorRecordFormProps {
   onSave: (record: SellfloorRecord) => Promise<{ message: string }>;
@@ -81,8 +81,12 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setIsSaving(true);
     setSaveSuccess(false);
     try {
-        // Upload photo (currently a mock)
-        const photoUrl = await uploadSellfloorPhoto(photoFile);
+        const photoUrl = await uploadImageFileToGoogleDrive(photoFile, {
+            fileNamePrefix: 'sellfloor',
+            maxWidth: 800,
+            maxHeight: 800,
+            quality: 0.65
+        });
         
         const newRecord: SellfloorRecord = {
             id: crypto.randomUUID(),
@@ -141,7 +145,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
                 写真 <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <div style={{ marginBottom: '8px', fontSize: '0.8rem', color: '#64748b' }}>
-                保存前に自動圧縮し、Google Sheets のセル制限に収まるサイズに調整します。
+                保存時に画像を圧縮して Google Drive にアップロードし、Google Sheets には URL だけ保存します。
             </div>
             
             <input 

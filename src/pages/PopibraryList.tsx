@@ -146,7 +146,7 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
                 {pop.improvementComment}
               </p>
 
-              {pop.thumbUrl && (
+              {isRemoteImageUrl(pop.thumbUrl || '') && (
                 <a
                   href={pop.thumbUrl}
                   target="_blank"

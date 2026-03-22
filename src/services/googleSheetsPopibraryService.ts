@@ -7,7 +7,7 @@ import {
     readSharedSpreadsheetMetadata,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
-import { isInlineImageDataUrl, isRemoteImageUrl } from './storageService';
+import { isRemoteImageUrl } from './storageService';
 
 const POPIBRARY_SHEET_NAME = (import.meta as any).env?.VITE_POPIBRARY_SHEET_TAB?.trim() || 'shared_popibrary';
 const HEADER_ROW = ['id', '日付', 'タイトル', 'カテゴリ', '説明', '画像URL', '作成者', '更新日時'];
@@ -123,7 +123,6 @@ export const appendSharedPopibraryItem = async (pop: PopItem) => {
         const source = (pop.thumbUrl || '').trim();
         if (!source) return '';
         if (isRemoteImageUrl(source)) return source;
-        if (isInlineImageDataUrl(source)) return source;
         return '';
     })();
     const range = buildSheetRange(sheetName, 'A:H');

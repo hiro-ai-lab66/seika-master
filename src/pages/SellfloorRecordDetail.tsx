@@ -256,7 +256,13 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                          }}
                        >
                            <div style={{ width: '60px', height: '60px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#f1f5f9', flexShrink: 0 }}>
-                               <img src={attachedPop.thumbUrl} alt="POP thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                               {attachedPop.thumbUrl ? (
+                                 <img src={attachedPop.thumbUrl} alt="POP thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                               ) : (
+                                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                                   <ImageIcon size={20} />
+                                 </div>
+                               )}
                            </div>
                            <div style={{ flex: 1, minWidth: 0 }}>
                                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
