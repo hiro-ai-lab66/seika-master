@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2, Trash2, MoreVertical, Edit } from 'lucide-react';
 import type { SellfloorRecord, PopItem, AIAnalysisResult, InspectionEntry } from '../types';
 import { generateSellfloorAnalysis } from '../services/aiAnalysisService';
@@ -27,8 +27,20 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [displayImageUrl, setDisplayImageUrl] = useState('');
+  const [hasImageError, setHasImageError] = useState(false);
   const createdDate = new Date(record.createdAt);
-  const imageSource = normalizeDriveImageUrl(record.photoUrl || '');
+
+  useEffect(() => {
+    const normalizedImageUrl = normalizeDriveImageUrl(record.photoUrl || '');
+    console.log('[SellfloorRecordDetail] image src', {
+      recordId: record.id,
+      rawPhotoUrl: record.photoUrl,
+      normalizedPhotoUrl: normalizedImageUrl,
+    });
+    setDisplayImageUrl(normalizedImageUrl);
+    setHasImageError(false);
+  }, [record.id, record.photoUrl]);
 
   const handleAnalyze = async () => {
       if (!onSaveAnalysis) return;
@@ -116,17 +128,28 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
       <div style={{ background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
         
         {/* Main Photo */}
-        <div style={{ width: '100%', backgroundColor: '#000', position: 'relative', display: 'flex', justifyContent: 'center' }}>
-          {imageSource ? (
+        <div style={{ width: '100%', backgroundColor: '#f8fafc', position: 'relative', display: 'flex', justifyContent: 'center' }}>
+          {displayImageUrl && !hasImageError ? (
             <img 
-              src={imageSource} 
+              src={displayImageUrl}
               alt="売場写真" 
-              style={{ width: '100%', maxHeight: '500px', objectFit: 'contain' }} 
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                console.error('[SellfloorRecordDetail] image load failed', {
+                  recordId: record.id,
+                  attemptedSrc: displayImageUrl,
+                  currentSrc: event.currentTarget.currentSrc,
+                });
+                setHasImageError(true);
+              }}
+              style={{ width: '100%', maxHeight: '500px', objectFit: 'contain' }}
             />
           ) : (
             <div style={{ padding: '60px', color: '#475569', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                <ImageIcon size={48} />
-               <span style={{ marginTop: '12px' }}>写真がありません</span>
+               <span style={{ marginTop: '12px' }}>
+                 {record.photoUrl ? '画像を表示できませんでした' : '写真がありません'}
+               </span>
             </div>
           )}
         </div>
