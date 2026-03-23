@@ -26,20 +26,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         (import.meta as any).env?.VITE_SALES_AUTHOR?.trim() ||
         '点検最終';
     const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
-    const sanitizeLossThousandInput = (value: string) => {
-        const normalized = value.replace(/,/g, '').replace(/[^\d.]/g, '');
-        const [integerPart = '', ...decimalParts] = normalized.split('.');
-        const decimalPart = decimalParts.join('').slice(0, 2);
-        if (!integerPart && !decimalPart) return '';
-        return decimalPart ? `${integerPart || '0'}.${decimalPart}` : integerPart;
-    };
+    const normalizeLossThousandInput = (value: string) => value.replace(/,/g, '').trim();
+    const isValidLossThousandInput = (value: string) => value === '' || /^\d+(\.\d{0,2})?$/.test(value);
     const parseThousandInput = (value: string) => {
         const digits = sanitizeThousandInput(value);
         if (!digits) return null;
         return Number(digits) * 1000;
     };
     const parseLossThousandInput = (value: string) => {
-        const normalized = sanitizeLossThousandInput(value);
+        const normalized = normalizeLossThousandInput(value);
         if (!normalized) return null;
         const parsed = Number(normalized);
         if (Number.isNaN(parsed)) return null;
@@ -200,13 +195,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const handleLossAmountChange = (value: string) => {
-        const sanitized = sanitizeLossThousandInput(value);
-        setLossAmountInput(sanitized);
-        if (sanitized === '') {
+        const normalized = normalizeLossThousandInput(value);
+        console.log('loss input raw:', value);
+        if (!isValidLossThousandInput(normalized)) {
+            return;
+        }
+        console.log('loss input state:', normalized);
+        setLossAmountInput(normalized);
+        if (normalized === '') {
             handleChange('lossAmount', null);
             return;
         }
-        handleChange('lossAmount', parseLossThousandInput(sanitized));
+        const convertedLossAmount = parseLossThousandInput(normalized);
+        console.log('converted loss amount:', convertedLossAmount);
+        handleChange('lossAmount', convertedLossAmount);
     };
 
     const handlePromotionItemInputChange = (value: string) => {
