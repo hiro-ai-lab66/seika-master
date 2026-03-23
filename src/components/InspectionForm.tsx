@@ -47,6 +47,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (value === null || value === undefined) return '';
         return String(Math.round(value / 1000));
     };
+    const sortBestItemsByQuantity = (items: BestItem[]) => {
+        return [...items].sort((a, b) => {
+            const qtyA = Number(a.salesQty || 0);
+            const qtyB = Number(b.salesQty || 0);
+            const qtyDiff = qtyB - qtyA;
+            if (qtyDiff !== 0) return qtyDiff;
+
+            const amtA = Number(a.salesAmt || 0);
+            const amtB = Number(b.salesAmt || 0);
+            return amtB - amtA;
+        });
+    };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
@@ -349,16 +361,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         return null;
                     }
                 })
-                .filter((item): item is BestItem => Boolean(item))
-                .sort((a, b) => {
-                    const qtyDiff = (b.salesQty || 0) - (a.salesQty || 0);
-                    if (qtyDiff !== 0) return qtyDiff;
-                    return (b.salesAmt || 0) - (a.salesAmt || 0);
-                });
+                .filter((item): item is BestItem => Boolean(item));
         };
 
-        const sharedVeggies = parseRows('veggie');
-        const sharedFruits = parseRows('fruit');
+        const sharedVeggies = sortBestItemsByQuantity(parseRows('veggie'));
+        const sharedFruits = sortBestItemsByQuantity(parseRows('fruit'));
 
         if (sharedVeggies.length > 0) {
             setAnalysisVeggies(sharedVeggies);
@@ -566,21 +573,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     }
 
                     if (items.length > 0) {
-                        items.sort((a, b) => {
-                            const qtyDiff = (b.salesQty || 0) - (a.salesQty || 0);
-                            if (qtyDiff !== 0) return qtyDiff;
-                            return (b.salesAmt || 0) - (a.salesAmt || 0);
-                        });
+                        const sortedItems = sortBestItemsByQuantity(items);
                         // 解析データを独立stateに格納（マスター登録はしない）
                         if (type === 'veggie') {
-                            setAnalysisVeggies(items);
+                            setAnalysisVeggies(sortedItems);
                         } else {
-                            setAnalysisFruits(items);
+                            setAnalysisFruits(sortedItems);
                         }
 
                         // daily_salesへ蓄積保存
                         const dept: '野菜' | '果物' = type === 'veggie' ? '野菜' : '果物';
-                        const salesRecords: DailySalesRecord[] = items
+                        const salesRecords: DailySalesRecord[] = sortedItems
                             .filter(it => it.code && (it.salesQty ?? 0) > 0)
                             .map(it => ({
                                 date: currentDate,
@@ -760,8 +763,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         return existingEntry?.bestFruits || [];
     });
 
-    const veggieItems = analysisVeggies.slice(0, 40);
-    const fruitItems = analysisFruits.slice(0, 30);
+    const veggieItems = sortBestItemsByQuantity(analysisVeggies).slice(0, 40);
+    const fruitItems = sortBestItemsByQuantity(analysisFruits).slice(0, 30);
 
     // 商品マスター自動登録結果ステート
     const [masterResult, setMasterResult] = useState<{ type: string; added: number; skipped: number; excluded: number } | null>(null);
@@ -1597,7 +1600,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             border-radius: 6px;
         }
         .best-table {
-            width: 780px;
+            width: 748px;
             min-width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
@@ -1605,10 +1608,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         /* 列幅: コードを詰めて商品名と数量を見やすくする */
         .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 132px; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 208px; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 118px; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 120px; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 122px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 144px; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 124px; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 124px; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 132px; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
@@ -1663,20 +1666,23 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                width: 720px;
+                width: 676px;
                 font-size: 0.78rem;
             }
-            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 112px; }
-            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 190px; }
-            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 104px; }
-            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 110px; }
-            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 116px; }
+            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 104px; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 132px; }
+            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 106px; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 108px; }
+            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 118px; }
             .best-table .col-code {
                 font-size: 0.68rem;
             }
+            .best-table .col-name {
+                font-size: 0.74rem;
+            }
             .best-table th,
             .best-table td {
-                padding: 7px 8px;
+                padding: 6px 7px;
             }
         }
         /* マスター登録結果ボックス */
