@@ -32,7 +32,7 @@ const MARKET_REDIRECT_KEY = 'seika_market_redirect';
 const SELLFLOOR_AUTHOR_KEY = 'seika_sellfloor_author';
 const POPIBRARY_AUTHOR_KEY = 'seika_popibrary_author';
 const APP_AUTH_KEY = 'seika_app_authenticated';
-const APP_PASSWORD = (import.meta as any).env?.VITE_APP_PASSWORD?.trim() || '';
+const APP_PASSWORD = (import.meta as any).env?.VITE_APP_PASSWORD || '';
 
 const mergeSellfloorRecords = (localRecords: SellfloorRecord[], sharedRecords: SellfloorRecord[]) => {
   const merged = new Map<string, SellfloorRecord>();
@@ -81,8 +81,8 @@ class ErrorBoundary extends Component<{children: ReactNode, fallback?: ReactNode
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    if (typeof window === 'undefined') return !APP_PASSWORD;
-    if (!APP_PASSWORD) return true;
+    if (typeof window === 'undefined') return false;
+    if (!APP_PASSWORD) return false;
     return window.localStorage.getItem(APP_AUTH_KEY) === 'true';
   });
   const [loginPassword, setLoginPassword] = useState('');
@@ -135,7 +135,17 @@ function App() {
 
   const handleLogin = () => {
     if (!APP_PASSWORD) {
-      setIsAuthenticated(true);
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(APP_AUTH_KEY);
+      }
+      setIsAuthenticated(false);
+      setLoginError('アプリパスワードが未設定です');
+      return;
+    }
+
+    if (!loginPassword) {
+      setIsAuthenticated(false);
+      setLoginError('パスワードを入力してください');
       return;
     }
 
@@ -149,6 +159,10 @@ function App() {
       return;
     }
 
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(APP_AUTH_KEY);
+    }
+    setIsAuthenticated(false);
     setLoginError('パスワードが違います');
   };
 
