@@ -1600,43 +1600,48 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             border-radius: 6px;
         }
         .best-table {
-            width: 680px;
+            width: 100%;
             min-width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.8rem;
         }
-        /* 列幅: 商品名をさらに絞り、数値列をコンパクトに保つ */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 120px; max-width: 120px; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 108px; max-width: 108px; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 94px; max-width: 94px; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 112px; max-width: 112px; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 96px; max-width: 96px; }
+        /* 列幅を固定比率で強制 */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 14%; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 41%; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 15%; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
             font-weight: 700;
             text-align: left;
-            padding: 8px 7px;
+            padding: 7px 6px;
             border-bottom: 2px solid #cbd5e1;
             position: sticky;
             top: 0;
             z-index: 1;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
         }
         .best-table td {
-            padding: 7px 7px;
+            padding: 6px 6px;
             border-bottom: 1px solid #f1f5f9;
             color: #334155;
             vertical-align: middle;
+            overflow: hidden;
         }
         .best-table .col-code {
             text-align: left;
             white-space: nowrap;
             word-break: normal;
-            overflow: visible;
+            overflow: hidden;
+            text-overflow: ellipsis;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 0.7rem;
-            letter-spacing: 0.02em;
+            font-size: 0.66rem;
+            letter-spacing: 0.01em;
             font-variant-numeric: tabular-nums;
         }
         .best-table .col-name {
@@ -1645,15 +1650,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            display: block;
+            width: 100%;
         }
         .best-table .col-num {
             text-align: right;
             white-space: nowrap;
+            font-variant-numeric: tabular-nums;
         }
         .best-table th:nth-child(3),
         .best-table th:nth-child(4),
         .best-table th:nth-child(5) {
-            text-align: center;
+            text-align: right;
         }
         /* 色分け: 行背景 */
         .best-table .row-warn td { background-color: #fef2f2; }
@@ -1666,23 +1674,24 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                width: 600px;
-                font-size: 0.74rem;
+                width: 100%;
+                min-width: 100%;
+                font-size: 0.72rem;
             }
-            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 96px; max-width: 96px; }
-            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 92px; max-width: 92px; }
-            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 78px; max-width: 78px; }
-            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 96px; max-width: 96px; }
-            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 84px; max-width: 84px; }
+            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 12%; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 43%; }
+            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
+            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 15%; }
             .best-table .col-code {
-                font-size: 0.64rem;
+                font-size: 0.6rem;
             }
             .best-table .col-name {
-                font-size: 0.7rem;
+                font-size: 0.68rem;
             }
             .best-table th,
             .best-table td {
-                padding: 5px 6px;
+                padding: 5px 4px;
             }
         }
         /* マスター登録結果ボックス */
