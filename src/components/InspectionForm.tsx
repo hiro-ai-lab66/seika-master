@@ -8,6 +8,7 @@ import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dai
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
 import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesService';
 import { fetchSharedBudgetForDate } from '../services/googleSheetsBudgetService';
+import { deriveOverallWeather, deriveTempBandFromHigh, fetchDailyWeatherSnapshot } from '../services/weatherService';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -267,6 +268,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 { date: currentDate, store: STORE_NAME, item: '最終実績', content: formatCheckValue(form.actualFinal), status: form.actualFinal !== null && form.actualFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '最終客数', content: form.customersFinal?.toString() || '', status: form.customersFinal !== null && form.customersFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: 'ロス額', content: formatLossThousandInput(form.lossAmount), status: form.lossAmount !== null && form.lossAmount !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '天気（12時）', content: aiWeather12, status: aiWeather12 ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '天気（17時）', content: aiWeather17, status: aiWeather17 ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '最高気温', content: aiHighTemp, status: aiHighTemp ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '最低気温', content: aiLowTemp, status: aiLowTemp ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '天候', content: aiWeather, status: aiWeather ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '気温帯', content: aiTempBand, status: aiTempBand ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '客数', content: aiCustomerCount, status: aiCustomerCount ? '入力済' : '未入力', owner: '', time: 'final' },
@@ -357,6 +362,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     case 'ロス額':
                         next.lossAmount = parseLossThousandInput(row.content);
                         break;
+                    case '天気（12時）':
+                        setAiWeather12(row.content);
+                        break;
+                    case '天気（17時）':
+                        setAiWeather17(row.content);
+                        break;
+                    case '最高気温':
+                        setAiHighTemp(row.content);
+                        break;
+                    case '最低気温':
+                        setAiLowTemp(row.content);
+                        break;
                     default:
                         break;
                 }
@@ -366,6 +383,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         const rowMap = new Map(relevantRows.map((row) => [row.item, row.content]));
         if (period === 'final') {
+            setAiWeather12(rowMap.get('天気（12時）') || rowMap.get('天候') || '');
+            setAiWeather17(rowMap.get('天気（17時）') || rowMap.get('天候') || '');
+            setAiHighTemp(rowMap.get('最高気温') || '');
+            setAiLowTemp(rowMap.get('最低気温') || '');
             setAiWeather(rowMap.get('天候') || '');
             setAiTempBand(rowMap.get('気温帯') || '');
             setAiCustomerCount(rowMap.get('客数') || '');
@@ -727,8 +748,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             if (r.date !== currentDate) return r;
             return {
                 ...r,
-                weather: aiWeather || undefined,
-                temp_band: aiTempBand || undefined,
+                weather: deriveOverallWeather(aiWeather12, aiWeather17) || aiWeather || undefined,
+                temp_band: deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null) || aiTempBand || undefined,
                 customer_count: aiCustomerCount ? parseInt(aiCustomerCount) : undefined,
                 avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
             };
@@ -799,8 +820,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     // AI分析用メタデータ
     const [aiWeather, setAiWeather] = useState<string>('');
     const [aiTempBand, setAiTempBand] = useState<string>('');
+    const [aiWeather12, setAiWeather12] = useState<string>('');
+    const [aiWeather17, setAiWeather17] = useState<string>('');
+    const [aiHighTemp, setAiHighTemp] = useState<string>('');
+    const [aiLowTemp, setAiLowTemp] = useState<string>('');
     const [aiCustomerCount, setAiCustomerCount] = useState<string>('');
     const [aiAvgPrice, setAiAvgPrice] = useState<string>('');
+    const [weatherStatus, setWeatherStatus] = useState<string>('');
+    const [weatherError, setWeatherError] = useState<string>('');
+    const [isWeatherLoading, setIsWeatherLoading] = useState(false);
 
     // 既存daily_salesから値をロード
     useEffect(() => {
@@ -809,9 +837,53 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             const first = existing[0];
             setAiWeather(first.weather || '');
             setAiTempBand(first.temp_band || '');
+            setAiWeather12(first.weather || '');
+            setAiWeather17(first.weather || '');
+            setAiHighTemp('');
+            setAiLowTemp('');
             setAiCustomerCount(first.customer_count !== undefined ? String(first.customer_count) : '');
             setAiAvgPrice(first.avg_price !== undefined ? String(Math.round(first.avg_price / 1000)) : '');
+        } else {
+            setAiWeather('');
+            setAiTempBand('');
+            setAiWeather12('');
+            setAiWeather17('');
+            setAiHighTemp('');
+            setAiLowTemp('');
+            setAiCustomerCount('');
+            setAiAvgPrice('');
         }
+    }, [currentDate]);
+
+    useEffect(() => {
+        setAiWeather(deriveOverallWeather(aiWeather12, aiWeather17));
+    }, [aiWeather12, aiWeather17]);
+
+    useEffect(() => {
+        setAiTempBand(deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null));
+    }, [aiHighTemp]);
+
+    const handleFetchWeather = async () => {
+        setIsWeatherLoading(true);
+        setWeatherError('');
+        setWeatherStatus('');
+        try {
+            const snapshot = await fetchDailyWeatherSnapshot(currentDate);
+            setAiWeather12(snapshot.weather12);
+            setAiWeather17(snapshot.weather17);
+            setAiHighTemp(snapshot.highTemp !== null ? String(snapshot.highTemp) : '');
+            setAiLowTemp(snapshot.lowTemp !== null ? String(snapshot.lowTemp) : '');
+            setWeatherStatus('天気と気温を自動取得しました');
+        } catch (error) {
+            console.error('[InspectionForm] failed to fetch weather', error);
+            setWeatherError(`天気の自動取得に失敗しました: ${error instanceof Error ? error.message : '取得に失敗しました'}`);
+        } finally {
+            setIsWeatherLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        void handleFetchWeather();
     }, [currentDate]);
 
     // 画面表示時に shared_budget から当日の売上目標を取得して自動反映
@@ -1250,10 +1322,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         {/* AI分析用入力 */}
                         <div className="ai-meta-section">
                             <h4>📊 AI分析用データ</h4>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
+                                <button type="button" className="button-secondary" onClick={handleFetchWeather} disabled={isWeatherLoading}>
+                                    <RefreshCw size={16} className={isWeatherLoading ? 'spin' : ''} />
+                                    天気を自動取得
+                                </button>
+                                {weatherStatus && <span style={{ color: '#0369a1', fontWeight: 700, fontSize: '0.85rem' }}>{weatherStatus}</span>}
+                                {weatherError && <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: '0.85rem' }}>{weatherError}</span>}
+                            </div>
                             <div className="ai-meta-grid">
                                 <div className="ai-meta-item">
-                                    <label>天候</label>
-                                    <select value={aiWeather} onChange={e => setAiWeather(e.target.value)}>
+                                    <label>天気（12時）</label>
+                                    <select value={aiWeather12} onChange={e => setAiWeather12(e.target.value)}>
                                         <option value="">未選択</option>
                                         <option value="晴れ">☀️ 晴れ</option>
                                         <option value="曇り">☁️ 曇り</option>
@@ -1262,14 +1342,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     </select>
                                 </div>
                                 <div className="ai-meta-item">
-                                    <label>気温帯</label>
-                                    <select value={aiTempBand} onChange={e => setAiTempBand(e.target.value)}>
+                                    <label>天気（17時）</label>
+                                    <select value={aiWeather17} onChange={e => setAiWeather17(e.target.value)}>
                                         <option value="">未選択</option>
-                                        <option value="寒い">🥶 寒い</option>
-                                        <option value="涼しい">🌿 涼しい</option>
-                                        <option value="暖かい">🌤️ 暖かい</option>
-                                        <option value="暑い">🔥 暑い</option>
+                                        <option value="晴れ">☀️ 晴れ</option>
+                                        <option value="曇り">☁️ 曇り</option>
+                                        <option value="雨">🌧️ 雨</option>
+                                        <option value="雪">❄️ 雪</option>
                                     </select>
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>最高気温</label>
+                                    <input type="number" inputMode="numeric" placeholder="0" value={aiHighTemp} onChange={e => setAiHighTemp(e.target.value)} />
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>最低気温</label>
+                                    <input type="number" inputMode="numeric" placeholder="0" value={aiLowTemp} onChange={e => setAiLowTemp(e.target.value)} />
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>客数</label>
@@ -1278,6 +1366,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <div className="ai-meta-item">
                                     <label>客単価（千円）</label>
                                     <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(sanitizeThousandInput(e.target.value))} />
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>分析用天候</label>
+                                    <div className="read-only-display">{aiWeather || '未設定'}</div>
+                                </div>
+                                <div className="ai-meta-item">
+                                    <label>分析用気温帯</label>
+                                    <div className="read-only-display">{aiTempBand || '未設定'}</div>
                                 </div>
                             </div>
                         </div>
