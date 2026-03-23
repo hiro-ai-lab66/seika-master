@@ -350,7 +350,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     }
                 })
                 .filter((item): item is BestItem => Boolean(item))
-                .sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
+                .sort((a, b) => {
+                    const qtyDiff = (b.salesQty || 0) - (a.salesQty || 0);
+                    if (qtyDiff !== 0) return qtyDiff;
+                    return (b.salesAmt || 0) - (a.salesAmt || 0);
+                });
         };
 
         const sharedVeggies = parseRows('veggie');
@@ -562,7 +566,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     }
 
                     if (items.length > 0) {
-                        items.sort((a, b) => (b.salesAmt || 0) - (a.salesAmt || 0));
+                        items.sort((a, b) => {
+                            const qtyDiff = (b.salesQty || 0) - (a.salesQty || 0);
+                            if (qtyDiff !== 0) return qtyDiff;
+                            return (b.salesAmt || 0) - (a.salesAmt || 0);
+                        });
                         // 解析データを独立stateに格納（マスター登録はしない）
                         if (type === 'veggie') {
                             setAnalysisVeggies(items);
@@ -1589,18 +1597,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             border-radius: 6px;
         }
         .best-table {
-            width: 860px;
+            width: 780px;
             min-width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.82rem;
         }
-        /* 列幅: JAN優先、商品名は少し圧縮 */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 190px; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 170px; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 110px; }
+        /* 列幅: コードを詰めて商品名と数量を見やすくする */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 132px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 208px; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 118px; }
         .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 120px; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 130px; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 122px; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
@@ -1624,7 +1632,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             word-break: normal;
             overflow: visible;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 0.78rem;
+            font-size: 0.73rem;
             letter-spacing: 0.02em;
             font-variant-numeric: tabular-nums;
         }
@@ -1655,11 +1663,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                width: 860px;
-                font-size: 0.8rem;
+                width: 720px;
+                font-size: 0.78rem;
             }
+            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 112px; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 190px; }
+            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 104px; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 110px; }
+            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 116px; }
             .best-table .col-code {
-                font-size: 0.76rem;
+                font-size: 0.68rem;
+            }
+            .best-table th,
+            .best-table td {
+                padding: 7px 8px;
             }
         }
         /* マスター登録結果ボックス */
