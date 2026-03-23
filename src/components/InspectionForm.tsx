@@ -25,14 +25,33 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         (import.meta as any).env?.VITE_SALES_AUTHOR?.trim() ||
         '点検最終';
     const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
+    const sanitizeLossThousandInput = (value: string) => {
+        const normalized = value.replace(/,/g, '').replace(/[^\d.]/g, '');
+        const [integerPart = '', ...decimalParts] = normalized.split('.');
+        const decimalPart = decimalParts.join('').slice(0, 2);
+        if (!integerPart && !decimalPart) return '';
+        return decimalPart ? `${integerPart || '0'}.${decimalPart}` : integerPart;
+    };
     const parseThousandInput = (value: string) => {
         const digits = sanitizeThousandInput(value);
         if (!digits) return null;
         return Number(digits) * 1000;
     };
+    const parseLossThousandInput = (value: string) => {
+        const normalized = sanitizeLossThousandInput(value);
+        if (!normalized) return null;
+        const parsed = Number(normalized);
+        if (Number.isNaN(parsed)) return null;
+        return Math.round(parsed * 1000);
+    };
     const formatThousandInput = (value: number | null | undefined) => {
         if (value === null || value === undefined || value === 0) return '';
         return String(Math.round(value / 1000));
+    };
+    const formatLossThousandInput = (value: number | null | undefined) => {
+        if (value === null || value === undefined || value === 0) return '';
+        const thousandValue = value / 1000;
+        return Number.isInteger(thousandValue) ? String(thousandValue) : thousandValue.toFixed(2).replace(/\.?0+$/, '');
     };
     const formatThousandDisplay = (value: number | null | undefined, signed = false) => {
         if (value === null || value === undefined) return '-';
@@ -178,6 +197,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         handleChange(field, parseThousandInput(value));
     };
 
+    const handleLossAmountChange = (value: string) => {
+        if (value === '') {
+            handleChange('lossAmount', null);
+            return;
+        }
+        handleChange('lossAmount', parseLossThousandInput(value));
+    };
+
     const handlePromotionItemInputChange = (value: string) => {
         console.log('[InspectionForm] promotionItem change', value);
         setPromotionItemInput(value);
@@ -239,7 +266,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             baseRows.push(
                 { date: currentDate, store: STORE_NAME, item: '最終実績', content: formatCheckValue(form.actualFinal), status: form.actualFinal !== null && form.actualFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '最終客数', content: form.customersFinal?.toString() || '', status: form.customersFinal !== null && form.customersFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
-                { date: currentDate, store: STORE_NAME, item: 'ロス額', content: formatCheckValue(form.lossAmount), status: form.lossAmount !== null && form.lossAmount !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: 'ロス額', content: formatLossThousandInput(form.lossAmount), status: form.lossAmount !== null && form.lossAmount !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '天候', content: aiWeather, status: aiWeather ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '気温帯', content: aiTempBand, status: aiTempBand ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '客数', content: aiCustomerCount, status: aiCustomerCount ? '入力済' : '未入力', owner: '', time: 'final' },
@@ -328,7 +355,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         next.customersFinal = row.content ? Number(row.content) : null;
                         break;
                     case 'ロス額':
-                        next.lossAmount = parseThousandInput(row.content);
+                        next.lossAmount = parseLossThousandInput(row.content);
                         break;
                     default:
                         break;
@@ -1205,10 +1232,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>ロス額（千円）</label>
                                 <input
                                     type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={formatThousandInput(form.lossAmount)}
-                                    onChange={e => handleAmountChange('lossAmount', e.target.value)}
+                                    inputMode="decimal"
+                                    pattern="[0-9]+([.][0-9]+)?"
+                                    value={formatLossThousandInput(form.lossAmount)}
+                                    onChange={e => handleLossAmountChange(e.target.value)}
                                     placeholder="0"
                                 />
                             </div>
