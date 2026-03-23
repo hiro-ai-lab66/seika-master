@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText } from 'lucide-react';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry } from './types';
 import { getLocalTodayDateString } from './utils/calculations';
 import './App.css';
@@ -31,6 +31,8 @@ const STORAGE_KEY = 'seika_master_data_v2';
 const MARKET_REDIRECT_KEY = 'seika_market_redirect';
 const SELLFLOOR_AUTHOR_KEY = 'seika_sellfloor_author';
 const POPIBRARY_AUTHOR_KEY = 'seika_popibrary_author';
+const APP_AUTH_KEY = 'seika_app_authenticated';
+const APP_PASSWORD = (import.meta as any).env?.VITE_APP_PASSWORD?.trim() || '';
 
 const mergeSellfloorRecords = (localRecords: SellfloorRecord[], sharedRecords: SellfloorRecord[]) => {
   const merged = new Map<string, SellfloorRecord>();
@@ -78,6 +80,13 @@ class ErrorBoundary extends Component<{children: ReactNode, fallback?: ReactNode
 }
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window === 'undefined') return !APP_PASSWORD;
+    if (!APP_PASSWORD) return true;
+    return window.localStorage.getItem(APP_AUTH_KEY) === 'true';
+  });
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market' | 'dailyNotes'>('dashboard');
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
@@ -122,6 +131,34 @@ function App() {
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 1500);
+  };
+
+  const handleLogin = () => {
+    if (!APP_PASSWORD) {
+      setIsAuthenticated(true);
+      return;
+    }
+
+    if (loginPassword === APP_PASSWORD) {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(APP_AUTH_KEY, 'true');
+      }
+      setIsAuthenticated(true);
+      setLoginPassword('');
+      setLoginError('');
+      return;
+    }
+
+    setLoginError('パスワードが違います');
+  };
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(APP_AUTH_KEY);
+    }
+    setIsAuthenticated(false);
+    setLoginPassword('');
+    setLoginError('');
   };
 
   const openPopGem = async (productName?: string) => {
@@ -802,6 +839,54 @@ function App() {
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="app-shell" style={{ minHeight: '100vh', justifyContent: 'center', padding: '24px' }}>
+        <div style={{ width: '100%', maxWidth: '420px', margin: '0 auto', backgroundColor: 'white', borderRadius: '20px', padding: '28px', boxShadow: 'var(--shadow-lg)', border: '1px solid #e2e8f0' }}>
+          <div style={{ marginBottom: '24px', textAlign: 'center' }}>
+            <h1 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', color: 'var(--primary)' }}>青果マスター ログイン</h1>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.92rem' }}>共有利用のため、パスワード認証後にアプリを表示します。</p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem', fontWeight: 700, color: '#334155' }}>
+              パスワード
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => {
+                  setLoginPassword(event.target.value);
+                  if (loginError) setLoginError('');
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    handleLogin();
+                  }
+                }}
+                placeholder="パスワードを入力"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '1rem' }}
+              />
+            </label>
+
+            {loginError && (
+              <div style={{ backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '12px', padding: '12px 14px', fontSize: '0.88rem', fontWeight: 700 }}>
+                {loginError}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleLogin}
+              style={{ width: '100%', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '12px', padding: '14px 16px', fontSize: '1rem', fontWeight: 700, cursor: 'pointer' }}
+            >
+              ログイン
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -827,6 +912,14 @@ function App() {
           >
             <Sparkles size={16} style={{ color: 'var(--accent)' }} />
             POP作成
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Logout"
+            onClick={handleLogout}
+            title="ログアウト"
+          >
+            <LogOut size={22} />
           </button>
           <button className="icon-button" aria-label="Settings">
             <Settings size={24} />
