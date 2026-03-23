@@ -55,7 +55,7 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
         try {
             await updateSharedNoticeReadUsers(notice, currentUser);
             await loadNotices();
-            setStatus('既読にして非表示にしました');
+            setStatus(notice.priority ? '重要なお知らせを既読にしました' : '既読にして非表示にしました');
             setActiveActionNoticeId(null);
         } catch (err) {
             console.error('[NoticeForm] failed to hide notice', err);
@@ -124,11 +124,30 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
         }
     };
 
-    const visibleItems = useMemo(
-        () => items.filter((item) => !item.readUsers.includes(currentUser)).slice(0, 20),
+    const sortedItems = useMemo(
+        () => [...items].sort((a, b) => {
+            if (a.priority !== b.priority) {
+                return a.priority ? -1 : 1;
+            }
+
+            const createdCompare = b.createdAt.localeCompare(a.createdAt);
+            if (createdCompare !== 0) return createdCompare;
+            return b.id - a.id;
+        }),
+        [items]
+    );
+    const pinnedItems = useMemo(
+        () => sortedItems.filter((item) => item.priority).slice(0, 20),
+        [sortedItems]
+    );
+    const regularItems = useMemo(
+        () => sortedItems.filter((item) => !item.priority && !item.readUsers.includes(currentUser)).slice(0, 20),
+        [sortedItems, currentUser]
+    );
+    const hiddenCount = useMemo(
+        () => items.filter((item) => !item.priority && item.readUsers.includes(currentUser)).length,
         [items, currentUser]
     );
-    const hiddenCount = Math.max(items.length - visibleItems.length, 0);
 
     return (
         <section style={cardStyle}>
@@ -184,11 +203,95 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                     </div>
                 )}
 
-                <div style={{ display: 'grid', gap: '10px', marginTop: '4px' }}>
-                    {visibleItems.length === 0 ? (
+                <div style={{ display: 'grid', gap: '12px', marginTop: '4px' }}>
+                    {pinnedItems.length > 0 && (
+                        <div style={{ display: 'grid', gap: '10px' }}>
+                            <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 800 }}>
+                                重要なお知らせ
+                            </div>
+                            {pinnedItems.map((item) => (
+                                <div
+                                    key={`${item.id}-${item.updatedAt}`}
+                                    style={{
+                                        border: '1px solid #f87171',
+                                        borderRadius: '14px',
+                                        padding: '12px 14px',
+                                        background: item.readUsers.includes(currentUser) ? '#fff1f2' : '#fef2f2',
+                                        boxShadow: '0 8px 20px rgba(239, 68, 68, 0.08)'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            <span>{item.date}</span>
+                                            <span>｜</span>
+                                            <span>{item.author || '作成者未入力'}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            <span style={{ color: '#b91c1c', fontWeight: 800 }}>重要</span>
+                                            {!item.readUsers.includes(currentUser) && <span style={{ color: '#b45309', fontWeight: 700 }}>未読</span>}
+                                            {item.readUsers.includes(currentUser) && <span style={{ color: '#0369a1', fontWeight: 700 }}>既読</span>}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
+                                        <span>{item.date}</span>
+                                        <span>｜</span>
+                                        <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('ja-JP') : '-'}</span>
+                                    </div>
+                                    <div style={{ whiteSpace: 'pre-wrap', color: '#0f172a', lineHeight: 1.6 }}>{item.content}</div>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                                        {activeActionNoticeId === item.id ? (
+                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                <button
+                                                    className="button-secondary"
+                                                    style={{ width: 'auto', padding: '8px 12px' }}
+                                                    onClick={() => void handleHideNotice(item)}
+                                                    disabled={processingNoticeId === item.id}
+                                                >
+                                                    既読にする
+                                                </button>
+                                                <button
+                                                    style={{
+                                                        width: 'auto',
+                                                        padding: '8px 12px',
+                                                        borderRadius: '999px',
+                                                        border: '1px solid #fecaca',
+                                                        background: '#fee2e2',
+                                                        color: '#b91c1c',
+                                                        fontWeight: 700
+                                                    }}
+                                                    onClick={() => void handleDeleteNotice(item)}
+                                                    disabled={processingNoticeId === item.id}
+                                                >
+                                                    削除する
+                                                </button>
+                                                <button
+                                                    className="button-secondary"
+                                                    style={{ width: 'auto', padding: '8px 12px' }}
+                                                    onClick={() => setActiveActionNoticeId(null)}
+                                                    disabled={processingNoticeId === item.id}
+                                                >
+                                                    キャンセル
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                className="button-secondary"
+                                                style={{ width: 'auto', padding: '8px 12px' }}
+                                                onClick={() => setActiveActionNoticeId(item.id)}
+                                            >
+                                                既読
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {regularItems.length === 0 && pinnedItems.length === 0 ? (
                         <p style={{ margin: 0, color: '#64748b' }}>まだ連絡事項がありません。</p>
                     ) : (
-                        visibleItems.map((item) => (
+                        regularItems.map((item) => (
                             <div
                                 key={`${item.id}-${item.updatedAt}`}
                                 style={{
