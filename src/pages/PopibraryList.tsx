@@ -147,7 +147,7 @@ const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void }> =
   return (
     <div
       onClick={() => onSelectPop(pop)}
-      style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start', minHeight: '100px' }}
+      style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start', minHeight: '100px', width: '100%' }}
     >
       <PopCardImage pop={pop} />
 
@@ -247,19 +247,19 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
     <div
       style={{
         position: 'relative',
-        width: 'clamp(72px, 22vw, 96px)',
-        minWidth: '72px',
-        maxWidth: '96px',
-        height: 'clamp(72px, 22vw, 96px)',
-        minHeight: '72px',
-        maxHeight: '96px',
-        aspectRatio: '1 / 1',
+        width: '88px',
+        minWidth: '88px',
+        maxWidth: '88px',
+        height: '88px',
+        minHeight: '88px',
+        maxHeight: '88px',
         borderRadius: '14px',
         backgroundColor: '#f8fafc',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
+        flex: '0 0 88px',
         flexShrink: 0
       }}
     >
@@ -280,14 +280,14 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
             if (!didFallbackToOriginal && normalizedSrc && normalizedSrc !== thumbnailSrc) {
               console.log('[PopibraryList] fallback to normalized image url', {
                 originalUrl: pop.thumbUrl,
-                normalizedUrl: normalizedSrc,
-              });
+              normalizedUrl: normalizedSrc,
+            });
               setDidFallbackToOriginal(true);
               setThumbnailSrc(normalizedSrc);
               return;
             }
           }}
-          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ display: 'block', width: '88px', minWidth: '88px', maxWidth: '88px', height: '88px', minHeight: '88px', maxHeight: '88px', objectFit: 'cover', flexShrink: 0 }}
         />
       ) : (
         <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', height: '100%' }}>
