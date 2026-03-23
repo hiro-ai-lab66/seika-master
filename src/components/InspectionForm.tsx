@@ -1600,31 +1600,31 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             border-radius: 6px;
         }
         .best-table {
-            width: 748px;
+            width: 680px;
             min-width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
-            font-size: 0.82rem;
+            font-size: 0.8rem;
         }
-        /* 列幅: コードを詰めて商品名と数量を見やすくする */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 132px; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 144px; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 124px; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 124px; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 132px; }
+        /* 列幅: 商品名をさらに絞り、数値列をコンパクトに保つ */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 120px; max-width: 120px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 108px; max-width: 108px; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 94px; max-width: 94px; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 112px; max-width: 112px; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 96px; max-width: 96px; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
             font-weight: 700;
             text-align: left;
-            padding: 9px 10px;
+            padding: 8px 7px;
             border-bottom: 2px solid #cbd5e1;
             position: sticky;
             top: 0;
             z-index: 1;
         }
         .best-table td {
-            padding: 8px 10px;
+            padding: 7px 7px;
             border-bottom: 1px solid #f1f5f9;
             color: #334155;
             vertical-align: middle;
@@ -1635,7 +1635,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             word-break: normal;
             overflow: visible;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 0.73rem;
+            font-size: 0.7rem;
             letter-spacing: 0.02em;
             font-variant-numeric: tabular-nums;
         }
@@ -1647,7 +1647,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             white-space: nowrap;
         }
         .best-table .col-num {
-            text-align: center;
+            text-align: right;
             white-space: nowrap;
         }
         .best-table th:nth-child(3),
@@ -1666,23 +1666,23 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                width: 676px;
-                font-size: 0.78rem;
+                width: 600px;
+                font-size: 0.74rem;
             }
-            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 104px; }
-            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 132px; }
-            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 106px; }
-            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 108px; }
-            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 118px; }
+            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 96px; max-width: 96px; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 92px; max-width: 92px; }
+            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 78px; max-width: 78px; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 96px; max-width: 96px; }
+            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 84px; max-width: 84px; }
             .best-table .col-code {
-                font-size: 0.68rem;
+                font-size: 0.64rem;
             }
             .best-table .col-name {
-                font-size: 0.74rem;
+                font-size: 0.7rem;
             }
             .best-table th,
             .best-table td {
-                padding: 6px 7px;
+                padding: 5px 6px;
             }
         }
         /* マスター登録結果ボックス */
