@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import type { AppState } from '../types';
-import { Sparkles, RefreshCw } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { AppState, MarketInfo } from '../types';
+import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
 
@@ -10,87 +10,108 @@ interface Props {
   onChangeDate: (date: string) => void;
 }
 
+type FocusItem = {
+  title: string;
+  reason: string;
+  tone: 'danger' | 'warn' | 'info' | 'success';
+};
+
+const shellStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: '16px',
+};
+
+const cardStyle: React.CSSProperties = {
+  background: '#ffffff',
+  border: '1px solid #e2e8f0',
+  borderRadius: '18px',
+  padding: '18px',
+  boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)'
+};
+
+const sectionTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: '1rem',
+  fontWeight: 800,
+  color: '#0f172a'
+};
+
+const toneStyles: Record<FocusItem['tone'], React.CSSProperties> = {
+  danger: { background: '#fff1f2', border: '1px solid #fecdd3', color: '#9f1239' },
+  warn: { background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412' },
+  info: { background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8' },
+  success: { background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857' }
+};
+
+const sortMarkets = (history: MarketInfo[] = []) =>
+  [...history].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate }) => {
-  const todayBudgetEntry = state.dailyBudgets.find(b => b.date === currentDate);
-  const todayInspection = state.inspections.find(i => i.date === currentDate);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const todayBudgetEntry = state.dailyBudgets.find((b) => b.date === currentDate);
+  const todayInspection = state.inspections.find((i) => i.date === currentDate);
+  const todayNote = state.dailyNotes?.find((entry) => entry.date === currentDate);
+  const latestMarket = useMemo(() => sortMarkets(state.marketHistory || [])[0], [state.marketHistory]);
+  const dailySales = useMemo(() => loadDailySales().filter((row) => row.date === currentDate), [currentDate]);
 
-  // 最後に報告されたタイミングを判定
-  let currentStatus = "未報告";
+  let currentStatus = '未報告';
   let currentActual = 0;
-
-  // 解析：最新の予測値と差異を取得
   let currentPrediction: number | null = null;
   let currentGap: number | null = null;
-
-  // マスタ予算があればそれを優先、なければ点検入力の値を参照
   const currentBudget = todayBudgetEntry?.totalBudget || todayInspection?.totalBudget || 0;
 
   if (todayInspection && currentBudget > 0) {
     if (todayInspection.actual17 !== null && todayInspection.forecast17 !== null) {
-      currentStatus = "17:00 時点予測";
+      currentStatus = '17:00 時点予測';
       currentActual = todayInspection.actual17;
       currentPrediction = todayInspection.forecast17;
       currentGap = todayInspection.diff17;
     } else if (todayInspection.actual12 !== null && todayInspection.forecast12 !== null) {
-      currentStatus = "12:00 時点予測";
+      currentStatus = '12:00 時点予測';
       currentActual = todayInspection.actual12;
       currentPrediction = todayInspection.forecast12;
       currentGap = todayInspection.diff12;
     } else if (todayInspection.actualFinal !== null) {
-      currentStatus = "閉店（確定）";
+      currentStatus = '閉店（確定）';
       currentActual = todayInspection.actualFinal;
       currentPrediction = todayInspection.actualFinal;
       currentGap = todayInspection.diffFinal;
     }
 
-    // マスタ予算と差異がある場合（マスタ更新後）、差額を再計算
     if (todayBudgetEntry && todayInspection.totalBudget !== todayBudgetEntry.totalBudget && currentPrediction !== null) {
       currentGap = currentPrediction - todayBudgetEntry.totalBudget;
     }
   }
 
-  // --- 進捗・分析データの計算 ---
-  const currentMonth = currentDate.substring(0, 7); // "YYYY-MM"
-
-  // 今月の目標合計
+  const currentMonth = currentDate.substring(0, 7);
   const monthGoal = state.dailyBudgets
-    .filter(b => b.date.startsWith(currentMonth))
+    .filter((b) => b.date.startsWith(currentMonth))
     .reduce((sum, b) => sum + b.totalBudget, 0);
-
-  // 今月の実績合計
   const monthActual = state.inspections
-    .filter(i => i.date.startsWith(currentMonth))
+    .filter((i) => i.date.startsWith(currentMonth))
     .reduce((sum, i) => sum + (i.actualFinal || i.actual17 || i.actual12 || 0), 0);
-
   const monthProgress = monthGoal > 0 ? Math.round((monthActual / monthGoal) * 100) : 0;
 
-  // 客単価分析
   const currentCustomers = todayInspection?.customersFinal || todayInspection?.customers17 || todayInspection?.customers12 || 0;
-  const avgSpend = (currentCustomers > 0 && currentActual > 0) ? Math.round(currentActual / currentCustomers) : null;
+  const avgSpend = currentCustomers > 0 && currentActual > 0 ? Math.round(currentActual / currentCustomers) : null;
+  const weather = dailySales[0]?.weather || '';
+  const tempBand = dailySales[0]?.temp_band || '';
+  const csvTotal = dailySales.reduce((sum, row) => sum + row.salesAmt, 0);
+  const csvDiffRate =
+    todayInspection?.actualFinal && todayInspection.actualFinal > 0 && csvTotal > 0
+      ? ((todayInspection.actualFinal - csvTotal) / todayInspection.actualFinal) * 100
+      : null;
+  const csvDiffStatus =
+    csvDiffRate === null
+      ? null
+      : Math.abs(csvDiffRate) <= 3
+        ? '正常'
+        : Math.abs(csvDiffRate) <= 5
+          ? '注意'
+          : '要確認';
 
-  // --- AIアドバイス生成 ---
-  const buildAdvice = useCallback(() => {
-    // daily_salesから天候・気温帯・CSV値を取得
-    const dailySales = loadDailySales().filter(r => r.date === currentDate);
-    const weather = dailySales.length > 0 ? (dailySales[0].weather || '') : '';
-    const tempBand = dailySales.length > 0 ? (dailySales[0].temp_band || '') : '';
-
-    // CSV合計と実績差額の計算
-    const csvTotal = dailySales.reduce((sum, r) => sum + r.salesAmt, 0);
-    const actualFinal = todayInspection?.actualFinal ?? null;
-    let csvDiffRate: number | null = null;
-    let csvDiffStatus: '正常' | '注意' | '要確認' | null = null;
-
-    if (actualFinal !== null && actualFinal > 0 && csvTotal > 0) {
-      const diff = actualFinal - csvTotal;
-      csvDiffRate = (diff / actualFinal) * 100;
-      const absRate = Math.abs(csvDiffRate);
-      if (absRate <= 3) csvDiffStatus = '正常';
-      else if (absRate <= 5) csvDiffStatus = '注意';
-      else csvDiffStatus = '要確認';
-    }
-
-    return generateAiAdvice({
+  const buildAdvice = () =>
+    generateAiAdvice({
       budget: currentBudget,
       actual: currentActual,
       diff: currentGap,
@@ -102,146 +123,265 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
       csvDiffRate,
       csvDiffStatus
     });
-  }, [currentDate, currentBudget, currentActual, currentGap, currentCustomers, avgSpend, todayInspection]);
 
   const [adviceText, setAdviceText] = useState<string>('');
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // 日付やデータ変更時に自動更新
   useEffect(() => {
     setAdviceText(buildAdvice());
-  }, [buildAdvice]);
+  }, [currentDate, currentBudget, currentActual, currentGap, currentCustomers, avgSpend, weather, tempBand, csvDiffRate, csvDiffStatus]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    // 少しだけアニメーション感を出す
-    setTimeout(() => {
+    window.setTimeout(() => {
       setAdviceText(buildAdvice());
       setIsRefreshing(false);
-    }, 400);
+    }, 300);
   };
 
+  const adviceReasons = useMemo(() => {
+    const reasons: string[] = [];
+    if (currentGap !== null && currentGap < 0) reasons.push(`予算差額 ${currentGap.toLocaleString()}円で未達。`);
+    if (weather) reasons.push(`天候は ${weather}。`);
+    if (tempBand) reasons.push(`気温帯は ${tempBand}。`);
+    if (currentCustomers > 0) reasons.push(`客数は ${currentCustomers} 名。`);
+    if (avgSpend) reasons.push(`客単価は ${avgSpend.toLocaleString()} 円。`);
+    if (csvDiffStatus && csvDiffStatus !== '正常' && csvDiffRate !== null) reasons.push(`CSV差額率は ${csvDiffRate.toFixed(1)}%。`);
+    return reasons.slice(0, 4);
+  }, [currentGap, weather, tempBand, currentCustomers, avgSpend, csvDiffStatus, csvDiffRate]);
+
+  const focusItems = useMemo<FocusItem[]>(() => {
+    const items: FocusItem[] = [];
+
+    if (currentGap !== null && currentGap < 0) {
+      items.push({
+        title: '主力単品の前出しを最優先',
+        reason: `予算に対して ${Math.abs(currentGap).toLocaleString()} 円不足見込みです。平台と定番のフェイス強化を先行してください。`,
+        tone: 'danger'
+      });
+    }
+
+    if (todayInspection?.promotionItem) {
+      const promotionRate = todayInspection.promotionActual17Rate || todayInspection.promotionActual12Rate || 0;
+      items.push({
+        title: `${todayInspection.promotionItem} の訴求確認`,
+        reason: promotionRate > 0
+          ? `売り込み品の消化率は ${promotionRate.toFixed(1)}%。POPと展開場所を再確認してください。`
+          : '売り込み品の実績がまだ薄いです。入口・平台の見せ方を優先してください。',
+        tone: promotionRate >= 80 ? 'success' : 'warn'
+      });
+    }
+
+    if (weather === '雨' || weather === '雪') {
+      items.push({
+        title: '来店客単価アップへ切替',
+        reason: `${weather}天は客数が伸びにくい前提です。まとめ買い・関連販売の声掛けを優先してください。`,
+        tone: 'warn'
+      });
+    } else if (tempBand === '暑い' || tempBand === '寒い') {
+      items.push({
+        title: '気温連動の売場へ寄せる',
+        reason: `${tempBand}日です。気温に合うメニュー提案と主力カテゴリ前出しを合わせてください。`,
+        tone: 'info'
+      });
+    }
+
+    const pendingTodos = (state.todos || []).filter((todo) => !todo.completed).slice(0, 2);
+    pendingTodos.forEach((todo) => {
+      items.push({
+        title: todo.text,
+        reason: todo.source === 'ai' ? 'AI提案タスクです。今日の行動に落とし込んでください。' : '未完了タスクです。優先度を確認してください。',
+        tone: 'info'
+      });
+    });
+
+    if (items.length === 0) {
+      items.push({
+        title: '品出しとフェイス維持',
+        reason: '大きな異常は見えていません。売場鮮度と欠品防止を優先してください。',
+        tone: 'success'
+      });
+    }
+
+    return items.slice(0, 3);
+  }, [currentGap, todayInspection, weather, tempBand, state.todos]);
+
+  const promotionItems = useMemo(() => {
+    const list: { title: string; detail: string }[] = [];
+    if (todayInspection?.promotionItem) {
+      list.push({
+        title: `売り込み品: ${todayInspection.promotionItem}`,
+        detail: `目標 ${todayInspection.promotionTargetSales?.toLocaleString() || 0} 円 / 17時実績 ${todayInspection.promotionActual17Sales?.toLocaleString() || 0} 円`
+      });
+    }
+    if (state.chirashiImage) {
+      list.push({
+        title: 'チラシ展開あり',
+        detail: state.chirashiDate ? `${state.chirashiDate} の販促素材が登録済みです。` : '販促素材が登録済みです。'
+      });
+    }
+    (latestMarket?.analysis.salesHints || []).slice(0, 2).forEach((hint, index) => {
+      list.push({
+        title: `相場ヒント ${index + 1}`,
+        detail: hint
+      });
+    });
+    return list.slice(0, 3);
+  }, [todayInspection, state.chirashiImage, state.chirashiDate, latestMarket]);
+
+  const importantNotices = useMemo(() => {
+    const list: string[] = [];
+    if (todayNote?.announcements) list.push(todayNote.announcements);
+    (latestMarket?.analysis.notices || []).slice(0, 2).forEach((notice) => list.push(notice));
+    if (todayNote?.inspectionNotes) list.push(todayNote.inspectionNotes);
+    return list.filter(Boolean).slice(0, 3);
+  }, [todayNote, latestMarket]);
+
+  const weatherCardItems = [
+    { label: '天候', value: weather || '未設定' },
+    { label: '気温帯', value: tempBand || '未設定' },
+    { label: '客数', value: currentCustomers > 0 ? `${currentCustomers}名` : '未入力' },
+    { label: '客単価', value: avgSpend ? `${avgSpend.toLocaleString()}円` : '未入力' }
+  ];
+
   return (
-    <div className="dashboard-container">
-      <header className="page-header">
-        <div className="header-left">
-          <h2>青果マスター</h2>
-          <div className="budget-tag" style={{ marginLeft: 0, marginTop: '4px' }}>
-            予算: {currentBudget > 0 ? `¥${currentBudget.toLocaleString()}` : "未入力"}
+    <div style={shellStyle}>
+      <header style={{ ...cardStyle, padding: '20px', background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)', borderColor: '#bfdbfe' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1d4ed8', letterSpacing: '0.06em' }}>ACTION DASHBOARD</div>
+            <h2 style={{ margin: '4px 0 6px', color: '#0f172a' }}>現場判断用ダッシュボード</h2>
+            <div style={{ color: '#475569', fontSize: '0.92rem' }}>見た瞬間に、今日の動きを決めるための要点だけを表示します。</div>
           </div>
-        </div>
-        <div className="date-picker-wrapper">
-          <input
-            type="date"
-            className="header-date-picker"
-            value={currentDate}
-            onChange={(e) => onChangeDate(e.target.value)}
-          />
+          <input type="date" className="header-date-picker" value={currentDate} onChange={(e) => onChangeDate(e.target.value)} />
         </div>
       </header>
 
-      <div className={`status-hero ${(currentGap || 0) < 0 ? 'is-negative' : ''}`}>
-        <div className="hero-main">
-          <div className="label">予測最終売上 ({currentStatus})</div>
-          <div className="value">{currentPrediction !== null ? `¥${currentPrediction.toLocaleString()}` : "---"}</div>
-        </div>
-        <div className="hero-stats">
-          <div className="stat-item">
-            <div className="stat-label">現在実績</div>
-            <div className="stat-value">¥{currentActual.toLocaleString()}</div>
+      <div style={{ ...cardStyle, background: currentGap !== null && currentGap < 0 ? 'linear-gradient(135deg, #fff1f2 0%, #fff7ed 100%)' : 'linear-gradient(135deg, #ecfeff 0%, #eff6ff 100%)', borderColor: currentGap !== null && currentGap < 0 ? '#fecdd3' : '#bae6fd' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569' }}>売上サマリー</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#0f172a', marginTop: '6px' }}>
+              {currentPrediction !== null ? `¥${currentPrediction.toLocaleString()}` : '---'}
+            </div>
+            <div style={{ color: '#475569', marginTop: '6px' }}>予測最終売上 / {currentStatus}</div>
           </div>
-          <div className="stat-item">
-            <div className="stat-label">予算差額</div>
-            <div className="stat-value">
-              {currentGap !== null
-                ? `${currentGap > 0 ? '+' : ''}${currentGap.toLocaleString()}`
-                : "---"}
+          <div style={{ display: 'grid', gap: '10px', minWidth: '220px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ color: '#64748b' }}>現在実績</span>
+              <strong style={{ color: '#0f172a' }}>¥{currentActual.toLocaleString()}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ color: '#64748b' }}>予算差額</span>
+              <strong style={{ color: currentGap !== null && currentGap < 0 ? '#be123c' : '#047857' }}>
+                {currentGap !== null ? `${currentGap > 0 ? '+' : ''}${currentGap.toLocaleString()}円` : '---'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ color: '#64748b' }}>今月進捗</span>
+              <strong style={{ color: '#0f172a' }}>{monthProgress}%</strong>
             </div>
           </div>
         </div>
       </div>
 
-      {currentGap !== null && currentGap < 0 && (
-        <div className="card shortfall-card">
-          <div className="card-header text-error">⚠ 予算未達です</div>
-          <div className="card-body">
-            <div className="stat-large text-error">不足額: ¥{Math.abs(currentGap).toLocaleString()}</div>
-            <p className="description">簡易対策を検討してください。</p>
-          </div>
+      <div style={{ ...cardStyle, borderColor: '#fcd34d', background: 'linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+          <Target size={20} color="#b45309" />
+          <h3 style={sectionTitleStyle}>今日の重点</h3>
+          <span style={{ marginLeft: 'auto', fontSize: '0.78rem', color: '#92400e', fontWeight: 800 }}>最大3項目</span>
         </div>
-      )}
+        <div style={{ display: 'grid', gap: '10px' }}>
+          {focusItems.map((item, index) => (
+            <div key={`${item.title}-${index}`} style={{ ...toneStyles[item.tone], borderRadius: '14px', padding: '14px 16px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: '6px' }}>重点 {index + 1}</div>
+              <div style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '4px' }}>{item.title}</div>
+              <div style={{ fontSize: '0.9rem', lineHeight: 1.6 }}>{item.reason}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
-      <div className="info-box ai-advice-box">
-        <Sparkles className="icon-ai" />
-        <div className="ai-advice-content">
-          <div className="ai-advice-header">
-            <p className="ai-advice-title">【AIアドバイス】</p>
+      <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+        <div style={{ ...cardStyle, borderColor: '#c7d2fe' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <Sparkles size={18} color="#4338ca" />
+            <h3 style={sectionTitleStyle}>AIアドバイス</h3>
             <button
-              className="ai-refresh-btn"
+              className="button-secondary"
+              style={{ marginLeft: 'auto', width: 'auto', padding: '8px 12px' }}
               onClick={handleRefresh}
               disabled={isRefreshing}
-              title="AIアドバイスを更新"
             >
               <RefreshCw size={14} className={isRefreshing ? 'spin' : ''} />
-              <span>更新</span>
+              更新
             </button>
           </div>
-          <p className="ai-advice-text">{adviceText}</p>
-        </div>
-      </div>
-
-      <div className="analytics-grid">
-        <div className="card analytics-card">
-          <div className="card-header-sm">
-            <span>今月の予算達成状況</span>
-            <span className={`badge-status ${(monthProgress || 0) >= 100 ? 'is-success' : ''}`}>
-              {monthProgress || 0}%
-            </span>
-          </div>
-          <div className="progress-container">
-            <div className="progress-bar" style={{ width: `${Math.min(monthProgress || 0, 100)}%` }}></div>
-          </div>
-          <div className="analytics-stats-vertical">
-            <div className={`stat-large-row ${(monthActual - monthGoal) < 0 ? 'text-error' : 'text-success'}`}>
-              <span className="label">累計差異:</span>
-              <span className="value">{(monthActual - monthGoal) > 0 ? '+' : ''}{(monthActual - monthGoal).toLocaleString()}円</span>
-            </div>
-            <div className="stat-label-sm">累計実績: ¥{(monthActual || 0).toLocaleString()} / 目標: ¥{(monthGoal || 0).toLocaleString()}</div>
+          <div style={{ color: '#0f172a', fontWeight: 700, lineHeight: 1.8, marginBottom: '12px' }}>{adviceText}</div>
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {adviceReasons.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: '0.88rem' }}>判断理由データはまだ不足しています。</div>
+            ) : (
+              adviceReasons.map((reason, index) => (
+                <div key={`${reason}-${index}`} style={{ color: '#475569', fontSize: '0.88rem' }}>
+                  ・{reason}
+                </div>
+              ))
+            )}
           </div>
         </div>
 
-        <div className="card analytics-card">
-          <div className="card-header-sm">本日の客数・客単価</div>
-          <div className="analytics-value-row">
-            <div className="val-item">
-              <div className="v-label">来店客数</div>
-              <div className="v-value">{(currentCustomers || 0) > 0 ? currentCustomers : "---"} <span className="u">名</span></div>
-            </div>
-            <div className="val-item">
-              <div className="v-label">客単価</div>
-              <div className="v-value">{avgSpend ? `¥${avgSpend.toLocaleString()}` : "---"}</div>
-            </div>
+        <div style={{ ...cardStyle, borderColor: '#bfdbfe' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <Megaphone size={18} color="#2563eb" />
+            <h3 style={sectionTitleStyle}>販促・広告情報</h3>
           </div>
-          <div className="stat-label-footer">※点検入力の最新データを参照</div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {promotionItems.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: '0.9rem' }}>販促・広告情報はまだありません。</div>
+            ) : (
+              promotionItems.map((item, index) => (
+                <div key={`${item.title}-${index}`} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 14px' }}>
+                  <div style={{ color: '#0f172a', fontWeight: 800, marginBottom: '4px' }}>{item.title}</div>
+                  <div style={{ color: '#475569', fontSize: '0.88rem', lineHeight: 1.6 }}>{item.detail}</div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="card">
-        <div className="card-header">今後の予定</div>
-        <div className="task-preview">
-          {(state.todos || []).filter(t => !t.completed).length > 0 ? (
-            (state.todos || []).filter(t => !t.completed).slice(0, 3).map(t => (
-              <div key={t.id} className="task-preview-item">
-                <div className="dot"></div>
-                <span>{t.text}</span>
+        <div style={{ ...cardStyle, borderColor: '#fecaca' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <AlertTriangle size={18} color="#dc2626" />
+            <h3 style={sectionTitleStyle}>重要連絡</h3>
+          </div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {importantNotices.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: '0.9rem' }}>重要連絡はありません。</div>
+            ) : (
+              importantNotices.map((notice, index) => (
+                <div key={`${notice}-${index}`} style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '12px 14px', color: '#7c2d12', lineHeight: 1.6 }}>
+                  {notice}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div style={{ ...cardStyle, borderColor: '#a7f3d0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <ThermometerSun size={18} color="#059669" />
+            <h3 style={sectionTitleStyle}>天候・気温</h3>
+          </div>
+          <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            {weatherCardItems.map((item) => (
+              <div key={item.label} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '12px 14px' }}>
+                <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: 800 }}>{item.label}</div>
+                <div style={{ marginTop: '4px', color: '#064e3b', fontSize: '1rem', fontWeight: 800 }}>{item.value}</div>
               </div>
-            ))
-          ) : (
-            <p className="text-muted">本日の予定はすべて完了しました</p>
-          )}
+            ))}
+          </div>
         </div>
       </div>
-
     </div>
   );
 };
