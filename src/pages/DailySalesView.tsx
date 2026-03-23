@@ -148,7 +148,16 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     const budgetEntry = useMemo(() => dailyBudgets.find(b => b.date === selectedDate), [dailyBudgets, selectedDate]);
 
     const records = useMemo(() => {
-        return dateRecords.sort((a, b) => b.salesAmt - a.salesAmt);
+        return [...dateRecords].sort((a, b) => {
+            const qtyA = Number(a.salesQty || 0);
+            const qtyB = Number(b.salesQty || 0);
+            const qtyDiff = qtyB - qtyA;
+            if (qtyDiff !== 0) return qtyDiff;
+
+            const amtA = Number(a.salesAmt || 0);
+            const amtB = Number(b.salesAmt || 0);
+            return amtB - amtA;
+        });
     }, [dateRecords]);
 
     const veggies = records.filter(r => r.department === '野菜');
