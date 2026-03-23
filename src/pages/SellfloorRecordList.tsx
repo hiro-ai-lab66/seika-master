@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn } from 'lucide-react';
-import type { SellfloorRecord } from '../types';
+import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn, Tag } from 'lucide-react';
+import type { PopItem, SellfloorRecord } from '../types';
 import { buildGoogleDriveImageDisplayUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
+import { ImageZoomModal } from '../components/ImageZoomModal';
 
 interface SellfloorRecordListProps {
   records: SellfloorRecord[];
+  savedPops?: PopItem[];
   onSelectRecord: (record: SellfloorRecord) => void;
   onNewRecord: () => void;
   onReloadShared?: () => void;
@@ -19,6 +21,7 @@ interface SellfloorRecordListProps {
 
 export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
   records,
+  savedPops = [],
   onSelectRecord,
   onNewRecord,
   onReloadShared,
@@ -31,12 +34,38 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
   needsSheetsLogin = false
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('すべて');
+  const [zoomImageUrl, setZoomImageUrl] = useState('');
+  const [zoomTitle, setZoomTitle] = useState('');
+
+  const resolveRecordCategory = (record: SellfloorRecord) => savedPops.find((pop) => pop.id === record.popId)?.categoryLarge || '未分類';
+  const resolveRecordPopTitle = (record: SellfloorRecord) => savedPops.find((pop) => pop.id === record.popId)?.title || '';
+
+  const categories = ['すべて', ...Array.from(new Set(records.map((record) => resolveRecordCategory(record)).filter(Boolean)))];
 
   const filteredRecords = records.filter(record => 
-    (record.product || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (record.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (record.comment || '').toLowerCase().includes(searchQuery.toLowerCase())
+    (
+      (record.product || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (record.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (record.comment || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      resolveRecordCategory(record).toLowerCase().includes(searchQuery.toLowerCase()) ||
+      resolveRecordPopTitle(record).toLowerCase().includes(searchQuery.toLowerCase())
+    ) &&
+    (categoryFilter === 'すべて' || resolveRecordCategory(record) === categoryFilter)
   );
+
+  const topCategory = categories
+    .filter((category) => category !== 'すべて')
+    .map((category) => ({ category, count: records.filter((record) => resolveRecordCategory(record) === category).length }))
+    .sort((a, b) => b.count - a.count)[0];
+  const linkedRecordsCount = records.filter((record) => record.popId).length;
+  const topLinkedPop = Object.entries(records.reduce<Record<string, number>>((acc, record) => {
+    const popTitle = resolveRecordPopTitle(record);
+    if (popTitle) {
+      acc[popTitle] = (acc[popTitle] || 0) + 1;
+    }
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1])[0];
 
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '800px', margin: '0 auto' }}>
@@ -77,6 +106,34 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
                 style={{ width: '100%', padding: '10px 10px 10px 36px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
             />
         </div>
+        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingTop: '14px' }}>
+          {categories.map((category) => (
+            <button
+              key={category}
+              onClick={() => setCategoryFilter(category)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '999px',
+                border: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                backgroundColor: categoryFilter === category ? 'var(--primary)' : '#f1f5f9',
+                color: categoryFilter === category ? 'white' : '#334155',
+                cursor: 'pointer',
+              }}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <AnalyticsCard label="売場記録件数" value={`${records.length}件`} detail="共有データを含む総件数" />
+        <AnalyticsCard label="よく使うカテゴリ" value={topCategory?.category || '未分類'} detail={topCategory ? `${topCategory.count}件` : 'まだ記録なし'} />
+        <AnalyticsCard label="POP連携件数" value={`${linkedRecordsCount}件`} detail={records.length > 0 ? `${Math.round((linkedRecordsCount / records.length) * 100)}% がPOP連携` : 'まだ記録なし'} />
+        <AnalyticsCard label="よく使うPOP" value={topLinkedPop?.[0] || '未連携'} detail={topLinkedPop ? `${topLinkedPop[1]}回使用` : 'POP未連携'} />
       </div>
 
       {(sharedStatus || sharedError || isSharedLoading) && (
@@ -123,7 +180,16 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
                 }}
             >
                 {/* Thumbnail */}
-                <div style={{ width: '100px', height: '100px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#f1f5f9', flexShrink: 0, position: 'relative' }}>
+                <div
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (record.photoUrl) {
+                      setZoomImageUrl(buildGoogleDriveImageDisplayUrl(record.photoUrl, 1600));
+                      setZoomTitle(record.product || '売場写真');
+                    }
+                  }}
+                  style={{ width: '100px', height: '100px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#f1f5f9', flexShrink: 0, position: 'relative', cursor: record.photoUrl ? 'zoom-in' : 'default' }}
+                >
                     <SellfloorThumbnail photoUrl={record.photoUrl} />
                     {record.popId && (
                         <div style={{ position: 'absolute', bottom: '4px', right: '4px', backgroundColor: '#eab308', color: 'white', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
@@ -146,6 +212,16 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
                         <MapPin size={14} /> <span>{record.location}</span>
                     </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '999px', color: '#475569' }}>
+                        <Tag size={12} /> {resolveRecordCategory(record)}
+                      </span>
+                      {resolveRecordPopTitle(record) && (
+                        <span style={{ fontSize: '0.72rem', backgroundColor: '#fef3c7', padding: '4px 8px', borderRadius: '999px', color: '#92400e', fontWeight: 700 }}>
+                          {resolveRecordPopTitle(record)}
+                        </span>
+                      )}
+                    </div>
                     
                     <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-main)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.4 }}>
                         {record.comment}
@@ -165,9 +241,27 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
         )}
       </div>
 
+      {zoomImageUrl && (
+        <ImageZoomModal
+          imageUrl={zoomImageUrl}
+          title={zoomTitle}
+          onClose={() => {
+            setZoomImageUrl('');
+            setZoomTitle('');
+          }}
+        />
+      )}
     </div>
   );
 };
+
+const AnalyticsCard: React.FC<{ label: string; value: string; detail: string }> = ({ label, value, detail }) => (
+  <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '16px', boxShadow: 'var(--shadow-sm)', border: '1px solid #e2e8f0' }}>
+    <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, marginBottom: '8px' }}>{label}</div>
+    <div style={{ fontSize: '1.15rem', color: '#0f172a', fontWeight: 800, marginBottom: '6px' }}>{value}</div>
+    <div style={{ fontSize: '0.8rem', color: '#475569', lineHeight: 1.5 }}>{detail}</div>
+  </div>
+);
 
 const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
   const [thumbnailSrc, setThumbnailSrc] = useState('');

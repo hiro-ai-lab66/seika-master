@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, LogIn, Plus, RefreshCw, Search, Tag } from 'lucide-react';
-import type { PopItem } from '../types';
+import type { PopItem, SellfloorRecord } from '../types';
 import { buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageOpenUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { ImageZoomModal } from '../components/ImageZoomModal';
 
 interface PopibraryListProps {
   onSelectPop: (pop: PopItem) => void;
   onAddPop: () => void;
   savedPops?: PopItem[];
+  sellfloorRecords?: SellfloorRecord[];
   onReloadShared?: () => void;
   onLoginShared?: () => void;
   sharedStatus?: string | null;
@@ -19,6 +21,7 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
   onSelectPop,
   onAddPop,
   savedPops = [],
+  sellfloorRecords = [],
   onReloadShared,
   onLoginShared,
   sharedStatus,
@@ -28,6 +31,8 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('すべて');
+  const [zoomImageUrl, setZoomImageUrl] = useState('');
+  const [zoomTitle, setZoomTitle] = useState('');
 
   const categories = useMemo(() => ['すべて', ...Array.from(new Set(savedPops.map((pop) => pop.categoryLarge).filter(Boolean)))], [savedPops]);
 
@@ -35,11 +40,27 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
     const query = searchQuery.toLowerCase();
     const matchesSearch =
       pop.title.toLowerCase().includes(query) ||
+      (pop.categoryLarge || '').toLowerCase().includes(query) ||
       (pop.improvementComment || '').toLowerCase().includes(query) ||
       (pop.author || '').toLowerCase().includes(query);
     const matchesCategory = categoryFilter === 'すべて' || pop.categoryLarge === categoryFilter;
     return matchesSearch && matchesCategory;
   });
+
+  const linkedUsage = sellfloorRecords.reduce<Record<string, number>>((acc, record) => {
+    if (record.popId) {
+      acc[record.popId] = (acc[record.popId] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const topCategory = categories
+    .filter((category) => category !== 'すべて')
+    .map((category) => ({ category, count: savedPops.filter((pop) => pop.categoryLarge === category).length }))
+    .sort((a, b) => b.count - a.count)[0];
+  const mostUsedPop = savedPops
+    .map((pop) => ({ title: pop.title, count: linkedUsage[pop.id] || 0 }))
+    .sort((a, b) => b.count - a.count)[0];
+  const linkedPopCount = savedPops.filter((pop) => (linkedUsage[pop.id] || 0) > 0).length;
 
   return (
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '920px', margin: '0 auto' }}>
@@ -90,6 +111,13 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
         </div>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <AnalyticsCard label="POP件数" value={`${savedPops.length}件`} detail="共有されているPOP総数" />
+        <AnalyticsCard label="よく使うカテゴリ" value={topCategory?.category || '未分類'} detail={topCategory ? `${topCategory.count}件` : 'まだ登録なし'} />
+        <AnalyticsCard label="売場で使われたPOP" value={`${linkedPopCount}件`} detail={`${sellfloorRecords.filter((record) => record.popId).length}件の売場記録で使用`} />
+        <AnalyticsCard label="よく使うPOP" value={mostUsedPop?.title || '未使用'} detail={mostUsedPop?.count ? `${mostUsedPop.count}回連携` : '売場記録と未連携'} />
+      </div>
+
       {(sharedStatus || sharedError || isSharedLoading) && (
         <div style={{ background: sharedError ? '#fef2f2' : '#eff6ff', border: `1px solid ${sharedError ? '#fecaca' : '#bfdbfe'}`, color: sharedError ? '#b91c1c' : '#0369a1', padding: '14px 16px', borderRadius: '12px', marginBottom: '20px' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '10px' }}>
@@ -118,7 +146,15 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {filteredPops.map((pop) => (
-          <PopCard key={pop.id} pop={pop} onSelectPop={onSelectPop} />
+          <PopCard
+            key={pop.id}
+            pop={pop}
+            onSelectPop={onSelectPop}
+            onZoomImage={(imageUrl, title) => {
+              setZoomImageUrl(imageUrl);
+              setZoomTitle(title);
+            }}
+          />
         ))}
       </div>
 
@@ -127,11 +163,22 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
           POP がありません。
         </div>
       )}
+
+      {zoomImageUrl && (
+        <ImageZoomModal
+          imageUrl={zoomImageUrl}
+          title={zoomTitle}
+          onClose={() => {
+            setZoomImageUrl('');
+            setZoomTitle('');
+          }}
+        />
+      )}
     </div>
   );
 };
 
-const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void }> = ({ pop, onSelectPop }) => {
+const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void; onZoomImage: (imageUrl: string, title: string) => void }> = ({ pop, onSelectPop, onZoomImage }) => {
   const originalUrl = pop.thumbUrl || '';
   const fileId = extractGoogleDriveFileId(originalUrl);
   const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
@@ -149,7 +196,10 @@ const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void }> =
       onClick={() => onSelectPop(pop)}
       style={{ background: 'white', borderRadius: '16px', padding: '14px', boxShadow: 'var(--shadow-md)', cursor: 'pointer', display: 'flex', gap: '14px', alignItems: 'flex-start', minHeight: '100px', width: '100%' }}
     >
-      <PopCardImage pop={pop} />
+      <PopCardImage
+        pop={pop}
+        onZoomImage={(imageUrl) => onZoomImage(imageUrl, pop.title || 'POP画像')}
+      />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
@@ -188,7 +238,7 @@ const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void }> =
   );
 };
 
-const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
+const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => void }> = ({ pop, onZoomImage }) => {
   const [thumbnailSrc, setThumbnailSrc] = useState('');
   const [normalizedSrc, setNormalizedSrc] = useState('');
   const [didFallbackToOriginal, setDidFallbackToOriginal] = useState(false);
@@ -245,6 +295,12 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
 
   return (
     <div
+      onClick={(event) => {
+        event.stopPropagation();
+        if (thumbnailSrc) {
+          onZoomImage(buildGoogleDriveImageDisplayUrl(pop.thumbUrl || '', 1600));
+        }
+      }}
       style={{
         position: 'relative',
         width: '88px',
@@ -260,7 +316,8 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
         justifyContent: 'center',
         overflow: 'hidden',
         flex: '0 0 88px',
-        flexShrink: 0
+        flexShrink: 0,
+        cursor: thumbnailSrc ? 'zoom-in' : 'default'
       }}
     >
       {hasImageSource ? (
@@ -298,3 +355,11 @@ const PopCardImage: React.FC<{ pop: PopItem }> = ({ pop }) => {
     </div>
   );
 };
+
+const AnalyticsCard: React.FC<{ label: string; value: string; detail: string }> = ({ label, value, detail }) => (
+  <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '16px', boxShadow: 'var(--shadow-sm)', border: '1px solid #e2e8f0' }}>
+    <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, marginBottom: '8px' }}>{label}</div>
+    <div style={{ fontSize: '1.15rem', color: '#0f172a', fontWeight: 800, marginBottom: '6px' }}>{value}</div>
+    <div style={{ fontSize: '0.8rem', color: '#475569', lineHeight: 1.5 }}>{detail}</div>
+  </div>
+);

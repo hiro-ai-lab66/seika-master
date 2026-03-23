@@ -703,6 +703,7 @@ function App() {
         }
         return <SellfloorRecordList 
                  records={state.sellfloorRecords || []} 
+                 savedPops={state.popData || []}
                  onNewRecord={() => {
                    setEditingSellfloorRecord(null);
                    setSellfloorView('form');
@@ -749,6 +750,7 @@ function App() {
         }
         return <PopibraryList 
                  savedPops={state.popData || []} 
+                 sellfloorRecords={state.sellfloorRecords || []}
                  onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
                  onAddPop={() => {
                    setEditingPop(null);
