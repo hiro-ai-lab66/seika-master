@@ -1601,17 +1601,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         .best-table {
             width: 100%;
-            min-width: 100%;
+            min-width: 660px;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.8rem;
         }
-        /* 列幅を固定比率で強制 */
-        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 14%; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 41%; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
-        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 15%; }
+        /* コード列を最優先で固定し、右側は圧縮 */
+        .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 122px; min-width: 122px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 170px; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 90px; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 100px; }
+        .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 96px; }
         .best-table th {
             background: #f1f5f9;
             color: #475569;
@@ -1631,17 +1631,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             border-bottom: 1px solid #f1f5f9;
             color: #334155;
             vertical-align: middle;
-            overflow: hidden;
         }
         .best-table .col-code {
             text-align: left;
             white-space: nowrap;
             word-break: normal;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            overflow: visible;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 0.66rem;
-            letter-spacing: 0.01em;
+            font-size: 0.7rem;
+            letter-spacing: 0;
             font-variant-numeric: tabular-nums;
         }
         .best-table .col-name {
@@ -1675,16 +1673,16 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         @media (max-width: 768px) {
             .best-table {
                 width: 100%;
-                min-width: 100%;
+                min-width: 620px;
                 font-size: 0.72rem;
             }
-            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 12%; }
-            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 43%; }
-            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 15%; }
-            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 15%; }
-            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 15%; }
+            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 112px; min-width: 112px; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 136px; }
+            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 82px; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 92px; }
+            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 88px; }
             .best-table .col-code {
-                font-size: 0.6rem;
+                font-size: 0.64rem;
             }
             .best-table .col-name {
                 font-size: 0.68rem;
