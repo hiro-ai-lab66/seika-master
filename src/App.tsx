@@ -26,6 +26,7 @@ import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { ensureSharedSheetsSession, isSheetsConfigured } from './services/googleSheetsInventoryService';
 import { appendSharedPopibraryItem, deleteSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName, updateSharedPopibraryItem } from './services/googleSheetsPopibraryService';
+import { isRemoteImageUrl, normalizeDriveImageUrl } from './services/storageService';
 
 const STORAGE_KEY = 'seika_master_data_v2';
 const MARKET_REDIRECT_KEY = 'seika_market_redirect';
@@ -684,7 +685,7 @@ function App() {
       case 'dailyNotes':
         return <DailyNotesPage currentDate={currentDate} onChangeDate={changeDate} entries={state.dailyNotes || []} onSave={saveDailyNotes} />;
       case 'ai':
-        return <AIAssist state={state} currentDate={currentDate} onSaveChirashi={(image, date) => setState(prev => ({ ...prev, chirashiImage: image || undefined, chirashiDate: date || undefined }))} />;
+        return <AIAssist state={state} currentDate={currentDate} onSaveChirashi={(image, date) => setState(prev => ({ ...prev, chirashiImage: image ? normalizeDriveImageUrl(image) : undefined, chirashiDate: date || undefined }))} />;
       case 'todo':
         return <ToDoList todos={state.todos} onToggle={toggleTodo} onAdd={addTodo} />;
       case 'history':
@@ -1032,6 +1033,8 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
     { role: 'ai', text: generateInitialAdvice() }
   ]);
   const [inputText, setInputText] = useState('');
+  const [chirashiImageUrlInput, setChirashiImageUrlInput] = useState('');
+  const normalizedChirashiImage = normalizeDriveImageUrl(state.chirashiImage || '');
 
   // POP Design State
   const [popDesign, setPopDesign] = useState<{
@@ -1363,8 +1366,8 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
             </div>
 
             <div style={{ width: '100%', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '150px' }}>
-              {state.chirashiImage.startsWith('data:image') ? (
-                <img src={state.chirashiImage} alt="チラシ プレビュー" style={{ width: '100%', maxHeight: '450px', objectFit: 'contain' }} />
+              {state.chirashiImage.startsWith('data:image') || isRemoteImageUrl(normalizedChirashiImage) ? (
+                <img src={state.chirashiImage.startsWith('data:image') ? state.chirashiImage : normalizedChirashiImage} alt="チラシ プレビュー" style={{ width: '100%', maxHeight: '450px', objectFit: 'contain' }} />
               ) : (
                 <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
                   <FileText size={48} />
@@ -1374,32 +1377,59 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
             </div>
           </div>
         ) : (
-          <label className="upload-area-sm" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', padding: '24px', background: 'white', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
-            <input
-              type="file"
-              accept=".jpg,.jpeg,.png,.pdf"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file && onSaveChirashi) {
-                  const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    if (ev.target?.result) {
-                      onSaveChirashi(ev.target.result as string, new Date().toLocaleDateString('ja-JP'));
-                    }
-                  };
-                  reader.readAsDataURL(file);
-                }
-              }}
-            />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
-              <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '50%' }}>
-                <PenLine size={24} color="var(--primary)" />
+          <div style={{ width: '100%', display: 'grid', gap: '12px' }}>
+            <label className="upload-area-sm" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', padding: '24px', background: 'white', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file && onSaveChirashi) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      if (ev.target?.result) {
+                        onSaveChirashi(ev.target.result as string, new Date().toLocaleDateString('ja-JP'));
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+                <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '50%' }}>
+                  <PenLine size={24} color="var(--primary)" />
+                </div>
+                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>クリックして最新のチラシをアップロード</span>
+                <span style={{ fontSize: '0.8rem' }}>JPG, PNG, PDF 形式対応</span>
               </div>
-              <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>クリックして最新のチラシをアップロード</span>
-              <span style={{ fontSize: '0.8rem' }}>JPG, PNG, PDF 形式対応</span>
+            </label>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
+              <div style={{ fontWeight: 700, color: '#0f172a' }}>広告画像URLを貼る</div>
+              <input
+                type="url"
+                value={chirashiImageUrlInput}
+                onChange={(e) => setChirashiImageUrlInput(e.target.value)}
+                placeholder="https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
+                style={{ width: '100%' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  className="button-primary"
+                  style={{ width: 'auto', padding: '10px 14px' }}
+                  onClick={() => {
+                    const normalizedImageUrl = normalizeDriveImageUrl(chirashiImageUrlInput);
+                    if (!normalizedImageUrl || !onSaveChirashi) return;
+                    onSaveChirashi(normalizedImageUrl, new Date().toLocaleDateString('ja-JP'));
+                    setChirashiImageUrlInput('');
+                  }}
+                  disabled={!chirashiImageUrlInput.trim()}
+                >
+                  URLで保存
+                </button>
+              </div>
             </div>
-          </label>
+          </div>
         )}
       </div>
 
