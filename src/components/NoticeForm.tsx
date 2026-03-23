@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { SharedNoticeEntry } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { appendSharedNotice, fetchSharedNotices, getSharedNoticeSheetName, updateSharedNoticeReadUsers } from '../services/googleSheetsNoticeService';
+import { appendSharedNotice, deleteSharedNotice, fetchSharedNotices, getSharedNoticeSheetName, updateSharedNoticeReadUsers } from '../services/googleSheetsNoticeService';
 
 const cardStyle: React.CSSProperties = {
     background: '#ffffff',
@@ -20,6 +20,8 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [activeActionNoticeId, setActiveActionNoticeId] = useState<number | null>(null);
+    const [processingNoticeId, setProcessingNoticeId] = useState<number | null>(null);
     const currentUser =
         (typeof window !== 'undefined' && window.localStorage.getItem('seika_notice_user')) ||
         (import.meta as any).env?.VITE_NOTICE_USER?.trim() ||
@@ -37,20 +39,45 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
         setError('');
         try {
             const notices = await fetchSharedNotices();
-            const unreadItems = notices.filter((notice) => !notice.readUsers.includes(currentUser));
-            if (unreadItems.length > 0) {
-                await Promise.all(
-                    unreadItems.map((notice) => updateSharedNoticeReadUsers(notice, currentUser))
-                );
-            }
-            const refreshedNotices = unreadItems.length > 0 ? await fetchSharedNotices() : notices;
-            setItems(refreshedNotices);
+            setItems(notices);
             setStatus(`共有連絡事項を表示中（シート: ${getSharedNoticeSheetName()}）`);
         } catch (err) {
             console.error('[NoticeForm] failed to load notices', err);
             setError(`Google Sheets接続エラー: ${err instanceof Error ? err.message : '取得に失敗しました'}`);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleHideNotice = async (notice: SharedNoticeEntry) => {
+        setProcessingNoticeId(notice.id);
+        setError('');
+        try {
+            await updateSharedNoticeReadUsers(notice, currentUser);
+            await loadNotices();
+            setStatus('既読にして非表示にしました');
+            setActiveActionNoticeId(null);
+        } catch (err) {
+            console.error('[NoticeForm] failed to hide notice', err);
+            setError(`既読処理に失敗しました: ${err instanceof Error ? err.message : '更新に失敗しました'}`);
+        } finally {
+            setProcessingNoticeId(null);
+        }
+    };
+
+    const handleDeleteNotice = async (notice: SharedNoticeEntry) => {
+        setProcessingNoticeId(notice.id);
+        setError('');
+        try {
+            await deleteSharedNotice(notice.id);
+            await loadNotices();
+            setStatus('削除しました');
+            setActiveActionNoticeId(null);
+        } catch (err) {
+            console.error('[NoticeForm] failed to delete notice', err);
+            setError(`削除に失敗しました: ${err instanceof Error ? err.message : '削除に失敗しました'}`);
+        } finally {
+            setProcessingNoticeId(null);
         }
     };
 
@@ -97,7 +124,11 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
         }
     };
 
-    const visibleItems = useMemo(() => items.slice(0, 20), [items]);
+    const visibleItems = useMemo(
+        () => items.filter((item) => !item.readUsers.includes(currentUser)).slice(0, 20),
+        [items, currentUser]
+    );
+    const hiddenCount = Math.max(items.length - visibleItems.length, 0);
 
     return (
         <section style={cardStyle}>
@@ -147,6 +178,11 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
 
                 {status && <div style={{ color: '#0369a1', fontSize: '0.85rem', fontWeight: 700 }}>{status}</div>}
                 {error && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700 }}>{error}</div>}
+                {hiddenCount > 0 && (
+                    <div style={{ color: '#64748b', fontSize: '0.82rem', fontWeight: 600 }}>
+                        既読にして非表示: {hiddenCount} 件
+                    </div>
+                )}
 
                 <div style={{ display: 'grid', gap: '10px', marginTop: '4px' }}>
                     {visibleItems.length === 0 ? (
@@ -181,6 +217,51 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                                     <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('ja-JP') : '-'}</span>
                                 </div>
                                 <div style={{ whiteSpace: 'pre-wrap', color: '#0f172a', lineHeight: 1.6 }}>{item.content}</div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                                    {activeActionNoticeId === item.id ? (
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                            <button
+                                                className="button-secondary"
+                                                style={{ width: 'auto', padding: '8px 12px' }}
+                                                onClick={() => void handleHideNotice(item)}
+                                                disabled={processingNoticeId === item.id}
+                                            >
+                                                既読にして非表示
+                                            </button>
+                                            <button
+                                                style={{
+                                                    width: 'auto',
+                                                    padding: '8px 12px',
+                                                    borderRadius: '999px',
+                                                    border: '1px solid #fecaca',
+                                                    background: '#fee2e2',
+                                                    color: '#b91c1c',
+                                                    fontWeight: 700
+                                                }}
+                                                onClick={() => void handleDeleteNotice(item)}
+                                                disabled={processingNoticeId === item.id}
+                                            >
+                                                削除する
+                                            </button>
+                                            <button
+                                                className="button-secondary"
+                                                style={{ width: 'auto', padding: '8px 12px' }}
+                                                onClick={() => setActiveActionNoticeId(null)}
+                                                disabled={processingNoticeId === item.id}
+                                            >
+                                                キャンセル
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            className="button-secondary"
+                                            style={{ width: 'auto', padding: '8px 12px' }}
+                                            onClick={() => setActiveActionNoticeId(item.id)}
+                                        >
+                                            既読
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         ))
                     )}

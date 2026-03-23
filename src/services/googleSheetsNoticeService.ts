@@ -150,4 +150,41 @@ export const updateSharedNoticeReadUsers = async (notice: SharedNoticeEntry, use
     ]]);
 };
 
+export const deleteSharedNotice = async (noticeId: number) => {
+    const ready = await ensureSharedSheetsSession(true);
+    if (!ready) {
+        throw new Error('Google Sheets 未ログイン');
+    }
+
+    await ensureNoticeHeader();
+    const sheetName = await resolveNoticeSheetName();
+    const existing = await fetchSharedNotices();
+    const target = existing.find((notice) => notice.id === noticeId);
+    if (!target) {
+        throw new Error('削除対象の連絡事項が見つかりません');
+    }
+
+    const remaining = existing.filter((notice) => notice.id !== noticeId);
+    const rowCount = Math.max(existing.length, 1);
+    const replaceRange = buildSheetRange(sheetName, `A2:H${rowCount + 1}`);
+    logNoticeRequest('replace-after-delete', sheetName, replaceRange);
+    await writeSharedSheetValues(replaceRange, Array.from({ length: rowCount }, (_, index) => {
+        const notice = remaining[index];
+        if (!notice) {
+            return ['', '', '', '', '', '', '', ''];
+        }
+
+        return [
+            String(notice.id),
+            notice.date,
+            notice.content,
+            notice.author || '',
+            notice.updatedAt || notice.createdAt || '',
+            notice.priority ? 'true' : 'false',
+            notice.readUsers.join(','),
+            notice.createdAt || notice.updatedAt || ''
+        ];
+    }));
+};
+
 export const getSharedNoticeSheetName = () => resolvedNoticeSheetNameCache || NOTICE_SHEET_NAME;
