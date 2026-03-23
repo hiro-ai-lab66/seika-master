@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { SharedNoticeEntry } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { appendSharedNotice, deleteSharedNotice, fetchSharedNotices, getSharedNoticeSheetName, updateSharedNoticeReadUsers } from '../services/googleSheetsNoticeService';
+import { appendSharedNotice, deleteSharedNotice, fetchSharedNotices, getSharedNoticeSheetName, restoreSharedNoticeForUser, updateSharedNoticeReadUsers } from '../services/googleSheetsNoticeService';
 
 const cardStyle: React.CSSProperties = {
     background: '#ffffff',
@@ -12,6 +12,7 @@ const cardStyle: React.CSSProperties = {
 };
 
 export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }) => {
+    const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
     const [content, setContent] = useState('');
     const [author, setAuthor] = useState('');
     const [isPriority, setIsPriority] = useState(false);
@@ -76,6 +77,22 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
         } catch (err) {
             console.error('[NoticeForm] failed to delete notice', err);
             setError(`削除に失敗しました: ${err instanceof Error ? err.message : '削除に失敗しました'}`);
+        } finally {
+            setProcessingNoticeId(null);
+        }
+    };
+
+    const handleRestoreNotice = async (notice: SharedNoticeEntry) => {
+        setProcessingNoticeId(notice.id);
+        setError('');
+        try {
+            await restoreSharedNoticeForUser(notice, currentUser);
+            await loadNotices();
+            setStatus('再表示しました');
+            setActiveActionNoticeId(null);
+        } catch (err) {
+            console.error('[NoticeForm] failed to restore notice', err);
+            setError(`再表示に失敗しました: ${err instanceof Error ? err.message : '更新に失敗しました'}`);
         } finally {
             setProcessingNoticeId(null);
         }
@@ -148,6 +165,17 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
         () => items.filter((item) => !item.priority && item.readUsers.includes(currentUser)).length,
         [items, currentUser]
     );
+    const archivedItems = useMemo(
+        () => [...items]
+            .filter((item) => item.readUsers.includes(currentUser))
+            .sort((a, b) => {
+                const createdCompare = b.createdAt.localeCompare(a.createdAt);
+                if (createdCompare !== 0) return createdCompare;
+                return b.id - a.id;
+            })
+            .slice(0, 30),
+        [items, currentUser]
+    );
 
     return (
         <section style={cardStyle}>
@@ -202,9 +230,25 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                         既読にして非表示: {hiddenCount} 件
                     </div>
                 )}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                        className={viewMode === 'active' ? 'button-primary' : 'button-secondary'}
+                        style={{ width: 'auto', padding: '10px 14px' }}
+                        onClick={() => setViewMode('active')}
+                    >
+                        通常表示
+                    </button>
+                    <button
+                        className={viewMode === 'archived' ? 'button-primary' : 'button-secondary'}
+                        style={{ width: 'auto', padding: '10px 14px' }}
+                        onClick={() => setViewMode('archived')}
+                    >
+                        既読一覧
+                    </button>
+                </div>
 
                 <div style={{ display: 'grid', gap: '12px', marginTop: '4px' }}>
-                    {pinnedItems.length > 0 && (
+                    {viewMode === 'active' && pinnedItems.length > 0 && (
                         <div style={{ display: 'grid', gap: '10px' }}>
                             <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 800 }}>
                                 重要なお知らせ
@@ -288,9 +332,11 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                         </div>
                     )}
 
-                    {regularItems.length === 0 && pinnedItems.length === 0 ? (
+                    {viewMode === 'active' && regularItems.length === 0 && pinnedItems.length === 0 ? (
                         <p style={{ margin: 0, color: '#64748b' }}>まだ連絡事項がありません。</p>
-                    ) : (
+                    ) : null}
+
+                    {viewMode === 'active' ? (
                         regularItems.map((item) => (
                             <div
                                 key={`${item.id}-${item.updatedAt}`}
@@ -364,6 +410,63 @@ export const NoticeForm: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }
                                             既読
                                         </button>
                                     )}
+                                </div>
+                            </div>
+                        ))
+                    ) : archivedItems.length === 0 ? (
+                        <p style={{ margin: 0, color: '#64748b' }}>既読にした連絡事項はまだありません。</p>
+                    ) : (
+                        archivedItems.map((item) => (
+                            <div
+                                key={`${item.id}-${item.updatedAt}-archived`}
+                                style={{
+                                    border: item.priority ? '1px solid #fca5a5' : '1px solid #cbd5e1',
+                                    borderRadius: '12px',
+                                    padding: '12px 14px',
+                                    background: item.priority ? '#fff1f2' : '#f8fafc'
+                                }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span>{item.date}</span>
+                                        <span>｜</span>
+                                        <span>{item.author || '作成者未入力'}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        {item.priority && <span style={{ color: '#b91c1c', fontWeight: 700 }}>重要</span>}
+                                        <span style={{ color: '#0369a1', fontWeight: 700 }}>既読</span>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
+                                    <span>{item.date}</span>
+                                    <span>｜</span>
+                                    <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('ja-JP') : '-'}</span>
+                                </div>
+                                <div style={{ whiteSpace: 'pre-wrap', color: '#0f172a', lineHeight: 1.6 }}>{item.content}</div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                                    <button
+                                        className="button-secondary"
+                                        style={{ width: 'auto', padding: '8px 12px' }}
+                                        onClick={() => void handleRestoreNotice(item)}
+                                        disabled={processingNoticeId === item.id}
+                                    >
+                                        再表示する
+                                    </button>
+                                    <button
+                                        style={{
+                                            width: 'auto',
+                                            padding: '8px 12px',
+                                            borderRadius: '999px',
+                                            border: '1px solid #fecaca',
+                                            background: '#fee2e2',
+                                            color: '#b91c1c',
+                                            fontWeight: 700
+                                        }}
+                                        onClick={() => void handleDeleteNotice(item)}
+                                        disabled={processingNoticeId === item.id}
+                                    >
+                                        削除する
+                                    </button>
                                 </div>
                             </div>
                         ))

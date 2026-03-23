@@ -150,6 +150,34 @@ export const updateSharedNoticeReadUsers = async (notice: SharedNoticeEntry, use
     ]]);
 };
 
+export const restoreSharedNoticeForUser = async (notice: SharedNoticeEntry, userName: string) => {
+    if (!notice.rowNumber) {
+        throw new Error('既読解除対象の行番号がありません');
+    }
+
+    const ready = await ensureSharedSheetsSession(true);
+    if (!ready) {
+        throw new Error('Google Sheets 未ログイン');
+    }
+
+    await ensureNoticeHeader();
+    const sheetName = await resolveNoticeSheetName();
+    const nextReadUsers = notice.readUsers.filter((user) => user !== userName);
+    const nextUpdatedAt = new Date().toISOString();
+    const range = buildSheetRange(sheetName, `A${notice.rowNumber}:H${notice.rowNumber}`);
+    logNoticeRequest('restore-read-users', sheetName, range);
+    await writeSharedSheetValues(range, [[
+        String(notice.id),
+        notice.date,
+        notice.content,
+        notice.author || '',
+        nextUpdatedAt,
+        notice.priority ? 'true' : 'false',
+        nextReadUsers.join(','),
+        notice.createdAt || nextUpdatedAt
+    ]]);
+};
+
 export const deleteSharedNotice = async (noticeId: number) => {
     const ready = await ensureSharedSheetsSession(true);
     if (!ready) {
