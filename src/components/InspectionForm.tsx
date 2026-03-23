@@ -129,6 +129,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [promotionActual12SalesInput, setPromotionActual12SalesInput] = useState(formatThousandInput(form.promotionActual12Sales));
     const [promotionActual17SalesInput, setPromotionActual17SalesInput] = useState(formatThousandInput(form.promotionActual17Sales));
     const [actual12Input, setActual12Input] = useState(formatThousandInput(form.actual12));
+    const [lossAmountInput, setLossAmountInput] = useState(formatLossThousandInput(form.lossAmount));
     const veggieCsvInputRef = useRef<HTMLInputElement>(null);
     const fruitCsvInputRef = useRef<HTMLInputElement>(null);
 
@@ -199,11 +200,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const handleLossAmountChange = (value: string) => {
-        if (value === '') {
+        const sanitized = sanitizeLossThousandInput(value);
+        setLossAmountInput(sanitized);
+        if (sanitized === '') {
             handleChange('lossAmount', null);
             return;
         }
-        handleChange('lossAmount', parseLossThousandInput(value));
+        handleChange('lossAmount', parseLossThousandInput(sanitized));
     };
 
     const handlePromotionItemInputChange = (value: string) => {
@@ -361,6 +364,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         break;
                     case 'ロス額':
                         next.lossAmount = parseLossThousandInput(row.content);
+                        setLossAmountInput(row.content);
                         break;
                     case '天気（12時）':
                         setAiWeather12(row.content);
@@ -911,6 +915,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         setPromotionActual12SalesInput(formatThousandInput(form.promotionActual12Sales));
         setPromotionActual17SalesInput(formatThousandInput(form.promotionActual17Sales));
         setActual12Input(formatThousandInput(form.actual12));
+        setLossAmountInput(formatLossThousandInput(form.lossAmount));
     }, [currentDate, existingEntry?.id]);
 
     const handleSaveToSharedCheck = async () => {
@@ -1306,7 +1311,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     type="text"
                                     inputMode="decimal"
                                     pattern="[0-9]+([.][0-9]+)?"
-                                    value={formatLossThousandInput(form.lossAmount)}
+                                    value={lossAmountInput}
                                     onChange={e => handleLossAmountChange(e.target.value)}
                                     placeholder="0"
                                 />
