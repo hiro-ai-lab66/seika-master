@@ -82,7 +82,11 @@ const AdvertisementCard: React.FC<{
   onOpenImage: (imageUrl: string, title: string) => void;
   weather: string;
   tempBand: string;
-}> = ({ group, onOpenImage, weather, tempBand }) => {
+  currentGap: number | null;
+  currentCustomers: number;
+  avgSpend: number | null;
+  lossAmount: number | null | undefined;
+}> = ({ group, onOpenImage, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount }) => {
   const hasBack = Boolean(group.back);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
   const [copyMessage, setCopyMessage] = useState('');
@@ -119,6 +123,18 @@ const AdvertisementCard: React.FC<{
     if (tempBand === '暑い' && (sourceText.includes('果物') || sourceText.includes('フルーツ'))) {
       suggestions.push({ text: '暑い日の果物訴求 → 冷やし系売場を強化', priority: 4 });
     }
+    if (currentGap !== null && currentGap < 0) {
+      suggestions.push({ text: '売上未達 → 特売前出しを強化', priority: 5 });
+    }
+    if (currentCustomers >= 1 && avgSpend !== null && avgSpend < 1500) {
+      suggestions.push({ text: '客数はあるが客単価が弱い → まとめ買い訴求を追加', priority: 4 });
+    }
+    if ((lossAmount || 0) >= 3000) {
+      suggestions.push({ text: 'ロス多め → 値引きタイミングを前倒し調整', priority: 4 });
+    }
+    if ((weather === '雨' || weather === '雪') && currentCustomers < 100) {
+      suggestions.push({ text: '雨天で客数減 → 回転重視の売場へ切替', priority: 4 });
+    }
 
     if (suggestions.length === 0) {
       suggestions.push({ text: '売場指示 → 広告掲載商品のフェイス確保を優先', priority: 0 });
@@ -127,7 +143,7 @@ const AdvertisementCard: React.FC<{
     return suggestions
       .sort((a, b) => b.priority - a.priority)
       .slice(0, 3);
-  }, [activeItem, group.title]);
+  }, [activeItem, group.title, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount]);
   const briefingLines = useMemo(
     () => tasks.map((task) => `・${task.text.split('→')[1]?.trim() || task.text}`).slice(0, 3),
     [tasks]
@@ -641,6 +657,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
                   group={group}
                   weather={weather}
                   tempBand={tempBand}
+                  currentGap={currentGap}
+                  currentCustomers={currentCustomers}
+                  avgSpend={avgSpend}
+                  lossAmount={todayInspection?.lossAmount}
                   onOpenImage={(imageUrl, title) => {
                     setZoomImageUrl(imageUrl);
                     setZoomImageTitle(title);
