@@ -6,6 +6,7 @@ import { loadDailySales } from '../storage/dailySales';
 import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
 import { buildGoogleDriveImageDisplayUrl } from '../services/storageService';
 import { ImageZoomModal } from './ImageZoomModal';
+import { fetchSharedCheckRows } from '../services/googleSheetsCheckService';
 
 interface Props {
   state: AppState;
@@ -29,6 +30,13 @@ type AdvertisementCardGroup = {
 type AdvertisementTask = {
   text: string;
   priority: number;
+};
+
+type InspectionMeta = {
+  weather: string;
+  tempBand: string;
+  customers: number | null;
+  avgPrice: number | null;
 };
 
 const shellStyle: React.CSSProperties = {
@@ -322,6 +330,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
   const [advertisementError, setAdvertisementError] = useState('');
   const [zoomImageUrl, setZoomImageUrl] = useState('');
   const [zoomImageTitle, setZoomImageTitle] = useState('');
+  const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
+    weather: '',
+    tempBand: '',
+    customers: null,
+    avgPrice: null
+  });
   const todayBudgetEntry = state.dailyBudgets.find((b) => b.date === currentDate);
   const todayInspection = state.inspections.find((i) => i.date === currentDate);
   const todayNote = state.dailyNotes?.find((entry) => entry.date === currentDate);
@@ -368,8 +382,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
 
   const currentCustomers = todayInspection?.customersFinal || todayInspection?.customers17 || todayInspection?.customers12 || 0;
   const avgSpend = currentCustomers > 0 && currentActual > 0 ? Math.round(currentActual / currentCustomers) : null;
-  const weather = dailySales[0]?.weather || '';
-  const tempBand = dailySales[0]?.temp_band || '';
+  const weather = inspectionMeta.weather || dailySales[0]?.weather || '';
+  const tempBand = inspectionMeta.tempBand || dailySales[0]?.temp_band || '';
+  const dashboardCustomers = inspectionMeta.customers ?? currentCustomers;
+  const dashboardAvgSpend = inspectionMeta.avgPrice ?? avgSpend;
   const csvTotal = dailySales.reduce((sum, row) => sum + row.salesAmt, 0);
   const csvDiffRate =
     todayInspection?.actualFinal && todayInspection.actualFinal > 0 && csvTotal > 0
@@ -390,8 +406,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
       actual: currentActual,
       diff: currentGap,
       budgetRatio: todayInspection?.accBudgetRatio ?? null,
-      customers: currentCustomers,
-      avgSpend,
+      customers: dashboardCustomers,
+      avgSpend: dashboardAvgSpend,
       weather,
       tempBand,
       csvDiffRate,
@@ -402,7 +418,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
 
   useEffect(() => {
     setAdviceText(buildAdvice());
-  }, [currentDate, currentBudget, currentActual, currentGap, currentCustomers, avgSpend, weather, tempBand, csvDiffRate, csvDiffStatus]);
+  }, [currentDate, currentBudget, currentActual, currentGap, dashboardCustomers, dashboardAvgSpend, weather, tempBand, csvDiffRate, csvDiffStatus]);
 
   useEffect(() => {
     void (async () => {
@@ -420,6 +436,32 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
     })();
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const rows = await fetchSharedCheckRows();
+        const dateRows = rows.filter((row) => row.date === currentDate && row.time === 'final');
+        const rowMap = new Map(dateRows.map((row) => [row.item, row.content]));
+        const customersValue = rowMap.get('客数') || rowMap.get('最終客数') || '';
+        const avgPriceValue = rowMap.get('客単価') || '';
+        setInspectionMeta({
+          weather: rowMap.get('天気（12時）') || rowMap.get('天候') || '',
+          tempBand: rowMap.get('気温帯') || '',
+          customers: customersValue ? Number(customersValue) : null,
+          avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null
+        });
+      } catch (error) {
+        console.error('[Dashboard] failed to load inspection meta from shared_check', error);
+        setInspectionMeta({
+          weather: '',
+          tempBand: '',
+          customers: null,
+          avgPrice: null
+        });
+      }
+    })();
+  }, [currentDate]);
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     window.setTimeout(() => {
@@ -433,11 +475,11 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
     if (currentGap !== null && currentGap < 0) reasons.push(`予算差額 ${currentGap.toLocaleString()}円で未達。`);
     if (weather) reasons.push(`天候は ${weather}。`);
     if (tempBand) reasons.push(`気温帯は ${tempBand}。`);
-    if (currentCustomers > 0) reasons.push(`客数は ${currentCustomers} 名。`);
-    if (avgSpend) reasons.push(`客単価は ${avgSpend.toLocaleString()} 円。`);
+    if (dashboardCustomers > 0) reasons.push(`客数は ${dashboardCustomers} 名。`);
+    if (dashboardAvgSpend) reasons.push(`客単価は ${dashboardAvgSpend.toLocaleString()} 円。`);
     if (csvDiffStatus && csvDiffStatus !== '正常' && csvDiffRate !== null) reasons.push(`CSV差額率は ${csvDiffRate.toFixed(1)}%。`);
     return reasons.slice(0, 4);
-  }, [currentGap, weather, tempBand, currentCustomers, avgSpend, csvDiffStatus, csvDiffRate]);
+  }, [currentGap, weather, tempBand, dashboardCustomers, dashboardAvgSpend, csvDiffStatus, csvDiffRate]);
 
   const focusItems = useMemo<FocusItem[]>(() => {
     const items: FocusItem[] = [];
@@ -529,8 +571,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
   const weatherCardItems = [
     { label: '天候', value: weather || '未設定' },
     { label: '気温帯', value: tempBand || '未設定' },
-    { label: '客数', value: currentCustomers > 0 ? `${currentCustomers}名` : '未入力' },
-    { label: '客単価', value: avgSpend ? `${avgSpend.toLocaleString()}円` : '未入力' }
+    { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' },
+    { label: '客単価', value: dashboardAvgSpend ? `${dashboardAvgSpend.toLocaleString()}円` : '未設定' }
   ];
   const todayAdvertisements = useMemo(() => {
     const today = toFilterDateValue(currentDate);
