@@ -79,6 +79,33 @@ const AdvertisementCard: React.FC<{
   const hasBack = Boolean(group.back);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
   const activeItem = activeFace === 'back' && group.back ? group.back : (group.front || group.back);
+  const actions = useMemo(() => {
+    if (!activeItem) return [];
+    const sourceText = `${group.title} ${activeItem.memo || ''}`;
+    const suggestions: string[] = [];
+
+    if (sourceText.includes('野菜')) {
+      suggestions.push('野菜売場 → 前出し強化');
+    }
+    if (sourceText.includes('特売')) {
+      suggestions.push('特売商品 → エンド展開');
+    }
+    if (sourceText.includes('バナナ')) {
+      suggestions.push('バナナ → 平台拡大');
+    }
+    if (sourceText.includes('春')) {
+      suggestions.push('季節訴求 → 春メニューの見せ方を強化');
+    }
+    if (sourceText.includes('果物') || sourceText.includes('フルーツ')) {
+      suggestions.push('果物売場 → 平台のボリューム感を強化');
+    }
+
+    if (suggestions.length === 0) {
+      suggestions.push('売場指示 → 広告掲載商品のフェイス確保を優先');
+    }
+
+    return suggestions.slice(0, 3);
+  }, [activeItem, group.title]);
 
   useEffect(() => {
     setActiveFace(group.front ? 'front' : 'back');
@@ -158,6 +185,17 @@ const AdvertisementCard: React.FC<{
           </button>
         </div>
       )}
+
+      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', padding: '10px 12px' }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#047857', marginBottom: '6px' }}>AIアクション</div>
+        <div style={{ display: 'grid', gap: '4px' }}>
+          {actions.map((action, index) => (
+            <div key={`${action}-${index}`} style={{ color: '#065f46', fontSize: '0.84rem', lineHeight: 1.5 }}>
+              ・{action}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
