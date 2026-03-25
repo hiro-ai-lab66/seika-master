@@ -19,6 +19,13 @@ type FocusItem = {
   tone: 'danger' | 'warn' | 'info' | 'success';
 };
 
+type AdvertisementCardGroup = {
+  key: string;
+  title: string;
+  front?: SharedAdvertisementEntry;
+  back?: SharedAdvertisementEntry;
+};
+
 const shellStyle: React.CSSProperties = {
   display: 'grid',
   gap: '16px',
@@ -54,6 +61,105 @@ const toFilterDateValue = (value: string) => {
   const normalized = value.includes('/') ? value.replace(/\//g, '-') : value;
   const date = new Date(`${normalized}T00:00:00`);
   return Number.isNaN(date.getTime()) ? null : date.getTime();
+};
+
+const getAdvertisementFace = (title: string): 'front' | 'back' | 'single' => {
+  if (/（表）|\(表\)|\b表\b/.test(title)) return 'front';
+  if (/（裏）|\(裏\)|\b裏\b/.test(title)) return 'back';
+  return 'single';
+};
+
+const getAdvertisementBaseTitle = (title: string) =>
+  title.replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '').trim() || title.trim() || '無題の広告';
+
+const AdvertisementCard: React.FC<{
+  group: AdvertisementCardGroup;
+  onOpenImage: (imageUrl: string, title: string) => void;
+}> = ({ group, onOpenImage }) => {
+  const hasBack = Boolean(group.back);
+  const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
+  const activeItem = activeFace === 'back' && group.back ? group.back : (group.front || group.back);
+
+  useEffect(() => {
+    setActiveFace(group.front ? 'front' : 'back');
+  }, [group.front, group.back, group.key]);
+
+  if (!activeItem) return null;
+
+  return (
+    <div
+      style={{
+        border: '1px solid #e2e8f0',
+        background: '#f8fafc',
+        borderRadius: '14px',
+        padding: '12px',
+        display: 'grid',
+        gap: '10px'
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 1600), `${group.title} ${activeFace === 'front' ? '表' : '裏'}`)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '88px 1fr',
+          gap: '12px',
+          alignItems: 'center',
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          textAlign: 'left',
+          cursor: 'pointer'
+        }}
+      >
+        <div style={{ width: '88px', height: '88px', borderRadius: '12px', overflow: 'hidden', background: '#e2e8f0' }}>
+          <img
+            src={buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 800)}
+            alt={activeItem.title || '広告画像'}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            referrerPolicy="no-referrer"
+          />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+            <div style={{ color: '#0f172a', fontWeight: 800 }}>{group.title}</div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4f46e5', background: '#e0e7ff', borderRadius: '999px', padding: '3px 8px' }}>
+              {activeFace === 'front' ? '表' : '裏'}
+            </span>
+          </div>
+          <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
+            {activeItem.startDate} - {activeItem.endDate}
+          </div>
+          {activeItem.memo && (
+            <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '6px', lineHeight: 1.5 }}>
+              {activeItem.memo}
+            </div>
+          )}
+        </div>
+      </button>
+
+      {hasBack && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button
+            type="button"
+            className={activeFace === 'front' ? 'button-primary' : 'button-secondary'}
+            style={{ width: 'auto', padding: '8px 12px' }}
+            onClick={() => setActiveFace('front')}
+          >
+            表
+          </button>
+          <button
+            type="button"
+            className={activeFace === 'back' ? 'button-primary' : 'button-secondary'}
+            style={{ width: 'auto', padding: '8px 12px' }}
+            onClick={() => setActiveFace('back')}
+          >
+            裏
+          </button>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate }) => {
@@ -284,7 +390,28 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
     });
     console.log('today used for filter:', currentDate);
     console.log('advertisement filtered records:', filteredRecords);
-    return filteredRecords.slice(0, 3);
+    const groupedMap = new Map<string, AdvertisementCardGroup>();
+    filteredRecords.forEach((item) => {
+      const baseTitle = getAdvertisementBaseTitle(item.title || '');
+      const face = getAdvertisementFace(item.title || '');
+      const existing = groupedMap.get(baseTitle) || {
+        key: baseTitle,
+        title: baseTitle
+      };
+
+      if (face === 'back') {
+        existing.back = item;
+      } else {
+        existing.front = item;
+      }
+
+      if (face === 'single' && !existing.front) {
+        existing.front = item;
+      }
+
+      groupedMap.set(baseTitle, existing);
+    });
+    return Array.from(groupedMap.values()).slice(0, 3);
   }, [advertisements, currentDate]);
 
   return (
@@ -404,47 +531,15 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
                 {advertisementError ? `広告取得エラー: ${advertisementError}` : '本日有効な広告はありません。'}
               </div>
             ) : (
-              todayAdvertisements.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setZoomImageUrl(buildGoogleDriveImageDisplayUrl(item.imageUrl, 1600));
-                    setZoomImageTitle(item.title || '広告画像');
+              todayAdvertisements.map((group) => (
+                <AdvertisementCard
+                  key={group.key}
+                  group={group}
+                  onOpenImage={(imageUrl, title) => {
+                    setZoomImageUrl(imageUrl);
+                    setZoomImageTitle(title);
                   }}
-                  style={{
-                    border: '1px solid #e2e8f0',
-                    background: '#f8fafc',
-                    borderRadius: '14px',
-                    padding: '12px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    display: 'grid',
-                    gap: '10px'
-                  }}
-                >
-                  <div style={{ display: 'grid', gridTemplateColumns: '88px 1fr', gap: '12px', alignItems: 'center' }}>
-                    <div style={{ width: '88px', height: '88px', borderRadius: '12px', overflow: 'hidden', background: '#e2e8f0' }}>
-                      <img
-                        src={buildGoogleDriveImageDisplayUrl(item.imageUrl, 800)}
-                        alt={item.title || '広告画像'}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: '#0f172a', fontWeight: 800, marginBottom: '4px' }}>{item.title || '無題の広告'}</div>
-                      <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
-                        {item.startDate} - {item.endDate}
-                      </div>
-                      {item.memo && (
-                        <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '6px', lineHeight: 1.5 }}>
-                          {item.memo}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </button>
+                />
               ))
             )}
           </div>
