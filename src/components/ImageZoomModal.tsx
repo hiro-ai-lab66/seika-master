@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
 interface ImageZoomModalProps {
@@ -8,6 +8,23 @@ interface ImageZoomModalProps {
 }
 
 export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({ imageUrl, title, onClose }) => {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   if (!imageUrl) return null;
 
   return (
@@ -26,7 +43,10 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({ imageUrl, title,
     >
       <button
         type="button"
-        onClick={onClose}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClose();
+        }}
         style={{
           position: 'absolute',
           top: '20px',
@@ -50,7 +70,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({ imageUrl, title,
         onClick={(event) => event.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: '960px',
+          maxWidth: '95vw',
           maxHeight: '90vh',
           display: 'flex',
           flexDirection: 'column',
@@ -68,8 +88,9 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({ imageUrl, title,
           alt={title || '拡大画像'}
           referrerPolicy="no-referrer"
           style={{
-            width: '100%',
-            maxHeight: '82vh',
+            width: 'auto',
+            maxWidth: '95%',
+            maxHeight: '90vh',
             objectFit: 'contain',
             borderRadius: '16px',
             backgroundColor: '#0f172a',
