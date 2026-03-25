@@ -167,6 +167,27 @@ const AdvertisementCard: React.FC<{
     }
   };
 
+  const handleShareBriefing = async () => {
+    if (!briefingText) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${group.title} 朝礼用まとめ`,
+          text: briefingText
+        });
+        setCopyMessage('共有しました');
+      } else {
+        await navigator.clipboard.writeText(briefingText);
+        setCopyMessage('共有未対応のためコピーしました');
+      }
+      window.setTimeout(() => setCopyMessage(''), 1500);
+    } catch (error) {
+      console.error('[Dashboard] failed to share briefing text', error);
+      setCopyMessage('共有失敗');
+      window.setTimeout(() => setCopyMessage(''), 1500);
+    }
+  };
+
   if (!activeItem) return null;
 
   return (
@@ -256,14 +277,24 @@ const AdvertisementCard: React.FC<{
       <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '10px 12px', display: 'grid', gap: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ fontSize: '0.8rem', fontWeight: 900, color: '#334155' }}>朝礼用まとめ</div>
-          <button
-            type="button"
-            className="button-secondary"
-            style={{ width: 'auto', padding: '7px 10px' }}
-            onClick={handleCopyBriefing}
-          >
-            コピー
-          </button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="button-secondary"
+              style={{ width: 'auto', padding: '7px 10px' }}
+              onClick={handleCopyBriefing}
+            >
+              コピー
+            </button>
+            <button
+              type="button"
+              className="button-primary"
+              style={{ width: 'auto', padding: '7px 10px' }}
+              onClick={handleShareBriefing}
+            >
+              共有
+            </button>
+          </div>
         </div>
         <div style={{ display: 'grid', gap: '4px' }}>
           {briefingLines.map((line, index) => (
@@ -271,6 +302,9 @@ const AdvertisementCard: React.FC<{
               {line}
             </div>
           ))}
+        </div>
+        <div style={{ color: '#64748b', fontSize: '0.76rem', fontWeight: 700 }}>
+          概要画面を開いた時点の条件から自動生成しています。
         </div>
         {copyMessage && (
           <div style={{ color: '#0369a1', fontSize: '0.78rem', fontWeight: 700 }}>
