@@ -80,7 +80,9 @@ const getAdvertisementBaseTitle = (title: string) =>
 const AdvertisementCard: React.FC<{
   group: AdvertisementCardGroup;
   onOpenImage: (imageUrl: string, title: string) => void;
-}> = ({ group, onOpenImage }) => {
+  weather: string;
+  tempBand: string;
+}> = ({ group, onOpenImage, weather, tempBand }) => {
   const hasBack = Boolean(group.back);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
   const [copyMessage, setCopyMessage] = useState('');
@@ -104,6 +106,18 @@ const AdvertisementCard: React.FC<{
     }
     if (sourceText.includes('果物') || sourceText.includes('フルーツ')) {
       suggestions.push({ text: '果物売場 → 平台のボリューム感を強化', priority: 1 });
+    }
+    if ((weather === '雨' || weather === '雪') && sourceText.includes('野菜')) {
+      suggestions.push({ text: '雨天の野菜訴求 → 鍋・温野菜メニューを前面化', priority: 5 });
+    }
+    if (weather === '晴れ' && (sourceText.includes('果物') || sourceText.includes('フルーツ'))) {
+      suggestions.push({ text: '晴天の果物訴求 → カットフルーツを強化', priority: 4 });
+    }
+    if (tempBand === '寒い' && sourceText.includes('野菜')) {
+      suggestions.push({ text: '寒い日の野菜訴求 → 根菜・鍋商材を強化', priority: 4 });
+    }
+    if (tempBand === '暑い' && (sourceText.includes('果物') || sourceText.includes('フルーツ'))) {
+      suggestions.push({ text: '暑い日の果物訴求 → 冷やし系売場を強化', priority: 4 });
     }
 
     if (suggestions.length === 0) {
@@ -625,6 +639,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
                 <AdvertisementCard
                   key={group.key}
                   group={group}
+                  weather={weather}
+                  tempBand={tempBand}
                   onOpenImage={(imageUrl, title) => {
                     setZoomImageUrl(imageUrl);
                     setZoomImageTitle(title);
