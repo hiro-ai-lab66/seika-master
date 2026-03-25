@@ -26,6 +26,11 @@ type AdvertisementCardGroup = {
   back?: SharedAdvertisementEntry;
 };
 
+type AdvertisementTask = {
+  text: string;
+  priority: number;
+};
+
 const shellStyle: React.CSSProperties = {
   display: 'grid',
   gap: '16px',
@@ -79,32 +84,34 @@ const AdvertisementCard: React.FC<{
   const hasBack = Boolean(group.back);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
   const activeItem = activeFace === 'back' && group.back ? group.back : (group.front || group.back);
-  const actions = useMemo(() => {
-    if (!activeItem) return [];
+  const tasks = useMemo(() => {
+    if (!activeItem) return [] as AdvertisementTask[];
     const sourceText = `${group.title} ${activeItem.memo || ''}`;
-    const suggestions: string[] = [];
+    const suggestions: AdvertisementTask[] = [];
 
     if (sourceText.includes('野菜')) {
-      suggestions.push('野菜売場 → 前出し強化');
+      suggestions.push({ text: '野菜売場 → 前出し強化', priority: 2 });
     }
     if (sourceText.includes('特売')) {
-      suggestions.push('特売商品 → エンド展開');
+      suggestions.push({ text: '特売商品 → エンド展開', priority: 4 });
     }
     if (sourceText.includes('バナナ')) {
-      suggestions.push('バナナ → 平台拡大');
+      suggestions.push({ text: 'バナナ → 平台拡大', priority: 3 });
     }
     if (sourceText.includes('春')) {
-      suggestions.push('季節訴求 → 春メニューの見せ方を強化');
+      suggestions.push({ text: '季節訴求 → 春メニューの見せ方を強化', priority: 1 });
     }
     if (sourceText.includes('果物') || sourceText.includes('フルーツ')) {
-      suggestions.push('果物売場 → 平台のボリューム感を強化');
+      suggestions.push({ text: '果物売場 → 平台のボリューム感を強化', priority: 1 });
     }
 
     if (suggestions.length === 0) {
-      suggestions.push('売場指示 → 広告掲載商品のフェイス確保を優先');
+      suggestions.push({ text: '売場指示 → 広告掲載商品のフェイス確保を優先', priority: 0 });
     }
 
-    return suggestions.slice(0, 3);
+    return suggestions
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, 3);
   }, [activeItem, group.title]);
 
   useEffect(() => {
@@ -186,12 +193,12 @@ const AdvertisementCard: React.FC<{
         </div>
       )}
 
-      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', padding: '10px 12px' }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#047857', marginBottom: '6px' }}>AIアクション</div>
+      <div style={{ background: '#ecfdf5', border: '1px solid #86efac', borderRadius: '12px', padding: '10px 12px' }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#047857', marginBottom: '8px' }}>🔥 今日やること</div>
         <div style={{ display: 'grid', gap: '4px' }}>
-          {actions.map((action, index) => (
-            <div key={`${action}-${index}`} style={{ color: '#065f46', fontSize: '0.84rem', lineHeight: 1.5 }}>
-              ・{action}
+          {tasks.map((task, index) => (
+            <div key={`${task.text}-${index}`} style={{ color: '#065f46', fontSize: '0.86rem', lineHeight: 1.5, fontWeight: 700 }}>
+              {index + 1}. {task.text}
             </div>
           ))}
         </div>
