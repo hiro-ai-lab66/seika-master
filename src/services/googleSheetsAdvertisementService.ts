@@ -77,8 +77,7 @@ export const fetchSharedAdvertisements = async (): Promise<SharedAdvertisementEn
     logAdvertisementRequest('read-rows', sheetName, range);
     const result = await readSharedSheetValues(range);
     const rows = result.values || [];
-
-    return rows
+    const records = rows
         .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
         .map((row: string[], index: number) => ({
             id: row[0] || String(index + 1),
@@ -88,7 +87,11 @@ export const fetchSharedAdvertisements = async (): Promise<SharedAdvertisementEn
             startDate: row[3] || '',
             endDate: row[4] || '',
             memo: row[5] || ''
-        }))
+        }));
+
+    console.log('advertisement raw records:', records);
+
+    return records
         .sort((a: SharedAdvertisementEntry, b: SharedAdvertisementEntry) => {
             const startCompare = b.startDate.localeCompare(a.startDate);
             if (startCompare !== 0) return startCompare;

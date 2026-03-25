@@ -49,6 +49,13 @@ const toneStyles: Record<FocusItem['tone'], React.CSSProperties> = {
 const sortMarkets = (history: MarketInfo[] = []) =>
   [...history].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
 
+const toFilterDateValue = (value: string) => {
+  if (!value) return null;
+  const normalized = value.includes('/') ? value.replace(/\//g, '-') : value;
+  const date = new Date(`${normalized}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+};
+
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [advertisements, setAdvertisements] = useState<SharedAdvertisementEntry[]>([]);
@@ -141,6 +148,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
     void (async () => {
       try {
         const items = await fetchSharedAdvertisements();
+        console.log('dashboard advertisement count:', items.length);
         setAdvertisements(items);
         setAdvertisementError('');
       } catch (error) {
@@ -263,12 +271,20 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
     { label: '客数', value: currentCustomers > 0 ? `${currentCustomers}名` : '未入力' },
     { label: '客単価', value: avgSpend ? `${avgSpend.toLocaleString()}円` : '未入力' }
   ];
-  const todayAdvertisements = useMemo(
-    () => advertisements
-      .filter((item) => item.startDate <= currentDate && currentDate <= item.endDate)
-      .slice(0, 3),
-    [advertisements, currentDate]
-  );
+  const todayAdvertisements = useMemo(() => {
+    const today = toFilterDateValue(currentDate);
+    const filteredRecords = advertisements.filter((item) => {
+      const start = toFilterDateValue(item.startDate);
+      const end = toFilterDateValue(item.endDate);
+      if (today === null || start === null || end === null) {
+        return false;
+      }
+      return start <= today && today <= end;
+    });
+    console.log('today used for filter:', currentDate);
+    console.log('advertisement filtered records:', filteredRecords);
+    return filteredRecords.slice(0, 3);
+  }, [advertisements, currentDate]);
 
   return (
     <div style={shellStyle}>
