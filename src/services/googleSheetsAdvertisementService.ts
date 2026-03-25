@@ -47,8 +47,8 @@ const resolveAdvertisementSheetName = async () => {
     return resolved;
 };
 
-const ensureAdvertisementHeader = async () => {
-    const ready = await ensureSharedSheetsSession(true);
+const ensureAdvertisementHeader = async (interactive: boolean) => {
+    const ready = await ensureSharedSheetsSession(interactive);
     if (!ready) {
         throw new Error('Google Sheets 未ログイン');
     }
@@ -60,43 +60,52 @@ const ensureAdvertisementHeader = async () => {
     const header = result.values?.[0] || [];
     const isValid = HEADER_ROW.every((label, index) => header[index] === label);
     if (!isValid) {
+        if (!interactive) {
+            throw new Error('shared_advertisement のヘッダー確認に失敗しました。Google Sheets へ再ログインしてください');
+        }
         logAdvertisementRequest('write-header', sheetName, range);
         await writeSharedSheetValues(range, [HEADER_ROW]);
     }
 };
 
 export const fetchSharedAdvertisements = async (): Promise<SharedAdvertisementEntry[]> => {
-    console.log('advertisement service called');
-    const ready = await ensureSharedSheetsSession(false);
-    if (!ready) {
-        console.error('[AdvertisementSheets] session not ready');
-        throw new Error('Google Sheets 未ログイン');
+    try {
+        console.log('advertisement service called');
+        const ready = await ensureSharedSheetsSession(false);
+        if (!ready) {
+            console.error('[AdvertisementSheets] session not ready');
+            throw new Error('Google Sheets 未ログイン。広告表示には再ログインが必要です');
+        }
+
+        await ensureAdvertisementHeader(false);
+        const sheetName = await resolveAdvertisementSheetName();
+        const range = buildSheetRange(sheetName, 'A2:F');
+        console.log('before sheets fetch');
+        logAdvertisementRequest('read-rows', sheetName, range);
+        const result = await readSharedSheetValues(range);
+        const rows = result.values || [];
+        const records = rows
+            .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
+            .map((row: string[], index: number) => ({
+                id: row[0] || String(index + 1),
+                rowNumber: index + 2,
+                title: row[1] || '',
+                imageUrl: normalizeDriveImageUrl(row[2] || ''),
+                startDate: row[3] || '',
+                endDate: row[4] || '',
+                memo: row[5] || ''
+            }));
+
+        console.log('advertisement raw records:', records);
+
+        return records
+            .sort((a: SharedAdvertisementEntry, b: SharedAdvertisementEntry) => {
+                const startCompare = b.startDate.localeCompare(a.startDate);
+                if (startCompare !== 0) return startCompare;
+                return (b.id || '').localeCompare(a.id || '');
+            });
+    } catch (e) {
+        console.error('advertisement fetch error:', e);
+        throw e;
     }
-
-    await ensureAdvertisementHeader();
-    const sheetName = await resolveAdvertisementSheetName();
-    const range = buildSheetRange(sheetName, 'A2:F');
-    logAdvertisementRequest('read-rows', sheetName, range);
-    const result = await readSharedSheetValues(range);
-    const rows = result.values || [];
-    const records = rows
-        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
-        .map((row: string[], index: number) => ({
-            id: row[0] || String(index + 1),
-            rowNumber: index + 2,
-            title: row[1] || '',
-            imageUrl: normalizeDriveImageUrl(row[2] || ''),
-            startDate: row[3] || '',
-            endDate: row[4] || '',
-            memo: row[5] || ''
-        }));
-
-    console.log('advertisement raw records:', records);
-
-    return records
-        .sort((a: SharedAdvertisementEntry, b: SharedAdvertisementEntry) => {
-            const startCompare = b.startDate.localeCompare(a.startDate);
-            if (startCompare !== 0) return startCompare;
-            return (b.id || '').localeCompare(a.id || '');
-        });
 };
