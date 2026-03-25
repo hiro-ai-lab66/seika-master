@@ -83,6 +83,7 @@ const AdvertisementCard: React.FC<{
 }> = ({ group, onOpenImage }) => {
   const hasBack = Boolean(group.back);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
+  const [copyMessage, setCopyMessage] = useState('');
   const activeItem = activeFace === 'back' && group.back ? group.back : (group.front || group.back);
   const tasks = useMemo(() => {
     if (!activeItem) return [] as AdvertisementTask[];
@@ -113,10 +114,28 @@ const AdvertisementCard: React.FC<{
       .sort((a, b) => b.priority - a.priority)
       .slice(0, 3);
   }, [activeItem, group.title]);
+  const briefingLines = useMemo(
+    () => tasks.map((task) => `・${task.text.split('→')[1]?.trim() || task.text}`).slice(0, 3),
+    [tasks]
+  );
+  const briefingText = useMemo(() => briefingLines.join('\n'), [briefingLines]);
 
   useEffect(() => {
     setActiveFace(group.front ? 'front' : 'back');
   }, [group.front, group.back, group.key]);
+
+  const handleCopyBriefing = async () => {
+    if (!briefingText) return;
+    try {
+      await navigator.clipboard.writeText(briefingText);
+      setCopyMessage('コピーしました');
+      window.setTimeout(() => setCopyMessage(''), 1500);
+    } catch (error) {
+      console.error('[Dashboard] failed to copy briefing text', error);
+      setCopyMessage('コピー失敗');
+      window.setTimeout(() => setCopyMessage(''), 1500);
+    }
+  };
 
   if (!activeItem) return null;
 
@@ -202,6 +221,32 @@ const AdvertisementCard: React.FC<{
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '10px 12px', display: 'grid', gap: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 900, color: '#334155' }}>朝礼用まとめ</div>
+          <button
+            type="button"
+            className="button-secondary"
+            style={{ width: 'auto', padding: '7px 10px' }}
+            onClick={handleCopyBriefing}
+          >
+            コピー
+          </button>
+        </div>
+        <div style={{ display: 'grid', gap: '4px' }}>
+          {briefingLines.map((line, index) => (
+            <div key={`${line}-${index}`} style={{ color: '#475569', fontSize: '0.84rem', lineHeight: 1.5 }}>
+              {line}
+            </div>
+          ))}
+        </div>
+        {copyMessage && (
+          <div style={{ color: '#0369a1', fontSize: '0.78rem', fontWeight: 700 }}>
+            {copyMessage}
+          </div>
+        )}
       </div>
     </div>
   );
