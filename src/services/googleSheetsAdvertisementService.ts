@@ -66,8 +66,10 @@ const ensureAdvertisementHeader = async () => {
 };
 
 export const fetchSharedAdvertisements = async (): Promise<SharedAdvertisementEntry[]> => {
+    console.log('advertisement service called');
     const ready = await ensureSharedSheetsSession(false);
     if (!ready) {
+        console.error('[AdvertisementSheets] session not ready');
         throw new Error('Google Sheets 未ログイン');
     }
 

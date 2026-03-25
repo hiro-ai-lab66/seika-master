@@ -147,6 +147,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
   useEffect(() => {
     void (async () => {
       try {
+        console.log('[Dashboard] starting advertisement fetch');
         const items = await fetchSharedAdvertisements();
         console.log('dashboard advertisement count:', items.length);
         setAdvertisements(items);
