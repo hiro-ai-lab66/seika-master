@@ -89,6 +89,7 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market' | 'dailyNotes'>('dashboard');
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -282,6 +283,12 @@ function App() {
     }
   }, [isMarketAuthenticated]);
 
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      setDashboardRefreshKey((prev) => prev + 1);
+    }
+  }, [activeTab]);
+
   const loadSellfloorRecordsFromSheets = async (interactiveLogin: boolean) => {
     if (!isSheetsConfigured()) {
       setSellfloorSharedStatus('Google Sheets 未設定のためローカルデータを表示中');
@@ -407,6 +414,7 @@ function App() {
       }
       return { ...prev, inspections: newInspections };
     });
+    setDashboardRefreshKey((prev) => prev + 1);
     setActiveTab('dashboard');
   };
 
@@ -665,7 +673,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
+        return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} refreshKey={dashboardRefreshKey} />;
       case 'sales':
         const targetEntry = state.inspections.find(i => i.date === currentDate);
         return (
@@ -850,7 +858,7 @@ function App() {
                     onAutoLoginHandled={() => setShouldAutoStartMarketLogin(false)}
                 />;
       default:
-        return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} />;
+        return <Dashboard state={state} currentDate={currentDate} onChangeDate={changeDate} refreshKey={dashboardRefreshKey} />;
     }
   };
 

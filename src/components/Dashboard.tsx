@@ -12,6 +12,7 @@ interface Props {
   state: AppState;
   currentDate: string;
   onChangeDate: (date: string) => void;
+  refreshKey?: number;
 }
 
 type FocusItem = {
@@ -324,12 +325,14 @@ const AdvertisementCard: React.FC<{
   );
 };
 
-export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate }) => {
+export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, refreshKey = 0 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [advertisements, setAdvertisements] = useState<SharedAdvertisementEntry[]>([]);
   const [advertisementError, setAdvertisementError] = useState('');
   const [zoomImageUrl, setZoomImageUrl] = useState('');
   const [zoomImageTitle, setZoomImageTitle] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
     weather: '',
     tempBand: '',
@@ -421,37 +424,58 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
   }, [currentDate, currentBudget, currentActual, currentGap, dashboardCustomers, dashboardAvgSpend, weather, tempBand, csvDiffRate, csvDiffStatus]);
 
   useEffect(() => {
-    void (async () => {
+    let isMounted = true;
+
+    const loadDashboardData = async () => {
       try {
         console.log('[Dashboard] starting advertisement fetch');
-        const items = await fetchSharedAdvertisements();
-        console.log('dashboard advertisement count:', items.length);
-        setAdvertisements(items);
-        setAdvertisementError('');
+        const [advertisementResult, inspectionResult] = await Promise.allSettled([
+          fetchSharedAdvertisements(),
+          fetchSharedCheckRows()
+        ]);
+        if (!isMounted) return;
+
+        if (advertisementResult.status === 'fulfilled') {
+          console.log('dashboard advertisement count:', advertisementResult.value.length);
+          setAdvertisements(advertisementResult.value);
+          setAdvertisementError('');
+        } else {
+          console.error('[Dashboard] failed to load advertisements', advertisementResult.reason);
+          setAdvertisements([]);
+          setAdvertisementError(
+            advertisementResult.reason instanceof Error
+              ? advertisementResult.reason.message
+              : '広告取得に失敗しました'
+          );
+        }
+
+        if (inspectionResult.status === 'fulfilled') {
+          const dateRows = inspectionResult.value.filter((row) => row.date === currentDate && row.time === 'final');
+          const rowMap = new Map(dateRows.map((row) => [row.item, row.content]));
+          const customersValue = rowMap.get('客数') || rowMap.get('最終客数') || '';
+          const avgPriceValue = rowMap.get('客単価') || '';
+          setInspectionMeta({
+            weather: rowMap.get('天気（12時）') || rowMap.get('天候') || '',
+            tempBand: rowMap.get('気温帯') || '',
+            customers: customersValue ? Number(customersValue) : null,
+            avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null
+          });
+        } else {
+          console.error('[Dashboard] failed to load inspection meta from shared_check', inspectionResult.reason);
+          setInspectionMeta({
+            weather: '',
+            tempBand: '',
+            customers: null,
+            avgPrice: null
+          });
+        }
+
+        setLastUpdatedAt(new Date().toISOString());
       } catch (error) {
-        console.error('[Dashboard] failed to load advertisements', error);
+        console.error('[Dashboard] failed to refresh dashboard data', error);
+        if (!isMounted) return;
         setAdvertisements([]);
         setAdvertisementError(error instanceof Error ? error.message : '広告取得に失敗しました');
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const rows = await fetchSharedCheckRows();
-        const dateRows = rows.filter((row) => row.date === currentDate && row.time === 'final');
-        const rowMap = new Map(dateRows.map((row) => [row.item, row.content]));
-        const customersValue = rowMap.get('客数') || rowMap.get('最終客数') || '';
-        const avgPriceValue = rowMap.get('客単価') || '';
-        setInspectionMeta({
-          weather: rowMap.get('天気（12時）') || rowMap.get('天候') || '',
-          tempBand: rowMap.get('気温帯') || '',
-          customers: customersValue ? Number(customersValue) : null,
-          avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null
-        });
-      } catch (error) {
-        console.error('[Dashboard] failed to load inspection meta from shared_check', error);
         setInspectionMeta({
           weather: '',
           tempBand: '',
@@ -459,13 +483,18 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
           avgPrice: null
         });
       }
-    })();
-  }, [currentDate]);
+    };
+
+    void loadDashboardData();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentDate, refreshKey, manualRefreshKey]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    setManualRefreshKey((prev) => prev + 1);
     window.setTimeout(() => {
-      setAdviceText(buildAdvice());
       setIsRefreshing(false);
     }, 300);
   };
@@ -618,6 +647,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
             <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1d4ed8', letterSpacing: '0.06em' }}>ACTION DASHBOARD</div>
             <h2 style={{ margin: '4px 0 6px', color: '#0f172a' }}>現場判断用ダッシュボード</h2>
             <div style={{ color: '#475569', fontSize: '0.92rem' }}>見た瞬間に、今日の動きを決めるための要点だけを表示します。</div>
+            <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '8px' }}>
+              最終更新: {lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '読込待ち'}
+            </div>
           </div>
           <input type="date" className="header-date-picker" value={currentDate} onChange={(e) => onChangeDate(e.target.value)} />
         </div>
