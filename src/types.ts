@@ -304,6 +304,16 @@ export interface SharedDailyNotesEntry {
     updatedAt: string;
 }
 
+export interface SharedAdvertisementEntry {
+    id: string;
+    rowNumber?: number;
+    title: string;
+    imageUrl: string;
+    startDate: string;
+    endDate: string;
+    memo: string;
+}
+
 export interface AppState {
     sales: SalesData[];
     todos: ToDoItem[];

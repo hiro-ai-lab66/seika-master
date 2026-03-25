@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AppState, MarketInfo } from '../types';
+import type { AppState, MarketInfo, SharedAdvertisementEntry } from '../types';
 import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
+import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
+import { buildGoogleDriveImageDisplayUrl } from '../services/storageService';
+import { ImageZoomModal } from './ImageZoomModal';
 
 interface Props {
   state: AppState;
@@ -48,6 +51,10 @@ const sortMarkets = (history: MarketInfo[] = []) =>
 
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [advertisements, setAdvertisements] = useState<SharedAdvertisementEntry[]>([]);
+  const [advertisementError, setAdvertisementError] = useState('');
+  const [zoomImageUrl, setZoomImageUrl] = useState('');
+  const [zoomImageTitle, setZoomImageTitle] = useState('');
   const todayBudgetEntry = state.dailyBudgets.find((b) => b.date === currentDate);
   const todayInspection = state.inspections.find((i) => i.date === currentDate);
   const todayNote = state.dailyNotes?.find((entry) => entry.date === currentDate);
@@ -129,6 +136,20 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
   useEffect(() => {
     setAdviceText(buildAdvice());
   }, [currentDate, currentBudget, currentActual, currentGap, currentCustomers, avgSpend, weather, tempBand, csvDiffRate, csvDiffStatus]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const items = await fetchSharedAdvertisements();
+        setAdvertisements(items);
+        setAdvertisementError('');
+      } catch (error) {
+        console.error('[Dashboard] failed to load advertisements', error);
+        setAdvertisements([]);
+        setAdvertisementError(error instanceof Error ? error.message : '広告取得に失敗しました');
+      }
+    })();
+  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -242,6 +263,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
     { label: '客数', value: currentCustomers > 0 ? `${currentCustomers}名` : '未入力' },
     { label: '客単価', value: avgSpend ? `${avgSpend.toLocaleString()}円` : '未入力' }
   ];
+  const todayAdvertisements = useMemo(
+    () => advertisements
+      .filter((item) => item.startDate <= currentDate && currentDate <= item.endDate)
+      .slice(0, 3),
+    [advertisements, currentDate]
+  );
 
   return (
     <div style={shellStyle}>
@@ -349,6 +376,63 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
           </div>
         </div>
 
+        <div style={{ ...cardStyle, borderColor: '#c7d2fe' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <Megaphone size={18} color="#4f46e5" />
+            <h3 style={sectionTitleStyle}>本日の広告</h3>
+          </div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {todayAdvertisements.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: '0.9rem' }}>
+                {advertisementError ? `広告取得エラー: ${advertisementError}` : '本日有効な広告はありません。'}
+              </div>
+            ) : (
+              todayAdvertisements.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setZoomImageUrl(buildGoogleDriveImageDisplayUrl(item.imageUrl, 1600));
+                    setZoomImageTitle(item.title || '広告画像');
+                  }}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    background: '#f8fafc',
+                    borderRadius: '14px',
+                    padding: '12px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{ display: 'grid', gridTemplateColumns: '88px 1fr', gap: '12px', alignItems: 'center' }}>
+                    <div style={{ width: '88px', height: '88px', borderRadius: '12px', overflow: 'hidden', background: '#e2e8f0' }}>
+                      <img
+                        src={buildGoogleDriveImageDisplayUrl(item.imageUrl, 800)}
+                        alt={item.title || '広告画像'}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: '#0f172a', fontWeight: 800, marginBottom: '4px' }}>{item.title || '無題の広告'}</div>
+                      <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                        {item.startDate} - {item.endDate}
+                      </div>
+                      {item.memo && (
+                        <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '6px', lineHeight: 1.5 }}>
+                          {item.memo}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
         <div style={{ ...cardStyle, borderColor: '#fecaca' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
             <AlertTriangle size={18} color="#dc2626" />
@@ -382,6 +466,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate })
           </div>
         </div>
       </div>
+      <ImageZoomModal imageUrl={zoomImageUrl} title={zoomImageTitle} onClose={() => {
+        setZoomImageUrl('');
+        setZoomImageTitle('');
+      }} />
     </div>
   );
 };
