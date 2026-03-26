@@ -122,6 +122,36 @@ const resourceConfigs = {
           updatedAt: row[9] || row[8] || new Date().toISOString()
         }))
         .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
+  },
+  budget: {
+    sheetName: 'shared_budget',
+    range: 'A2:F',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows).map((row, index) => ({
+        id: Number(row[0] || '0'),
+        rowNumber: index + 2,
+        date: row[1] || '',
+        salesTarget: Number(row[2] || '0') || 0,
+        grossProfitTarget: Number(row[3] || '0') || 0,
+        author: row[4] || '',
+        updatedAt: row[5] || ''
+      }))
+  },
+  dailyNotes: {
+    sheetName: 'shared_daily_notes',
+    range: 'A2:G',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row) => ({
+          id: Number(row[0] || '0'),
+          date: row[1] || '',
+          schedule: row[2] || '',
+          inspectionNotes: row[3] || '',
+          announcements: row[4] || '',
+          author: row[5] || '',
+          updatedAt: row[6] || ''
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date))
   }
 } as const;
 
