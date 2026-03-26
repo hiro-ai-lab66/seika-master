@@ -74,6 +74,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             return amtB - amtA;
         });
     };
+    const getPreviousDateString = (date: string) => {
+        const baseDate = new Date(`${date}T00:00:00`);
+        if (Number.isNaN(baseDate.getTime())) return '';
+        baseDate.setDate(baseDate.getDate() - 1);
+        const year = baseDate.getFullYear();
+        const month = String(baseDate.getMonth() + 1).padStart(2, '0');
+        const day = String(baseDate.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
@@ -918,6 +927,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [weatherStatus, setWeatherStatus] = useState<string>('');
     const [weatherError, setWeatherError] = useState<string>('');
     const [isWeatherLoading, setIsWeatherLoading] = useState(false);
+    const [prefillStatus, setPrefillStatus] = useState('');
+    const previousPrefillDateRef = useRef('');
 
     // 既存daily_salesから値をロード
     useEffect(() => {
@@ -974,6 +985,76 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     useEffect(() => {
         void handleFetchWeather();
     }, [currentDate]);
+
+    useEffect(() => {
+        if (previousPrefillDateRef.current === currentDate) return;
+        previousPrefillDateRef.current = currentDate;
+        setPrefillStatus('');
+
+        void (async () => {
+            const previousDate = getPreviousDateString(currentDate);
+            if (!previousDate) return;
+
+            try {
+                const rows = await fetchSharedCheckRows();
+                const previousFinalRows = rows.filter((row) => row.date === previousDate && row.time === 'final');
+                if (previousFinalRows.length === 0) return;
+
+                const rowMap = new Map(previousFinalRows.map((row) => [row.item, row.content]));
+                let appliedCount = 0;
+
+                setForm((prev) => {
+                    const next = { ...prev };
+
+                    if ((next.customersFinal === null || next.customersFinal === undefined) && rowMap.get('最終客数')) {
+                        const previousCustomers = Number(rowMap.get('最終客数'));
+                        if (!Number.isNaN(previousCustomers)) {
+                            next.customersFinal = previousCustomers;
+                            appliedCount += 1;
+                        }
+                    }
+
+                    if ((next.lossAmount === null || next.lossAmount === undefined) && rowMap.get('ロス額')) {
+                        const previousLossAmount = parseLossThousandInput(rowMap.get('ロス額') || '');
+                        if (previousLossAmount !== null) {
+                            next.lossAmount = previousLossAmount;
+                            setLossAmountInput(rowMap.get('ロス額') || '');
+                            appliedCount += 1;
+                        }
+                    }
+
+                    return next;
+                });
+
+                if (!aiCustomerCount && rowMap.get('客数')) {
+                    setAiCustomerCount(rowMap.get('客数') || '');
+                    appliedCount += 1;
+                }
+                if (!aiAvgPrice && rowMap.get('客単価')) {
+                    setAiAvgPrice(rowMap.get('客単価') || '');
+                    appliedCount += 1;
+                }
+                if (!aiWeather12 && rowMap.get('天気（12時）')) {
+                    setAiWeather12(rowMap.get('天気（12時）') || '');
+                    appliedCount += 1;
+                }
+                if (!aiWeather17 && rowMap.get('天気（17時）')) {
+                    setAiWeather17(rowMap.get('天気（17時）') || '');
+                    appliedCount += 1;
+                }
+                if (!aiTempBand && rowMap.get('気温帯')) {
+                    setAiTempBand(rowMap.get('気温帯') || '');
+                    appliedCount += 1;
+                }
+
+                if (appliedCount > 0) {
+                    setPrefillStatus('前日データを反映しました');
+                }
+            } catch (error) {
+                console.warn('[InspectionForm] failed to prefill previous day values', error);
+            }
+        })();
+    }, [currentDate, aiCustomerCount, aiAvgPrice, aiWeather12, aiWeather17, aiTempBand]);
 
     // 画面表示時に shared_budget から当日の売上目標を取得して自動反映
     useEffect(() => {
@@ -1089,6 +1170,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     fontWeight: 600
                 }}>
                     {sharedError || sharedStatus}
+                </div>
+            )}
+            {prefillStatus && (
+                <div style={{
+                    marginTop: '8px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    background: '#f0fdf4',
+                    color: '#15803d',
+                    fontSize: '0.85rem',
+                    fontWeight: 600
+                }}>
+                    {prefillStatus}
                 </div>
             )}
             {csvWarning && (
