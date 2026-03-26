@@ -125,6 +125,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [promotionActual17SalesInput, setPromotionActual17SalesInput] = useState(formatThousandInput(form.promotionActual17Sales));
     const [actual12Input, setActual12Input] = useState(formatThousandInput(form.actual12));
     const [lossAmountInput, setLossAmountInput] = useState(formatLossThousandInput(form.lossAmount));
+    const formRef = useRef<HTMLFormElement>(null);
+    const isSubmittingRef = useRef(false);
     const veggieCsvInputRef = useRef<HTMLInputElement>(null);
     const fruitCsvInputRef = useRef<HTMLInputElement>(null);
     const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement | null>>({});
@@ -194,6 +196,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (event.shiftKey) return;
         event.preventDefault();
         focusNextField(fieldName);
+    };
+
+    const handleSubmitButtonKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        if (isSubmittingRef.current) return;
+        formRef.current?.requestSubmit();
     };
 
     useEffect(() => {
@@ -747,6 +756,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmittingRef.current) return;
+        isSubmittingRef.current = true;
+        try {
         if (!form.totalBudget || form.totalBudget <= 0) {
             alert("予算を入力してください");
             return;
@@ -875,6 +887,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         onSave(entryToSave);
         alert(completionMessage);
+        } finally {
+            isSubmittingRef.current = false;
+        }
     };
 
     // 解析データ独立state
@@ -1102,7 +1117,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 ))}
             </div>
 
-            <form onSubmit={handleSubmit} className="form-stack">
+            <form ref={formRef} onSubmit={handleSubmit} className="form-stack">
                 <div className="entry-group common-fields">
                     <div className="form-group">
                         <label>本日の売上予算（千円） *</label>
@@ -1613,7 +1628,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     </div>
                 )}
 
-                <button ref={registerFieldRef('submit')} type="submit" className="button-primary">報告を保存する</button>
+                <button
+                    ref={registerFieldRef('submit')}
+                    type="submit"
+                    className="button-primary"
+                    onKeyDown={handleSubmitButtonKeyDown}
+                >
+                    報告を保存する
+                </button>
             </form>
 
             <style>{`
