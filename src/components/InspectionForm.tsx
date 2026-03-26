@@ -127,6 +127,74 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [lossAmountInput, setLossAmountInput] = useState(formatLossThousandInput(form.lossAmount));
     const veggieCsvInputRef = useRef<HTMLInputElement>(null);
     const fruitCsvInputRef = useRef<HTMLInputElement>(null);
+    const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement | null>>({});
+
+    const getFocusOrder = () => {
+        if (period === '12:00') {
+            return [
+                'totalBudget',
+                'actual12',
+                'rate12',
+                'customers12',
+                'promotionItem',
+                'promotionTargetSales',
+                'promotionActual12Sales',
+                'notes12',
+                'submit'
+            ];
+        }
+        if (period === '17:00') {
+            return [
+                'totalBudget',
+                'actual17',
+                'rate17',
+                'customers17',
+                'promotionItem',
+                'promotionTargetSales',
+                'promotionActual17Sales',
+                'notes17',
+                'submit'
+            ];
+        }
+        return [
+            'totalBudget',
+            'actualFinal',
+            'customersFinal',
+            'lossAmount',
+            'aiWeather12',
+            'aiWeather17',
+            'aiHighTemp',
+            'aiLowTemp',
+            'aiCustomerCount',
+            'aiAvgPrice',
+            'submit'
+        ];
+    };
+
+    const registerFieldRef = (fieldName: string) => (
+        element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement | null
+    ) => {
+        fieldRefs.current[fieldName] = element;
+    };
+
+    const focusNextField = (fieldName: string) => {
+        const focusOrder = getFocusOrder();
+        const currentIndex = focusOrder.indexOf(fieldName);
+        if (currentIndex === -1) return;
+        const nextFieldName = focusOrder[currentIndex + 1];
+        if (!nextFieldName) return;
+        fieldRefs.current[nextFieldName]?.focus();
+    };
+
+    const handleEnterToNext = (
+        event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+        fieldName: string
+    ) => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        if (event.shiftKey) return;
+        event.preventDefault();
+        focusNextField(fieldName);
+    };
 
     useEffect(() => {
         const updateCalculations = () => {
@@ -1039,11 +1107,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     <div className="form-group">
                         <label>本日の売上予算（千円） *</label>
                         <input
+                            ref={registerFieldRef('totalBudget')}
                             type="text"
                             inputMode="numeric"
                             pattern="[0-9]*"
                             value={formatThousandInput(form.totalBudget)}
                             onChange={e => handleAmountChange('totalBudget', e.target.value)}
+                            onKeyDown={e => handleEnterToNext(e, 'totalBudget')}
                             placeholder="予算を入力"
                             required
                             readOnly={sharedBudgetTarget > 0}
@@ -1064,22 +1134,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <div className="form-group">
                                 <label>12時実績（千円）</label>
                                 <input
+                                    ref={registerFieldRef('actual12')}
                                     type="text"
                                     inputMode="numeric"
                                     pattern="[0-9]*"
                                     value={actual12Input}
                                     onChange={e => handleDraftAmountInputChange('actual12', e.target.value, setActual12Input)}
+                                    onKeyDown={e => handleEnterToNext(e, 'actual12')}
                                     placeholder="0"
                                 />
                             </div>
                             <div className="form-group">
                                 <label>12時消化率 (%)</label>
                                 <input
+                                    ref={registerFieldRef('rate12')}
                                     type="number"
                                     step="any"
                                     inputMode="decimal"
                                     value={form.rate12 ?? ''}
                                     onChange={e => handleNumberChange('rate12', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'rate12')}
                                     placeholder="0.0"
                                 />
                             </div>
@@ -1087,10 +1161,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="form-group">
                             <label>12時客数 (名)</label>
                             <input
+                                ref={registerFieldRef('customers12')}
                                 type="number"
                                 inputMode="numeric"
                                 value={form.customers12 ?? ''}
                                 onChange={e => handleNumberChange('customers12', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, 'customers12')}
                                 placeholder="0"
                             />
                         </div>
@@ -1100,9 +1176,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <div className="form-group">
                                 <label>売り込み品名</label>
                                 <input
+                                    ref={registerFieldRef('promotionItem')}
                                     type="text"
                                     value={promotionItemInput}
                                     onChange={e => handlePromotionItemInputChange(e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'promotionItem')}
                                     placeholder="品名を入力"
                                 />
                             </div>
@@ -1110,22 +1188,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <div className="form-group">
                                     <label>売上目標（千円）</label>
                                     <input
+                                        ref={registerFieldRef('promotionTargetSales')}
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
                                         value={promotionTargetSalesInput}
                                         onChange={e => handleDraftAmountInputChange('promotionTargetSales', e.target.value, setPromotionTargetSalesInput)}
+                                        onKeyDown={e => handleEnterToNext(e, 'promotionTargetSales')}
                                         placeholder="目標額"
                                     />
                                 </div>
                                 <div className="form-group">
                                     <label>12時時点売上（千円）</label>
                                     <input
+                                        ref={registerFieldRef('promotionActual12Sales')}
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
                                         value={promotionActual12SalesInput}
                                         onChange={e => handleDraftAmountInputChange('promotionActual12Sales', e.target.value, setPromotionActual12SalesInput)}
+                                        onKeyDown={e => handleEnterToNext(e, 'promotionActual12Sales')}
                                         placeholder="実績額"
                                     />
                                 </div>
@@ -1159,8 +1241,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="notes-group">
                             <label>気づいたこと・反省点 (12:00)</label>
                             <textarea
+                                ref={registerFieldRef('notes12')}
                                 value={form.notes12 || ''}
                                 onChange={e => handleChange('notes12', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, 'notes12')}
                                 placeholder="例: 客層が主婦層メイン。キャベツの売れ行きが良い。"
                                 rows={3}
                             />
@@ -1175,22 +1259,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <div className="form-group">
                                 <label>17時実績（千円）</label>
                                 <input
+                                    ref={registerFieldRef('actual17')}
                                     type="text"
                                     inputMode="numeric"
                                     pattern="[0-9]*"
                                     value={formatThousandInput(form.actual17)}
                                     onChange={e => handleAmountChange('actual17', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'actual17')}
                                     placeholder="0"
                                 />
                             </div>
                             <div className="form-group">
                                 <label>17時消化率 (%)</label>
                                 <input
+                                    ref={registerFieldRef('rate17')}
                                     type="number"
                                     step="any"
                                     inputMode="decimal"
                                     value={form.rate17 ?? ''}
                                     onChange={e => handleNumberChange('rate17', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'rate17')}
                                     placeholder="0.0"
                                 />
                             </div>
@@ -1198,10 +1286,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="form-group">
                             <label>17時客数 (名)</label>
                             <input
+                                ref={registerFieldRef('customers17')}
                                 type="number"
                                 inputMode="numeric"
                                 value={form.customers17 ?? ''}
                                 onChange={e => handleNumberChange('customers17', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, 'customers17')}
                                 placeholder="0"
                             />
                         </div>
@@ -1211,9 +1301,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <div className="form-group">
                                 <label>売り込み品名</label>
                                 <input
+                                    ref={registerFieldRef('promotionItem')}
                                     type="text"
                                     value={promotionItemInput}
                                     onChange={e => handlePromotionItemInputChange(e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'promotionItem')}
                                     placeholder="品名を入力"
                                 />
                             </div>
@@ -1221,22 +1313,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <div className="form-group">
                                     <label>売上目標（千円）</label>
                                     <input
+                                        ref={registerFieldRef('promotionTargetSales')}
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
                                         value={promotionTargetSalesInput}
                                         onChange={e => handleDraftAmountInputChange('promotionTargetSales', e.target.value, setPromotionTargetSalesInput)}
+                                        onKeyDown={e => handleEnterToNext(e, 'promotionTargetSales')}
                                         placeholder="目標額"
                                     />
                                 </div>
                                 <div className="form-group">
                                     <label>17時時点売上（千円）</label>
                                     <input
+                                        ref={registerFieldRef('promotionActual17Sales')}
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
                                         value={promotionActual17SalesInput}
                                         onChange={e => handleDraftAmountInputChange('promotionActual17Sales', e.target.value, setPromotionActual17SalesInput)}
+                                        onKeyDown={e => handleEnterToNext(e, 'promotionActual17Sales')}
                                         placeholder="実績額"
                                     />
                                 </div>
@@ -1270,8 +1366,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="notes-group">
                             <label>気づいたこと・反省点 (17:00)</label>
                             <textarea
+                                ref={registerFieldRef('notes17')}
                                 value={form.notes17 || ''}
                                 onChange={e => handleChange('notes17', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, 'notes17')}
                                 placeholder="例: 夕方のピークが早まった。明日の品出しを15分早める。"
                                 rows={3}
                             />
@@ -1285,21 +1383,25 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         <div className="form-group">
                             <label>最終実績（千円）</label>
                             <input
+                                ref={registerFieldRef('actualFinal')}
                                 type="text"
                                 inputMode="numeric"
                                 pattern="[0-9]*"
                                 value={formatThousandInput(form.actualFinal)}
                                 onChange={e => handleAmountChange('actualFinal', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, 'actualFinal')}
                                 placeholder="0"
                             />
                         </div>
                         <div className="form-group">
                             <label>最終客数</label>
                             <input
+                                ref={registerFieldRef('customersFinal')}
                                 type="number"
                                 inputMode="numeric"
                                 value={form.customersFinal ?? ''}
                                 onChange={e => handleNumberChange('customersFinal', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, 'customersFinal')}
                                 placeholder="0"
                             />
                         </div>
@@ -1310,11 +1412,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <div className="form-group">
                                 <label>ロス額（千円）</label>
                                 <input
+                                    ref={registerFieldRef('lossAmount')}
                                     type="text"
                                     inputMode="decimal"
                                     pattern="[0-9]+([.][0-9]+)?"
                                     value={lossAmountInput}
                                     onChange={e => handleLossAmountChange(e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'lossAmount')}
                                     placeholder="0"
                                 />
                             </div>
@@ -1340,7 +1444,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <div className="ai-meta-grid">
                                 <div className="ai-meta-item">
                                     <label>天気（12時）</label>
-                                    <select value={aiWeather12} onChange={e => setAiWeather12(e.target.value)}>
+                                    <select ref={registerFieldRef('aiWeather12')} value={aiWeather12} onChange={e => setAiWeather12(e.target.value)} onKeyDown={e => handleEnterToNext(e, 'aiWeather12')}>
                                         <option value="">未選択</option>
                                         <option value="晴れ">☀️ 晴れ</option>
                                         <option value="曇り">☁️ 曇り</option>
@@ -1350,7 +1454,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>天気（17時）</label>
-                                    <select value={aiWeather17} onChange={e => setAiWeather17(e.target.value)}>
+                                    <select ref={registerFieldRef('aiWeather17')} value={aiWeather17} onChange={e => setAiWeather17(e.target.value)} onKeyDown={e => handleEnterToNext(e, 'aiWeather17')}>
                                         <option value="">未選択</option>
                                         <option value="晴れ">☀️ 晴れ</option>
                                         <option value="曇り">☁️ 曇り</option>
@@ -1360,19 +1464,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>最高気温</label>
-                                    <input type="number" inputMode="numeric" placeholder="0" value={aiHighTemp} onChange={e => setAiHighTemp(e.target.value)} />
+                                    <input ref={registerFieldRef('aiHighTemp')} type="number" inputMode="numeric" placeholder="0" value={aiHighTemp} onChange={e => setAiHighTemp(e.target.value)} onKeyDown={e => handleEnterToNext(e, 'aiHighTemp')} />
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>最低気温</label>
-                                    <input type="number" inputMode="numeric" placeholder="0" value={aiLowTemp} onChange={e => setAiLowTemp(e.target.value)} />
+                                    <input ref={registerFieldRef('aiLowTemp')} type="number" inputMode="numeric" placeholder="0" value={aiLowTemp} onChange={e => setAiLowTemp(e.target.value)} onKeyDown={e => handleEnterToNext(e, 'aiLowTemp')} />
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>客数</label>
-                                    <input type="number" inputMode="numeric" placeholder="0" value={aiCustomerCount} onChange={e => setAiCustomerCount(e.target.value)} />
+                                    <input ref={registerFieldRef('aiCustomerCount')} type="number" inputMode="numeric" placeholder="0" value={aiCustomerCount} onChange={e => setAiCustomerCount(e.target.value)} onKeyDown={e => handleEnterToNext(e, 'aiCustomerCount')} />
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>客単価（千円）</label>
-                                    <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(sanitizeThousandInput(e.target.value))} />
+                                    <input ref={registerFieldRef('aiAvgPrice')} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(sanitizeThousandInput(e.target.value))} onKeyDown={e => handleEnterToNext(e, 'aiAvgPrice')} />
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>分析用天候</label>
@@ -1509,7 +1613,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     </div>
                 )}
 
-                <button type="submit" className="button-primary">報告を保存する</button>
+                <button ref={registerFieldRef('submit')} type="submit" className="button-primary">報告を保存する</button>
             </form>
 
             <style>{`
