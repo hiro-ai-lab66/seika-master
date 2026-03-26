@@ -103,3 +103,41 @@ export const readGoogleSheetValues = async (sheetName: string, a1Range: string) 
   const data = await response.json() as { values?: string[][] };
   return data.values || [];
 };
+
+const writeValues = async (
+  method: 'PUT' | 'POST',
+  url: string,
+  values: string[][]
+) => {
+  const accessToken = await getGoogleAccessToken();
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      majorDimension: 'ROWS',
+      values
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google Sheets 書き込みに失敗しました: ${errorText}`);
+  }
+};
+
+export const writeGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
+  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+  await writeValues('PUT', url, values);
+};
+
+export const appendGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
+  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  await writeValues('POST', url, values);
+};

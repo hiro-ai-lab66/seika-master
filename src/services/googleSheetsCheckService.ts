@@ -1,5 +1,5 @@
 import { appendSharedSheetValues, ensureSharedSheetsSession, getSharedSpreadsheetId, readSharedSheetValues, readSharedSpreadsheetMetadata, writeSharedSheetValues } from './googleSheetsInventoryService';
-import { fetchSharedReadResource } from './sharedDataApi';
+import { fetchSharedReadResource, postSharedWriteAction } from './sharedDataApi';
 
 const CHECK_SHEET_NAME = 'shared_check';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
@@ -123,7 +123,9 @@ export const upsertSharedCheckRowsForDateTimes = async (
     times: string[],
     rows: SharedCheckRow[]
 ) => {
-    const existingRows = await fetchSharedCheckRows();
-    const preservedRows = existingRows.filter((row) => !(row.date === date && times.includes(row.time)));
-    await replaceSharedCheckRows([...preservedRows, ...rows]);
+    await postSharedWriteAction('check', 'upsertForDateTimes', {
+        date,
+        times,
+        rows
+    });
 };

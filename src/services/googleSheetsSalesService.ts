@@ -1,12 +1,12 @@
 import type { SharedSalesEntry } from '../types';
 import {
-    appendSharedSheetValues,
     ensureSharedSheetsSession,
     getSharedSpreadsheetId,
     readSharedSheetValues,
     readSharedSpreadsheetMetadata,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
+import { postSharedWriteAction } from './sharedDataApi';
 
 const SALES_SHEET_NAME = 'shared_sales';
 const HEADER_ROW = ['id', '日付', '売上', '客数', '作成者', '更新日時'];
@@ -98,68 +98,11 @@ export const fetchSharedSales = async (): Promise<SharedSalesEntry[]> => {
 };
 
 export const appendSharedSales = async (entry: Omit<SharedSalesEntry, 'id' | 'rowNumber' | 'updatedAt'>) => {
-    const ready = await ensureSharedSheetsSession(true);
-    if (!ready) {
-        throw new Error('Google Sheets 未ログイン');
-    }
-
-    await ensureSalesHeader();
-    const sheetName = await resolveSalesSheetName();
-    const existing = await fetchSharedSales();
-    const nextId = existing.reduce((max, row) => Math.max(max, row.id || 0), 0) + 1;
-    const updatedAt = new Date().toISOString();
-    const range = buildSheetRange(sheetName, 'A:F');
-    logSalesRequest('append-row', sheetName, range);
-    await appendSharedSheetValues(range, [[
-        String(nextId),
-        entry.date,
-        String(entry.sales),
-        entry.customers === null ? '' : String(entry.customers),
-        entry.author || '',
-        updatedAt
-    ]]);
+    await postSharedWriteAction('sales', 'append', entry);
 };
 
 export const upsertFinalInspectionSharedSales = async (entry: Omit<SharedSalesEntry, 'id' | 'rowNumber' | 'updatedAt'>) => {
-    const ready = await ensureSharedSheetsSession(true);
-    if (!ready) {
-        throw new Error('Google Sheets 未ログイン');
-    }
-
-    await ensureSalesHeader();
-    const sheetName = await resolveSalesSheetName();
-    const existing = await fetchSharedSales();
-    const matched = existing.find((row) => row.date === entry.date && row.author === entry.author);
-    const updatedAt = new Date().toISOString();
-
-    if (matched) {
-        if (matched.sales === entry.sales && matched.customers === entry.customers) {
-            console.log('[SalesSheets] skip duplicate final sales sync', {
-                spreadsheetId: getSharedSpreadsheetId(),
-                sheetName,
-                date: entry.date,
-                sales: entry.sales,
-                customers: entry.customers,
-                author: entry.author
-            });
-            return { action: 'skipped' as const };
-        }
-
-        const range = buildSheetRange(sheetName, `A${matched.rowNumber}:F${matched.rowNumber}`);
-        logSalesRequest('update-final-row', sheetName, range);
-        await writeSharedSheetValues(range, [[
-            String(matched.id),
-            entry.date,
-            String(entry.sales),
-            entry.customers === null ? '' : String(entry.customers),
-            entry.author || '',
-            updatedAt
-        ]]);
-        return { action: 'updated' as const };
-    }
-
-    await appendSharedSales(entry);
-    return { action: 'appended' as const };
+    return postSharedWriteAction<{ action: 'skipped' | 'updated' | 'appended' }>('sales', 'upsertFinal', entry);
 };
 
 export const getSharedSalesSheetName = () => resolvedSalesSheetNameCache || SALES_SHEET_NAME;

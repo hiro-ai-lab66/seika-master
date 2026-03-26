@@ -24,7 +24,7 @@ import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import { DailyNotesPage } from './pages/DailyNotesPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
-import { ensureSharedSheetsSession, isSheetsConfigured } from './services/googleSheetsInventoryService';
+import { isSheetsConfigured } from './services/googleSheetsInventoryService';
 import { appendSharedPopibraryItem, deleteSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName, updateSharedPopibraryItem } from './services/googleSheetsPopibraryService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './services/storageService';
 
@@ -413,21 +413,7 @@ function App() {
     }));
     setSelectedSellfloorRecord(updatedRecord);
 
-    if (!isSheetsConfigured()) {
-      setSellfloorSharedStatus(isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました');
-      showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
-      return { message: isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました' };
-    }
-
     try {
-      const ready = await ensureSharedSheetsSession(true);
-      if (!ready) {
-        setNeedsSellfloorSheetsLogin(true);
-        setSellfloorSharedStatus('ローカル保存は完了しました。Google Sheets に再ログインすると共有できます');
-        showToast('売場記録を保存しました');
-        return { message: 'ローカル保存は完了しました。共有は保留です' };
-      }
-
       if (isEditing) {
         await updateSharedSellfloorRecord(updatedRecord);
       } else {
@@ -435,6 +421,7 @@ function App() {
       }
       setSellfloorSharedError(null);
       setSellfloorSharedStatus(isEditing ? '更新しました' : `Google Sheets に共有済み（シート: ${getSharedSellfloorSheetName()}）`);
+      setNeedsSellfloorSheetsLogin(false);
       void loadSellfloorRecordsFromSheets(false);
       showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
       return { message: isEditing ? '更新しました' : 'Google Sheets に共有保存しました' };
@@ -463,27 +450,7 @@ function App() {
       updatedAt: new Date().toISOString()
     };
 
-    if (!isSheetsConfigured()) {
-      const fallbackPop = normalizedPop;
-      setState(prev => ({
-        ...prev,
-        popData: [fallbackPop, ...(prev.popData || []).filter((item) => item.id !== fallbackPop.id)]
-          .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
-      }));
-      setSelectedPop(fallbackPop);
-      setPopibrarySharedStatus(isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました');
-      showToast(isEditing ? 'POPを更新しました' : 'POPを保存しました');
-      return { message: isEditing ? 'ローカルで更新しました' : 'ローカルに保存しました' };
-    }
-
     try {
-      const ready = await ensureSharedSheetsSession(true);
-      if (!ready) {
-        setNeedsPopibrarySheetsLogin(true);
-        setPopibrarySharedStatus('Google Sheets に再ログインすると共有できます');
-        return { message: '共有は保留です' };
-      }
-
       const savedPop = isEditing
         ? await updateSharedPopibraryItem(normalizedPop)
         : await appendSharedPopibraryItem(normalizedPop);
@@ -497,6 +464,7 @@ function App() {
       setSelectedPop(savedPop);
       setPopibrarySharedError(null);
       setPopibrarySharedStatus(isEditing ? '更新しました' : '保存しました');
+      setNeedsPopibrarySheetsLogin(false);
       void loadPopibraryFromSheets(false);
       showToast(isEditing ? 'POPを更新しました' : 'POPを保存しました');
       return { message: isEditing ? '更新しました' : '保存しました' };
@@ -508,27 +476,7 @@ function App() {
   };
 
   const deletePop = async (id: string) => {
-    if (!isSheetsConfigured()) {
-      setState(prev => ({
-        ...prev,
-        popData: (prev.popData || []).filter((item) => item.id !== id)
-      }));
-      setSelectedPop(null);
-      setEditingPop(null);
-      setPopibraryView('list');
-      setPopibrarySharedStatus('ローカルで削除しました');
-      setPopibrarySharedError(null);
-      showToast('POPを削除しました');
-      return;
-    }
-
     try {
-      const ready = await ensureSharedSheetsSession(true);
-      if (!ready) {
-        setNeedsPopibrarySheetsLogin(true);
-        throw new Error('Google Sheets 未ログイン');
-      }
-
       await deleteSharedPopibraryItem(id);
       setState(prev => ({
         ...prev,
@@ -538,6 +486,7 @@ function App() {
       setEditingPop(null);
       setPopibraryView('list');
       setPopibrarySharedError(null);
+      setNeedsPopibrarySheetsLogin(false);
       setPopibrarySharedStatus('削除しました');
       await loadPopibraryFromSheets(false);
       showToast('POPを削除しました');
@@ -549,27 +498,7 @@ function App() {
   };
 
   const deleteSellfloorRecord = async (id: string) => {
-    if (!isSheetsConfigured()) {
-      setState(prev => ({
-        ...prev,
-        sellfloorRecords: (prev.sellfloorRecords || []).filter(r => r.id !== id),
-        aiAnalysisHistory: (prev.aiAnalysisHistory || []).filter(a => a.recordId !== id)
-      }));
-      setSellfloorView('list');
-      setSelectedSellfloorRecord(null);
-      setSellfloorSharedStatus('ローカルで削除しました');
-      setSellfloorSharedError(null);
-      showToast('売場記録を削除しました');
-      return;
-    }
-
     try {
-      const ready = await ensureSharedSheetsSession(true);
-      if (!ready) {
-        setNeedsSellfloorSheetsLogin(true);
-        throw new Error('Google Sheets 未ログイン');
-      }
-
       await deleteSharedSellfloorRecord(id);
       setState(prev => ({
         ...prev,
@@ -580,6 +509,7 @@ function App() {
       setSelectedSellfloorRecord(null);
       setEditingSellfloorRecord(null);
       setSellfloorSharedError(null);
+      setNeedsSellfloorSheetsLogin(false);
       setSellfloorSharedStatus('削除しました');
       await loadSellfloorRecordsFromSheets(false);
       showToast('売場記録を削除しました');
