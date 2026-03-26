@@ -1,4 +1,4 @@
-import type { SellfloorRecord, SharedSellfloorRecordEntry } from '../types';
+import type { SellfloorRecord } from '../types';
 import {
     appendSharedSheetValues,
     ensureSharedSheetsSession,
@@ -8,6 +8,7 @@ import {
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './storageService';
+import { fetchSharedReadResource } from './sharedDataApi';
 
 const SELLFLOOR_SHEET_NAME = (import.meta as any).env?.VITE_SELLFLOOR_SHEET_TAB?.trim() || 'shared_sellfloor_records';
 const HEADER_ROW = ['id', '日付', '商品カテゴリ・品名', '売場の場所', 'コメント・メモ', '写真', 'POP ID', '作成者', '作成日時', '更新日時'];
@@ -67,19 +68,6 @@ const ensureSellfloorHeader = async () => {
     }
 };
 
-const normalizeSharedRecord = (entry: SharedSellfloorRecordEntry): SellfloorRecord => ({
-    id: entry.id,
-    date: entry.date,
-    product: entry.product,
-    location: entry.location,
-    comment: entry.comment,
-    photoUrl: normalizeDriveImageUrl(entry.photoUrl),
-    popId: entry.popId,
-    author: entry.author,
-    createdAt: entry.createdAt || entry.updatedAt || new Date().toISOString(),
-    updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString()
-});
-
 const toRowValues = (record: SellfloorRecord): string[] => [
     record.id,
     record.date,
@@ -94,34 +82,7 @@ const toRowValues = (record: SellfloorRecord): string[] => [
 ];
 
 export const fetchSharedSellfloorRecords = async (): Promise<SellfloorRecord[]> => {
-    const ready = await ensureSharedSheetsSession(false);
-    if (!ready) {
-        throw new Error('Google Sheets 未ログイン');
-    }
-
-    await ensureSellfloorHeader();
-    const sheetName = await resolveSellfloorSheetName();
-    const range = buildSheetRange(sheetName, 'A2:J');
-    logSellfloorRequest('read-rows', sheetName, range);
-    const result = await readSharedSheetValues(range);
-    const rows = result.values || [];
-
-    return rows
-        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
-        .map((row: string[], index: number) => normalizeSharedRecord({
-            rowNumber: index + 2,
-            id: row[0] || crypto.randomUUID(),
-            date: row[1] || '',
-            product: row[2] || '',
-            location: row[3] || '',
-            comment: row[4] || '',
-            photoUrl: row[5] || '',
-            popId: row[6] || '',
-            author: row[7] || '',
-            createdAt: row[8] || '',
-            updatedAt: row[9] || ''
-        }))
-        .sort((a: SellfloorRecord, b: SellfloorRecord) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+    return fetchSharedReadResource<SellfloorRecord>('sellfloor');
 };
 
 export const upsertSharedSellfloorRecord = async (record: SellfloorRecord) => {

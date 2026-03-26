@@ -7,6 +7,7 @@ import {
     readSharedSpreadsheetMetadata,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
+import { fetchSharedReadResource } from './sharedDataApi';
 
 const NOTICE_SHEET_NAME = 'shared_notice';
 const HEADER_ROW = ['id', '日付', '内容', '作成者', '更新日時', '重要フラグ', '既読ユーザー', '作成日時'];
@@ -65,36 +66,7 @@ const ensureNoticeHeader = async () => {
 };
 
 export const fetchSharedNotices = async (): Promise<SharedNoticeEntry[]> => {
-    const ready = await ensureSharedSheetsSession(false);
-    if (!ready) {
-        throw new Error('Google Sheets 未ログイン');
-    }
-
-    await ensureNoticeHeader();
-    const sheetName = await resolveNoticeSheetName();
-    const range = buildSheetRange(sheetName, 'A2:H');
-    logNoticeRequest('read-rows', sheetName, range);
-    const result = await readSharedSheetValues(range);
-    const rows = result.values || [];
-
-    return rows
-        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
-        .map((row: string[], index: number) => ({
-            id: Number(row[0] || '0'),
-            rowNumber: index + 2,
-            date: row[1] || '',
-            content: row[2] || '',
-            author: row[3] || '',
-            updatedAt: row[4] || '',
-            priority: row[5] === 'true',
-            readUsers: (row[6] || '').split(',').map((user) => user.trim()).filter(Boolean),
-            createdAt: row[7] || row[4] || ''
-        }))
-        .sort((a: SharedNoticeEntry, b: SharedNoticeEntry) => {
-            const createdCompare = b.createdAt.localeCompare(a.createdAt);
-            if (createdCompare !== 0) return createdCompare;
-            return b.id - a.id;
-        });
+    return fetchSharedReadResource<SharedNoticeEntry>('notice');
 };
 
 export const appendSharedNotice = async (notice: Omit<SharedNoticeEntry, 'id' | 'rowNumber' | 'updatedAt' | 'createdAt' | 'readUsers'>) => {

@@ -1,4 +1,5 @@
 import { appendSharedSheetValues, ensureSharedSheetsSession, getSharedSpreadsheetId, readSharedSheetValues, readSharedSpreadsheetMetadata, writeSharedSheetValues } from './googleSheetsInventoryService';
+import { fetchSharedReadResource } from './sharedDataApi';
 
 const CHECK_SHEET_NAME = 'shared_check';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
@@ -65,30 +66,7 @@ const ensureCheckHeader = async () => {
 export const getSharedCheckSheetName = () => resolvedCheckSheetNameCache || CHECK_SHEET_NAME;
 
 export const fetchSharedCheckRows = async (): Promise<SharedCheckRow[]> => {
-    const ready = await ensureSharedSheetsSession(false);
-    if (!ready) {
-        throw new Error('Google Sheets 未ログイン');
-    }
-
-    await ensureCheckHeader();
-    const sheetName = await resolveCheckSheetName();
-    const dataRange = buildSheetRange(sheetName, 'A2:G');
-    logCheckRequest('read rows', sheetName, dataRange);
-    const result = await readSharedSheetValues(dataRange);
-    const rows = result.values || [];
-
-    return rows
-        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
-        .map((row: string[], index: number) => ({
-            rowNumber: index + 2,
-            date: row[0] || '',
-            store: row[1] || STORE_NAME,
-            item: row[2] || '',
-            content: row[3] || '',
-            status: row[4] || '',
-            owner: row[5] || '',
-            time: row[6] || ''
-        }));
+    return fetchSharedReadResource<SharedCheckRow>('check');
 };
 
 export const appendSharedCheckRows = async (rows: SharedCheckRow[]) => {

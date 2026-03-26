@@ -1,0 +1,154 @@
+import { readGoogleSheetValues } from './_lib/googleServiceAccount';
+
+const normalizeDriveImageUrl = (url: string) => {
+  if (!url) return '';
+  const trimmed = url.trim();
+  const directIdMatch = trimmed.match(/[?&]id=([^&]+)/);
+  if (directIdMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${directIdMatch[1]}`;
+  }
+  const fileMatch = trimmed.match(/\/file\/d\/([^/]+)/);
+  if (fileMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+  }
+  return trimmed;
+};
+
+const buildErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : '共有データの取得に失敗しました';
+
+const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => cell?.toString().trim()));
+
+const resourceConfigs = {
+  check: {
+    sheetName: 'shared_check',
+    range: 'A2:G',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows).map((row, index) => ({
+        rowNumber: index + 2,
+        date: row[0] || '',
+        store: row[1] || '',
+        item: row[2] || '',
+        content: row[3] || '',
+        status: row[4] || '',
+        owner: row[5] || '',
+        time: row[6] || ''
+      }))
+  },
+  notice: {
+    sheetName: 'shared_notice',
+    range: 'A2:H',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row, index) => ({
+          id: Number(row[0] || '0'),
+          rowNumber: index + 2,
+          date: row[1] || '',
+          content: row[2] || '',
+          author: row[3] || '',
+          updatedAt: row[4] || '',
+          priority: row[5] === 'true',
+          readUsers: (row[6] || '').split(',').map((user) => user.trim()).filter(Boolean),
+          createdAt: row[7] || row[4] || ''
+        }))
+        .sort((a, b) => {
+          const createdCompare = b.createdAt.localeCompare(a.createdAt);
+          if (createdCompare !== 0) return createdCompare;
+          return b.id - a.id;
+        })
+  },
+  advertisement: {
+    sheetName: 'shared_advertisement',
+    range: 'A2:F',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row, index) => ({
+          id: row[0] || String(index + 1),
+          rowNumber: index + 2,
+          title: row[1] || '',
+          imageUrl: normalizeDriveImageUrl(row[2] || ''),
+          startDate: row[3] || '',
+          endDate: row[4] || '',
+          memo: row[5] || ''
+        }))
+        .sort((a, b) => {
+          const startCompare = b.startDate.localeCompare(a.startDate);
+          if (startCompare !== 0) return startCompare;
+          return (b.id || '').localeCompare(a.id || '');
+        })
+  },
+  popibrary: {
+    sheetName: 'shared_popibrary',
+    range: 'A2:H',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row) => {
+          const id = row[0] || String(Date.now());
+          const date = row[1] || '';
+          const updatedAt = row[7] || new Date().toISOString();
+          return {
+            id,
+            title: row[2] || '',
+            categoryLarge: row[3] || '',
+            categorySmall: '',
+            season: '',
+            usage: '',
+            size: '',
+            thumbUrl: normalizeDriveImageUrl(row[5] || ''),
+            pdfUrl: '',
+            improvementComment: row[4] || '',
+            author: row[6] || '',
+            createdAt: date ? new Date(`${date}T00:00:00`).toISOString() : updatedAt,
+            updatedAt
+          };
+        })
+        .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
+  },
+  sellfloor: {
+    sheetName: 'shared_sellfloor_records',
+    range: 'A2:J',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row, index) => ({
+          id: row[0] || `shared-sellfloor-${index + 1}`,
+          date: row[1] || '',
+          product: row[2] || '',
+          location: row[3] || '',
+          comment: row[4] || '',
+          photoUrl: normalizeDriveImageUrl(row[5] || ''),
+          popId: row[6] || '',
+          author: row[7] || '',
+          createdAt: row[8] || row[9] || new Date().toISOString(),
+          updatedAt: row[9] || row[8] || new Date().toISOString()
+        }))
+        .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
+  }
+} as const;
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method Not Allowed' });
+    return;
+  }
+
+  const resource = String(req.query?.resource || '');
+  const config = resourceConfigs[resource as keyof typeof resourceConfigs];
+
+  if (!config) {
+    res.status(400).json({ error: 'resource パラメータが不正です' });
+    return;
+  }
+
+  try {
+    const rows = await readGoogleSheetValues(config.sheetName, config.range);
+    res.status(200).json({
+      sheetName: config.sheetName,
+      items: config.mapRows(rows)
+    });
+  } catch (error) {
+    console.error('[shared-read] failed', { resource, error });
+    res.status(500).json({
+      error: buildErrorMessage(error)
+    });
+  }
+}

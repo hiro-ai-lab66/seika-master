@@ -8,6 +8,7 @@ import {
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './storageService';
+import { fetchSharedReadResource } from './sharedDataApi';
 
 const POPIBRARY_SHEET_NAME = (import.meta as any).env?.VITE_POPIBRARY_SHEET_TAB?.trim() || 'shared_popibrary';
 const HEADER_ROW = ['id', '日付', 'タイトル', 'カテゴリ', '説明', '画像URL', '作成者', '更新日時'];
@@ -66,45 +67,8 @@ const ensurePopibraryHeader = async () => {
     }
 };
 
-const toPopItem = (row: string[]): PopItem => {
-    const id = row[0] || String(Date.now());
-    const date = row[1] || '';
-    const updatedAt = row[7] || new Date().toISOString();
-
-    return {
-        id,
-        title: row[2] || '',
-        categoryLarge: row[3] || '',
-        categorySmall: '',
-        season: '',
-        usage: '',
-        size: '',
-        thumbUrl: normalizeDriveImageUrl(row[5] || ''),
-        pdfUrl: '',
-        improvementComment: row[4] || '',
-        author: row[6] || '',
-        createdAt: date ? new Date(`${date}T00:00:00`).toISOString() : updatedAt,
-        updatedAt
-    };
-};
-
 export const fetchSharedPopibraryItems = async (): Promise<PopItem[]> => {
-    const ready = await ensureSharedSheetsSession(false);
-    if (!ready) {
-        throw new Error('Google Sheets 未ログイン');
-    }
-
-    await ensurePopibraryHeader();
-    const sheetName = await resolvePopibrarySheetName();
-    const range = buildSheetRange(sheetName, 'A2:H');
-    logPopibraryRequest('read-rows', sheetName, range);
-    const result = await readSharedSheetValues(range);
-    const rows = result.values || [];
-
-    return rows
-        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
-        .map((row: string[]) => toPopItem(row))
-        .sort((a: PopItem, b: PopItem) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+    return fetchSharedReadResource<PopItem>('popibrary');
 };
 
 export const appendSharedPopibraryItem = async (pop: PopItem) => {

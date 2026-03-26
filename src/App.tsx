@@ -290,37 +290,13 @@ function App() {
   }, [activeTab]);
 
   const loadSellfloorRecordsFromSheets = async (interactiveLogin: boolean) => {
-    if (!isSheetsConfigured()) {
-      setSellfloorSharedStatus('Google Sheets 未設定のためローカルデータを表示中');
-      setSellfloorSharedError(null);
-      setNeedsSellfloorSheetsLogin(false);
-      return;
-    }
-
     setIsSellfloorSharedLoading(true);
     setSellfloorSharedError(null);
 
     try {
-      const ready = await ensureSharedSheetsSession(interactiveLogin);
-      if (!ready) {
-        setNeedsSellfloorSheetsLogin(true);
-        setSellfloorSharedStatus('Google Sheets に再ログインすると共有記録を表示できます');
-        return;
-      }
-
       const sharedRecords = await fetchSharedSellfloorRecords();
       const localRecords = sellfloorRecordsRef.current;
-      const missingLocalRecords = localRecords.filter((record) => !sharedRecords.some((shared) => shared.id === record.id));
-
-      for (const record of missingLocalRecords) {
-        await upsertSharedSellfloorRecord(record);
-      }
-
-      const latestSharedRecords = missingLocalRecords.length > 0
-        ? await fetchSharedSellfloorRecords()
-        : sharedRecords;
-
-      const mergedRecords = mergeSellfloorRecords(localRecords, latestSharedRecords);
+      const mergedRecords = mergeSellfloorRecords(localRecords, sharedRecords);
       isHydratingSellfloorFromSheetsRef.current = true;
       setState((prev) => ({
         ...prev,
@@ -331,8 +307,8 @@ function App() {
     } catch (error) {
       console.error('[App] failed to load shared sellfloor records', error);
       const message = error instanceof Error ? error.message : '取得に失敗しました';
-      setNeedsSellfloorSheetsLogin(message.includes('未ログイン'));
-      setSellfloorSharedError(`Google Sheets接続エラー: ${message}`);
+      setNeedsSellfloorSheetsLogin(Boolean(interactiveLogin && isSheetsConfigured()));
+      setSellfloorSharedError(`共有データ取得エラー: ${message}`);
     } finally {
       setIsSellfloorSharedLoading(false);
       window.setTimeout(() => {
@@ -355,24 +331,10 @@ function App() {
   }, [activeTab]);
 
   const loadPopibraryFromSheets = async (interactiveLogin: boolean) => {
-    if (!isSheetsConfigured()) {
-      setPopibrarySharedStatus('Google Sheets 未設定のためローカルデータを表示中');
-      setPopibrarySharedError(null);
-      setNeedsPopibrarySheetsLogin(false);
-      return;
-    }
-
     setIsPopibrarySharedLoading(true);
     setPopibrarySharedError(null);
 
     try {
-      const ready = await ensureSharedSheetsSession(interactiveLogin);
-      if (!ready) {
-        setNeedsPopibrarySheetsLogin(true);
-        setPopibrarySharedStatus('Google Sheets に再ログインすると共有 POP を表示できます');
-        return;
-      }
-
       const sharedPops = await fetchSharedPopibraryItems();
       setState((prev) => ({
         ...prev,
@@ -383,8 +345,8 @@ function App() {
     } catch (error) {
       console.error('[App] failed to load shared popibrary', error);
       const message = error instanceof Error ? error.message : '取得に失敗しました';
-      setNeedsPopibrarySheetsLogin(message.includes('未ログイン'));
-      setPopibrarySharedError(`Google Sheets接続エラー: ${message}`);
+      setNeedsPopibrarySheetsLogin(Boolean(interactiveLogin && isSheetsConfigured()));
+      setPopibrarySharedError(`共有データ取得エラー: ${message}`);
     } finally {
       setIsPopibrarySharedLoading(false);
     }
