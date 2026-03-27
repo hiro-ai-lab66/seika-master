@@ -1,4 +1,4 @@
-import { readGoogleSheetValues } from './_lib/googleServiceAccount';
+import { readGoogleSheetValues } from './_lib/googleServiceAccount.js';
 
 const normalizeDriveImageUrl = (url: string) => {
   if (!url) return '';

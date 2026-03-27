@@ -1,4 +1,4 @@
-import { appendGoogleSheetValues, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount';
+import { appendGoogleSheetValues, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
 
 const nowIso = () => new Date().toISOString();
 
