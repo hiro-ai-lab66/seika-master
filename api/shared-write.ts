@@ -1,4 +1,4 @@
-import { appendGoogleSheetValues, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount';
+import { appendGoogleSheetValues, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount';
 
 const nowIso = () => new Date().toISOString();
 
@@ -100,6 +100,13 @@ const normalizeBudgetDate = (raw: string): string => {
 async function handleCheckUpsert(payload: any) {
   const { date, times, rows } = payload as { date: string; times: string[]; rows: any[] };
   const sheet = SHEETS.check;
+  console.log('[shared-write] handleCheckUpsert', {
+    targetSheet: sheet.name,
+    date,
+    times,
+    payloadRowCount: rows.length,
+    payloadPreview: rows[0] || null
+  });
   await ensureHeader(sheet.name, sheet.header);
   const existing = await readParsedRows(sheet.name, sheet.width);
   const preserved = existing.filter((row) => !(row[0] === date && times.includes(row[6] || '')));
@@ -116,6 +123,11 @@ async function handleCheckUpsert(payload: any) {
     ])
   ];
   await replaceRows(sheet.name, sheet.width, nextRows);
+  console.log('[shared-write] handleCheckUpsert completed', {
+    targetSheet: sheet.name,
+    existingRowCount: existing.length,
+    nextRowCount: nextRows.length
+  });
   return { ok: true };
 }
 
@@ -428,10 +440,23 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    console.log('[shared-write] request received', {
+      resource,
+      action,
+      payloadKeys: Object.keys(body?.payload || {})
+    });
     const result = await targetHandler(body.payload || {});
     res.status(200).json({ result });
   } catch (error) {
-    console.error('[shared-write] failed', { resource, action, error });
-    res.status(500).json({ error: buildErrorMessage(error) });
+    const serialized = formatServerError(error);
+    console.error('[shared-write] failed', {
+      resource,
+      action,
+      error: serialized
+    });
+    res.status(500).json({
+      error: buildErrorMessage(error),
+      detail: serialized
+    });
   }
 }

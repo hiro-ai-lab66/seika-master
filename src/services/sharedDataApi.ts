@@ -9,6 +9,33 @@ type SharedReadResponse<T> = {
 const API_PATH = '/api/shared-read';
 const WRITE_API_PATH = '/api/shared-write';
 
+const buildReadableError = async (response: Response, fallback: string) => {
+  const status = response.status;
+  const statusText = response.statusText;
+  const rawBody = await response.text();
+  console.error('[sharedDataApi] response error body', {
+    status,
+    statusText,
+    rawBody
+  });
+
+  try {
+    const parsed = rawBody ? JSON.parse(rawBody) as { error?: unknown } : null;
+    const apiError = parsed?.error;
+    if (typeof apiError === 'string' && apiError.trim()) {
+      return `status ${status}: ${apiError}`;
+    }
+    if (apiError && typeof apiError === 'object' && 'message' in apiError) {
+      const message = (apiError as { message?: string }).message;
+      if (message) return `status ${status}: ${message}`;
+    }
+  } catch (error) {
+    console.error('[sharedDataApi] failed to parse error body JSON', error);
+  }
+
+  return rawBody ? `status ${status}: ${rawBody}` : `status ${status}: ${fallback}`;
+};
+
 export const fetchSharedReadResource = async <T>(resource: SharedReadResource): Promise<T[]> => {
   const response = await fetch(`${API_PATH}?resource=${encodeURIComponent(resource)}`, {
     headers: {
@@ -16,18 +43,21 @@ export const fetchSharedReadResource = async <T>(resource: SharedReadResource): 
     }
   });
 
+  console.log('[sharedDataApi] read response', {
+    resource,
+    status: response.status,
+    statusText: response.statusText
+  });
+
   let payload: SharedReadResponse<T> | { error?: string } | null = null;
   try {
-    payload = await response.json();
+    payload = await response.clone().json();
   } catch (error) {
     console.error('[sharedDataApi] failed to parse response', { resource, error });
   }
 
   if (!response.ok) {
-    const errorMessage =
-      payload && 'error' in payload && payload.error
-        ? payload.error
-        : '共有データAPIの呼び出しに失敗しました。サーバー設定を確認してください';
+    const errorMessage = await buildReadableError(response, '共有データAPIの呼び出しに失敗しました。サーバー設定を確認してください');
     throw new Error(errorMessage);
   }
 
@@ -52,15 +82,23 @@ export const postSharedWriteAction = async <T>(
     })
   });
 
+  console.log('[sharedDataApi] write response', {
+    resource,
+    action,
+    status: response.status,
+    statusText: response.statusText
+  });
+
   let json: { result?: T; error?: string } | null = null;
   try {
-    json = await response.json();
+    json = await response.clone().json();
   } catch (error) {
     console.error('[sharedDataApi] failed to parse write response', { resource, action, error });
   }
 
   if (!response.ok) {
-    throw new Error(json?.error || '共有データAPIの書き込みに失敗しました。サーバー設定を確認してください');
+    const errorMessage = await buildReadableError(response, '共有データAPIの書き込みに失敗しました。サーバー設定を確認してください');
+    throw new Error(errorMessage);
   }
 
   return json?.result as T;
