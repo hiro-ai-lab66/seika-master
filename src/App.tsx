@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
 import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry } from './types';
-import { getLocalTodayDateString } from './utils/calculations';
+import { getDayOfWeek, getLocalTodayDateString } from './utils/calculations';
 import './App.css';
 import { Dashboard } from './components/Dashboard';
 import { InspectionForm } from './components/InspectionForm';
@@ -26,6 +26,7 @@ import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { isSheetsConfigured } from './services/googleSheetsInventoryService';
 import { appendSharedPopibraryItem, deleteSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName, updateSharedPopibraryItem } from './services/googleSheetsPopibraryService';
+import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow } from './services/googleSheetsCheckService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './services/storageService';
 
 const STORAGE_KEY = 'seika_master_data_v2';
@@ -34,6 +35,128 @@ const SELLFLOOR_AUTHOR_KEY = 'seika_sellfloor_author';
 const POPIBRARY_AUTHOR_KEY = 'seika_popibrary_author';
 const APP_AUTH_KEY = 'seika_app_authenticated';
 const APP_PASSWORD = (import.meta as any).env?.VITE_APP_PASSWORD || '';
+
+const parseSharedCheckAmount = (value: string) => {
+  const normalized = value.replace(/,/g, '').trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? Math.round(parsed * 1000) : null;
+};
+
+const parseSharedCheckNumber = (value: string) => {
+  const normalized = value.replace(/,/g, '').trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): InspectionEntry => ({
+  id: existing?.id || `shared-check-${date}`,
+  date,
+  dayOfWeek: existing?.dayOfWeek || getDayOfWeek(date),
+  totalBudget: existing?.totalBudget || 0,
+  actual12: existing?.actual12 ?? null,
+  rate12: existing?.rate12 ?? null,
+  forecast12: existing?.forecast12 ?? null,
+  diff12: existing?.diff12 ?? null,
+  customers12: existing?.customers12 ?? null,
+  actual17: existing?.actual17 ?? null,
+  rate17: existing?.rate17 ?? null,
+  forecast17: existing?.forecast17 ?? null,
+  diff17: existing?.diff17 ?? null,
+  customers17: existing?.customers17 ?? null,
+  actualFinal: existing?.actualFinal ?? null,
+  budgetRatio: existing?.budgetRatio ?? null,
+  diffFinal: existing?.diffFinal ?? null,
+  accDiff: existing?.accDiff ?? null,
+  customersFinal: existing?.customersFinal ?? null,
+  accBudgetRatio: existing?.accBudgetRatio ?? null,
+  accPrevYearRatio: existing?.accPrevYearRatio ?? null,
+  lossAmount: existing?.lossAmount ?? null,
+  lossRate: existing?.lossRate ?? null,
+  promotionItem: existing?.promotionItem || '',
+  promotionTargetSales: existing?.promotionTargetSales || 0,
+  promotionTargetMargin: existing?.promotionTargetMargin || 0,
+  promotionActual12Sales: existing?.promotionActual12Sales || 0,
+  promotionActual12Rate: existing?.promotionActual12Rate || 0,
+  promotionActual17Sales: existing?.promotionActual17Sales || 0,
+  promotionActual17Rate: existing?.promotionActual17Rate || 0,
+  notes12: existing?.notes12 || '',
+  notes17: existing?.notes17 || '',
+  bestVegetables: existing?.bestVegetables || [],
+  bestFruits: existing?.bestFruits || []
+});
+
+const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[], existingEntries: InspectionEntry[]) => {
+  const existingMap = new Map(existingEntries.map((entry) => [entry.date, entry]));
+  const grouped = new Map<string, InspectionEntry>();
+
+  rows.forEach((row) => {
+    if (!row.date) return;
+    const current = grouped.get(row.date) || createEmptyInspectionEntry(row.date, existingMap.get(row.date));
+    switch (row.item) {
+      case '本日の売上予算':
+        current.totalBudget = parseSharedCheckAmount(row.content) || 0;
+        break;
+      case '12時実績':
+        current.actual12 = parseSharedCheckAmount(row.content);
+        break;
+      case '12時消化率':
+        current.rate12 = parseSharedCheckNumber(row.content);
+        break;
+      case '12時客数':
+        current.customers12 = parseSharedCheckNumber(row.content);
+        break;
+      case '17時実績':
+        current.actual17 = parseSharedCheckAmount(row.content);
+        break;
+      case '17時消化率':
+        current.rate17 = parseSharedCheckNumber(row.content);
+        break;
+      case '17時客数':
+        current.customers17 = parseSharedCheckNumber(row.content);
+        break;
+      case '最終実績':
+        current.actualFinal = parseSharedCheckAmount(row.content);
+        break;
+      case '最終客数':
+      case '客数':
+        current.customersFinal = parseSharedCheckNumber(row.content);
+        break;
+      case 'ロス額':
+        current.lossAmount = parseSharedCheckAmount(row.content);
+        break;
+      case '売り込み品':
+        current.promotionItem = row.content || '';
+        break;
+      case '売上目標':
+        current.promotionTargetSales = parseSharedCheckAmount(row.content) || 0;
+        break;
+      case '12時時点売上':
+        current.promotionActual12Sales = parseSharedCheckAmount(row.content) || 0;
+        break;
+      case '17時時点売上':
+        current.promotionActual17Sales = parseSharedCheckAmount(row.content) || 0;
+        break;
+      case '12時気づき':
+        current.notes12 = row.content || '';
+        break;
+      case '17時気づき':
+        current.notes17 = row.content || '';
+        break;
+      default:
+        break;
+    }
+    grouped.set(row.date, current);
+  });
+
+  const merged = new Map(existingMap);
+  grouped.forEach((entry, date) => {
+    merged.set(date, entry);
+  });
+
+  return Array.from(merged.values()).sort((a, b) => b.date.localeCompare(a.date));
+};
 
 const mergeSellfloorRecords = (localRecords: SellfloorRecord[], sharedRecords: SellfloorRecord[]) => {
   const merged = new Map<string, SellfloorRecord>();
@@ -90,6 +213,9 @@ function App() {
   const [loginError, setLoginError] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market' | 'dailyNotes'>('dashboard');
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [inspectionSharedStatus, setInspectionSharedStatus] = useState<string | null>(null);
+  const [inspectionSharedError, setInspectionSharedError] = useState<string | null>(null);
+  const [isInspectionSharedLoading, setIsInspectionSharedLoading] = useState(false);
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -289,6 +415,33 @@ function App() {
     }
   }, [activeTab]);
 
+  const loadInspectionHistoryFromSheets = async (reason: 'tab' | 'save' | 'manual') => {
+    setIsInspectionSharedLoading(true);
+    setInspectionSharedError(null);
+    try {
+      const sharedRows = await fetchSharedCheckRows();
+      console.log('[App] loaded shared_check rows for history', {
+        reason,
+        rowCount: sharedRows.length,
+        sheetName: getSharedCheckSheetName()
+      });
+      setState((prev) => ({
+        ...prev,
+        inspections: buildInspectionEntriesFromSharedRows(sharedRows, prev.inspections || [])
+      }));
+      setInspectionSharedStatus(
+        reason === 'manual'
+          ? `共有データを再取得しました（シート: ${getSharedCheckSheetName()}）`
+          : `共有データを表示中（シート: ${getSharedCheckSheetName()}）`
+      );
+    } catch (error) {
+      console.error('[App] failed to load inspection history from shared_check', error);
+      setInspectionSharedError(`共有データ取得エラー: ${error instanceof Error ? error.message : 'shared_check の取得に失敗しました'}`);
+    } finally {
+      setIsInspectionSharedLoading(false);
+    }
+  };
+
   const loadSellfloorRecordsFromSheets = async (interactiveLogin: boolean) => {
     setIsSellfloorSharedLoading(true);
     setSellfloorSharedError(null);
@@ -365,6 +518,11 @@ function App() {
     return () => window.clearInterval(timer);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    void loadInspectionHistoryFromSheets('tab');
+  }, [activeTab, currentDate]);
+
   const saveInspection = (entry: InspectionEntry) => {
     setState(prev => {
       const exists = prev.inspections.findIndex(i => i.date === entry.date);
@@ -376,6 +534,7 @@ function App() {
       }
       return { ...prev, inspections: newInspections };
     });
+    void loadInspectionHistoryFromSheets('save');
     setDashboardRefreshKey((prev) => prev + 1);
     setActiveTab('dashboard');
   };
@@ -589,7 +748,16 @@ function App() {
       case 'todo':
         return <ToDoList todos={state.todos} onToggle={toggleTodo} onAdd={addTodo} />;
       case 'history':
-        return <HistorySheet inspections={state.inspections} dailyBudgets={state.dailyBudgets} />;
+        return (
+          <HistorySheet
+            inspections={state.inspections}
+            dailyBudgets={state.dailyBudgets}
+            onReloadShared={() => void loadInspectionHistoryFromSheets('manual')}
+            sharedStatus={inspectionSharedStatus}
+            sharedError={inspectionSharedError}
+            isSharedLoading={isInspectionSharedLoading}
+          />
+        );
       case 'products':
         return <ProductMaster />;
       case 'inventory':
@@ -1644,7 +1812,21 @@ const ToDoList = ({ todos, onToggle, onAdd }: {
   );
 };
 
-const HistorySheet = ({ inspections, dailyBudgets }: { inspections: InspectionEntry[]; dailyBudgets: DailyBudget[] }) => {
+const HistorySheet = ({
+  inspections,
+  dailyBudgets,
+  onReloadShared,
+  sharedStatus,
+  sharedError,
+  isSharedLoading
+}: {
+  inspections: InspectionEntry[];
+  dailyBudgets: DailyBudget[];
+  onReloadShared: () => void;
+  sharedStatus: string | null;
+  sharedError: string | null;
+  isSharedLoading: boolean;
+}) => {
   const sorted = [...inspections].sort((a, b) => a.date.localeCompare(b.date));
   const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
   const fmtK = (n: number | null | undefined) => {
@@ -1676,7 +1858,30 @@ const HistorySheet = ({ inspections, dailyBudgets }: { inspections: InspectionEn
 
   return (
     <div className="page-container">
-      <h2>点検履歴 (定時点検表)</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <h2 style={{ margin: 0 }}>点検履歴 (定時点検表)</h2>
+        <button
+          type="button"
+          onClick={onReloadShared}
+          disabled={isSharedLoading}
+          style={{
+            border: '1px solid #cbd5e1',
+            background: isSharedLoading ? '#e2e8f0' : '#fff',
+            color: '#0f172a',
+            borderRadius: '999px',
+            padding: '8px 14px',
+            fontWeight: 700,
+            cursor: isSharedLoading ? 'wait' : 'pointer'
+          }}
+        >
+          {isSharedLoading ? '再取得中...' : '共有データ再取得'}
+        </button>
+      </div>
+      {(sharedStatus || sharedError) && (
+        <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: sharedError ? '#b91c1c' : '#475569' }}>
+          {sharedError || sharedStatus}
+        </p>
+      )}
 
       {/* 月間サマリー */}
       <div className="hist-summary">
