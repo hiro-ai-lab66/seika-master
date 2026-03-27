@@ -173,8 +173,10 @@ export default async function handler(req: any, res: any) {
     console.log('[shared-read] target sheet:', config.sheetName);
     const rows = await readGoogleSheetValues(config.sheetName, config.range);
     const items = config.mapRows(rows);
+    const uniqueDates = 'date' in (items[0] || {}) ? Array.from(new Set((items as Array<{ date?: string }>).map((item) => item.date).filter(Boolean))) : [];
     console.log('[shared-read] response status:', 200);
     console.log('[shared-read] item count:', items.length);
+    console.log('[shared-read] unique date count:', uniqueDates.length);
     res.status(200).json({
       sheetName: config.sheetName,
       items

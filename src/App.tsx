@@ -219,6 +219,7 @@ function App() {
   const [isInspectionSharedLoading, setIsInspectionSharedLoading] = useState(false);
   const [inspectionHistoryLastUpdated, setInspectionHistoryLastUpdated] = useState<string | null>(null);
   const [inspectionHistoryRowCount, setInspectionHistoryRowCount] = useState(0);
+  const [inspectionHistoryDateCount, setInspectionHistoryDateCount] = useState(0);
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -437,6 +438,7 @@ function App() {
       const nextInspections = buildInspectionEntriesFromSharedRows(sharedRows);
       console.log('[App] inspection history state replacement', {
         nextInspectionCount: nextInspections.length,
+        uniqueDateCount: new Set(nextInspections.map((entry) => entry.date)).size,
         firstDates: nextInspections.slice(0, 5).map((entry) => entry.date)
       });
       setState((prev) => ({
@@ -444,6 +446,7 @@ function App() {
         inspections: nextInspections
       }));
       setInspectionHistoryRowCount(sharedRows.length);
+      setInspectionHistoryDateCount(new Set(nextInspections.map((entry) => entry.date)).size);
       setInspectionHistoryLastUpdated(new Date().toISOString());
       setInspectionSharedStatus(
         reason === 'manual'
@@ -774,7 +777,8 @@ function App() {
             isSharedLoading={isInspectionSharedLoading}
             lastUpdatedAt={inspectionHistoryLastUpdated}
             sharedRowCount={inspectionHistoryRowCount}
-            displayDate={currentDate}
+            sharedDateCount={inspectionHistoryDateCount}
+            currentDate={currentDate}
           />
         );
       case 'products':
@@ -1840,7 +1844,8 @@ const HistorySheet = ({
   isSharedLoading,
   lastUpdatedAt,
   sharedRowCount,
-  displayDate
+  sharedDateCount,
+  currentDate
 }: {
   inspections: InspectionEntry[];
   dailyBudgets: DailyBudget[];
@@ -1850,15 +1855,31 @@ const HistorySheet = ({
   isSharedLoading: boolean;
   lastUpdatedAt: string | null;
   sharedRowCount: number;
-  displayDate: string;
+  sharedDateCount: number;
+  currentDate: string;
 }) => {
-  const sorted = [...inspections].sort((a, b) => a.date.localeCompare(b.date));
+  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today'>('all');
+  const filteredInspections = dateFilterMode === 'today'
+    ? inspections.filter((entry) => entry.date === currentDate)
+    : inspections;
+  const sorted = [...filteredInspections].sort((a, b) => a.date.localeCompare(b.date));
   const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
   const fmtK = (n: number | null | undefined) => {
     if (n === null || n === undefined) return '-';
     return Math.round(n / 1000).toLocaleString();
   };
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString('ja-JP') : '未取得';
+  const displayScopeLabel = dateFilterMode === 'today' ? `当日 (${currentDate})` : '全履歴';
+
+  console.log('[HistorySheet] render summary', {
+    totalInspectionCount: inspections.length,
+    filteredCount: filteredInspections.length,
+    sharedRowCount,
+    sharedDateCount,
+    currentDate,
+    dateFilterMode,
+    topDates: sorted.slice(0, 5).map((entry) => entry.date)
+  });
 
   let cumSales = 0;
   let cumBudget = 0;
@@ -1908,8 +1929,40 @@ const HistorySheet = ({
           {sharedError || sharedStatus}
         </p>
       )}
+      <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => setDateFilterMode('all')}
+          style={{
+            border: dateFilterMode === 'all' ? '1px solid #1d4ed8' : '1px solid #cbd5e1',
+            background: dateFilterMode === 'all' ? '#dbeafe' : '#fff',
+            color: '#0f172a',
+            borderRadius: '999px',
+            padding: '6px 12px',
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+        >
+          全履歴
+        </button>
+        <button
+          type="button"
+          onClick={() => setDateFilterMode('today')}
+          style={{
+            border: dateFilterMode === 'today' ? '1px solid #1d4ed8' : '1px solid #cbd5e1',
+            background: dateFilterMode === 'today' ? '#dbeafe' : '#fff',
+            color: '#0f172a',
+            borderRadius: '999px',
+            padding: '6px 12px',
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+        >
+          当日だけ
+        </button>
+      </div>
       <p style={{ margin: '6px 0 0', fontSize: '0.76rem', color: '#64748b' }}>
-        最終更新: {lastUpdatedLabel} / 取得件数: {sharedRowCount}件 / 表示対象日付: {displayDate}
+        最終更新: {lastUpdatedLabel} / 取得行数: {sharedRowCount}件 / 履歴日数: {sharedDateCount}日 / 表示範囲: {displayScopeLabel}
       </p>
 
       {/* 月間サマリー */}
