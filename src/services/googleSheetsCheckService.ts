@@ -129,3 +129,12 @@ export const upsertSharedCheckRowsForDateTimes = async (
         rows
     });
 };
+
+export const restoreSharedCheckFromBackup = async () => {
+    return postSharedWriteAction<{
+        ok: boolean;
+        restoredCount: number;
+        mergedRowCount: number;
+        uniqueDateCount: number;
+    }>('check', 'restoreFromBackup', {});
+};

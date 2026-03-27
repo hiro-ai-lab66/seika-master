@@ -42,6 +42,11 @@ const SHEETS = {
     header: ['日付', '店舗', '項目', '内容', '状態', '担当', '時間'],
     width: 7
   },
+  checkBackup: {
+    name: 'backup_shared_check',
+    header: ['日付', '店舗', '項目', '内容', '状態', '担当', '時間'],
+    width: 7
+  },
   sales: {
     name: 'shared_sales',
     header: ['id', '日付', '売上', '客数', '作成者', '更新日時'],
@@ -78,6 +83,31 @@ const readParsedRows = async (sheetName: string, width: number) => {
   const widthLetter = String.fromCharCode('A'.charCodeAt(0) + width - 1);
   return parseRows(await readGoogleSheetValues(sheetName, `A2:${widthLetter}`));
 };
+
+const buildCheckRowKey = (row: string[]) =>
+  row
+    .slice(0, 7)
+    .map((cell) => (cell || '').trim())
+    .join('\u241f');
+
+const getCheckTimeOrder = (time: string) => {
+  if (time === '12:00') return 1;
+  if (time === '17:00') return 2;
+  if (time === 'final') return 3;
+  if (time.startsWith('csv-')) return 4;
+  return 5;
+};
+
+const sortCheckRows = (rows: string[][]) =>
+  [...rows].sort((a, b) => {
+    const dateCompare = (a[0] || '').localeCompare(b[0] || '');
+    if (dateCompare !== 0) return dateCompare;
+    const timeCompare = getCheckTimeOrder(a[6] || '') - getCheckTimeOrder(b[6] || '');
+    if (timeCompare !== 0) return timeCompare;
+    const itemCompare = (a[2] || '').localeCompare(b[2] || '');
+    if (itemCompare !== 0) return itemCompare;
+    return (a[3] || '').localeCompare(b[3] || '');
+  });
 
 const normalizeBudgetDate = (raw: string): string => {
   if (!raw) return raw;
@@ -129,6 +159,50 @@ async function handleCheckUpsert(payload: any) {
     nextRowCount: nextRows.length
   });
   return { ok: true };
+}
+
+async function handleCheckRestoreFromBackup() {
+  const activeSheet = SHEETS.check;
+  const backupSheet = SHEETS.checkBackup;
+  await ensureHeader(activeSheet.name, activeSheet.header);
+  await ensureHeader(backupSheet.name, backupSheet.header);
+
+  const currentRows = await readParsedRows(activeSheet.name, activeSheet.width);
+  const backupRows = await readParsedRows(backupSheet.name, backupSheet.width);
+
+  const mergedByKey = new Map<string, string[]>();
+  currentRows.forEach((row) => {
+    mergedByKey.set(buildCheckRowKey(row), row);
+  });
+
+  let restoredCount = 0;
+  backupRows.forEach((row) => {
+    const rowKey = buildCheckRowKey(row);
+    if (mergedByKey.has(rowKey)) return;
+    mergedByKey.set(rowKey, row);
+    restoredCount += 1;
+  });
+
+  const mergedRows = sortCheckRows(Array.from(mergedByKey.values()));
+  await replaceRows(activeSheet.name, activeSheet.width, mergedRows);
+
+  const uniqueDateCount = new Set(mergedRows.map((row) => row[0]).filter(Boolean)).size;
+  console.log('[shared-write] handleCheckRestoreFromBackup completed', {
+    targetSheet: activeSheet.name,
+    backupSheet: backupSheet.name,
+    currentRowCount: currentRows.length,
+    backupRowCount: backupRows.length,
+    restoredCount,
+    mergedRowCount: mergedRows.length,
+    uniqueDateCount
+  });
+
+  return {
+    ok: true,
+    restoredCount,
+    mergedRowCount: mergedRows.length,
+    uniqueDateCount
+  };
 }
 
 async function handleSalesAppend(payload: any) {
@@ -406,6 +480,7 @@ async function handleDailyNotesUpsert(payload: any) {
 
 const handlers: Record<string, (payload: any) => Promise<any>> = {
   'check:upsertForDateTimes': handleCheckUpsert,
+  'check:restoreFromBackup': handleCheckRestoreFromBackup,
   'sales:append': handleSalesAppend,
   'sales:upsertFinal': handleSalesUpsertFinal,
   'notice:append': handleNoticeAppend,

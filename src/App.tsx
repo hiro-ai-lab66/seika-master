@@ -1870,12 +1870,14 @@ const HistorySheet = ({
   };
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString('ja-JP') : '未取得';
   const displayScopeLabel = dateFilterMode === 'today' ? `当日 (${currentDate})` : '全履歴';
+  const displayRowCount = sorted.length;
 
   console.log('[HistorySheet] render summary', {
     totalInspectionCount: inspections.length,
     filteredCount: filteredInspections.length,
     sharedRowCount,
     sharedDateCount,
+    displayRowCount,
     currentDate,
     dateFilterMode,
     topDates: sorted.slice(0, 5).map((entry) => entry.date)
@@ -1962,7 +1964,7 @@ const HistorySheet = ({
         </button>
       </div>
       <p style={{ margin: '6px 0 0', fontSize: '0.76rem', color: '#64748b' }}>
-        最終更新: {lastUpdatedLabel} / 取得行数: {sharedRowCount}件 / 履歴日数: {sharedDateCount}日 / 表示範囲: {displayScopeLabel}
+        最終更新: {lastUpdatedLabel} / 取得行数: {sharedRowCount}件 / 履歴日数: {sharedDateCount}日 / 表示行数: {displayRowCount}日 / 表示範囲: {displayScopeLabel}
       </p>
 
       {/* 月間サマリー */}
