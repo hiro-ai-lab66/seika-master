@@ -170,13 +170,17 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    console.log('[shared-read] target sheet:', config.sheetName);
     const rows = await readGoogleSheetValues(config.sheetName, config.range);
+    const items = config.mapRows(rows);
+    console.log('[shared-read] response status:', 200);
+    console.log('[shared-read] item count:', items.length);
     res.status(200).json({
       sheetName: config.sheetName,
-      items: config.mapRows(rows)
+      items
     });
   } catch (error) {
-    console.error('[shared-read] failed', { resource, error });
+    console.error('[shared-read] error:', error instanceof Error ? { message: error.message, stack: error.stack } : error);
     res.status(500).json({
       error: buildErrorMessage(error)
     });

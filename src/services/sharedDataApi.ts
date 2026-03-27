@@ -37,14 +37,18 @@ const buildReadableError = async (response: Response, fallback: string) => {
 };
 
 export const fetchSharedReadResource = async <T>(resource: SharedReadResource): Promise<T[]> => {
-  const response = await fetch(`${API_PATH}?resource=${encodeURIComponent(resource)}`, {
+  const requestUrl = `${API_PATH}?resource=${encodeURIComponent(resource)}&_ts=${Date.now()}`;
+  const response = await fetch(requestUrl, {
+    cache: 'no-store',
     headers: {
-      Accept: 'application/json'
+      Accept: 'application/json',
+      'Cache-Control': 'no-cache'
     }
   });
 
   console.log('[sharedDataApi] read response', {
     resource,
+    requestUrl,
     status: response.status,
     statusText: response.statusText
   });

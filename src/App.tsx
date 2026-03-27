@@ -87,13 +87,12 @@ const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): I
   bestFruits: existing?.bestFruits || []
 });
 
-const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[], existingEntries: InspectionEntry[]) => {
-  const existingMap = new Map(existingEntries.map((entry) => [entry.date, entry]));
+const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
   const grouped = new Map<string, InspectionEntry>();
 
   rows.forEach((row) => {
     if (!row.date) return;
-    const current = grouped.get(row.date) || createEmptyInspectionEntry(row.date, existingMap.get(row.date));
+    const current = grouped.get(row.date) || createEmptyInspectionEntry(row.date);
     switch (row.item) {
       case '本日の売上予算':
         current.totalBudget = parseSharedCheckAmount(row.content) || 0;
@@ -149,13 +148,15 @@ const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[], existingEn
     }
     grouped.set(row.date, current);
   });
-
-  const merged = new Map(existingMap);
-  grouped.forEach((entry, date) => {
-    merged.set(date, entry);
-  });
-
-  return Array.from(merged.values()).sort((a, b) => b.date.localeCompare(a.date));
+  const sortedEntries = Array.from(grouped.values()).sort((a, b) => b.date.localeCompare(a.date));
+  console.log('[App] inspection history sorted entries preview', sortedEntries.slice(0, 3).map((entry) => ({
+    date: entry.date,
+    totalBudget: entry.totalBudget,
+    actual12: entry.actual12,
+    actual17: entry.actual17,
+    actualFinal: entry.actualFinal
+  })));
+  return sortedEntries;
 };
 
 const mergeSellfloorRecords = (localRecords: SellfloorRecord[], sharedRecords: SellfloorRecord[]) => {
@@ -216,6 +217,8 @@ function App() {
   const [inspectionSharedStatus, setInspectionSharedStatus] = useState<string | null>(null);
   const [inspectionSharedError, setInspectionSharedError] = useState<string | null>(null);
   const [isInspectionSharedLoading, setIsInspectionSharedLoading] = useState(false);
+  const [inspectionHistoryLastUpdated, setInspectionHistoryLastUpdated] = useState<string | null>(null);
+  const [inspectionHistoryRowCount, setInspectionHistoryRowCount] = useState(0);
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -420,15 +423,28 @@ function App() {
     setInspectionSharedError(null);
     try {
       const sharedRows = await fetchSharedCheckRows();
+      console.log('[App] inspection history fetch context', {
+        reason,
+        currentDate,
+        rowCount: sharedRows.length,
+        sampleRows: sharedRows.slice(0, 5)
+      });
       console.log('[App] loaded shared_check rows for history', {
         reason,
         rowCount: sharedRows.length,
         sheetName: getSharedCheckSheetName()
       });
+      const nextInspections = buildInspectionEntriesFromSharedRows(sharedRows);
+      console.log('[App] inspection history state replacement', {
+        nextInspectionCount: nextInspections.length,
+        firstDates: nextInspections.slice(0, 5).map((entry) => entry.date)
+      });
       setState((prev) => ({
         ...prev,
-        inspections: buildInspectionEntriesFromSharedRows(sharedRows, prev.inspections || [])
+        inspections: nextInspections
       }));
+      setInspectionHistoryRowCount(sharedRows.length);
+      setInspectionHistoryLastUpdated(new Date().toISOString());
       setInspectionSharedStatus(
         reason === 'manual'
           ? `共有データを再取得しました（シート: ${getSharedCheckSheetName()}）`
@@ -756,6 +772,9 @@ function App() {
             sharedStatus={inspectionSharedStatus}
             sharedError={inspectionSharedError}
             isSharedLoading={isInspectionSharedLoading}
+            lastUpdatedAt={inspectionHistoryLastUpdated}
+            sharedRowCount={inspectionHistoryRowCount}
+            displayDate={currentDate}
           />
         );
       case 'products':
@@ -1818,7 +1837,10 @@ const HistorySheet = ({
   onReloadShared,
   sharedStatus,
   sharedError,
-  isSharedLoading
+  isSharedLoading,
+  lastUpdatedAt,
+  sharedRowCount,
+  displayDate
 }: {
   inspections: InspectionEntry[];
   dailyBudgets: DailyBudget[];
@@ -1826,6 +1848,9 @@ const HistorySheet = ({
   sharedStatus: string | null;
   sharedError: string | null;
   isSharedLoading: boolean;
+  lastUpdatedAt: string | null;
+  sharedRowCount: number;
+  displayDate: string;
 }) => {
   const sorted = [...inspections].sort((a, b) => a.date.localeCompare(b.date));
   const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
@@ -1833,6 +1858,7 @@ const HistorySheet = ({
     if (n === null || n === undefined) return '-';
     return Math.round(n / 1000).toLocaleString();
   };
+  const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString('ja-JP') : '未取得';
 
   let cumSales = 0;
   let cumBudget = 0;
@@ -1882,6 +1908,9 @@ const HistorySheet = ({
           {sharedError || sharedStatus}
         </p>
       )}
+      <p style={{ margin: '6px 0 0', fontSize: '0.76rem', color: '#64748b' }}>
+        最終更新: {lastUpdatedLabel} / 取得件数: {sharedRowCount}件 / 表示対象日付: {displayDate}
+      </p>
 
       {/* 月間サマリー */}
       <div className="hist-summary">
