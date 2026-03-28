@@ -92,6 +92,30 @@ const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): I
   bestFruits: existing?.bestFruits || []
 });
 
+const mergeDailyBudgetsFromInspections = (existingBudgets: DailyBudget[], inspections: InspectionEntry[]) => {
+  const budgetMap = new Map(existingBudgets.map((budget) => [budget.date, budget]));
+
+  inspections.forEach((entry) => {
+    if (!entry.date || !entry.totalBudget || entry.totalBudget <= 0) return;
+    const existing = budgetMap.get(entry.date);
+    const nextBudget: DailyBudget = {
+      date: entry.date,
+      dayOfWeek: existing?.dayOfWeek || entry.dayOfWeek || getDayOfWeek(entry.date),
+      veggieBudget: existing?.veggieBudget || 0,
+      fruitBudget: existing?.fruitBudget || 0,
+      totalBudget: entry.totalBudget
+    };
+    budgetMap.set(entry.date, nextBudget);
+  });
+
+  const mergedBudgets = Array.from(budgetMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  console.log('[App] merged daily budgets from shared_check', mergedBudgets.slice(-5).map((budget) => ({
+    date: budget.date,
+    totalBudget: budget.totalBudget
+  })));
+  return mergedBudgets;
+};
+
 const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
   const grouped = new Map<string, InspectionEntry>();
 
@@ -460,6 +484,12 @@ function App() {
         sheetName: getSharedCheckSheetName()
       });
       const nextInspections = buildInspectionEntriesFromSharedRows(sharedRows);
+      const todaysBudget = nextInspections.find((entry) => entry.date === currentDate)?.totalBudget || 0;
+      console.log('[App] extracted budget from shared_check', {
+        currentDate,
+        todaysBudget,
+        matchingInspection: nextInspections.find((entry) => entry.date === currentDate)
+      });
       console.log('[App] inspection history state replacement', {
         nextInspectionCount: nextInspections.length,
         uniqueDateCount: new Set(nextInspections.map((entry) => entry.date)).size,
@@ -467,7 +497,8 @@ function App() {
       });
       setState((prev) => ({
         ...prev,
-        inspections: nextInspections
+        inspections: nextInspections,
+        dailyBudgets: mergeDailyBudgetsFromInspections(prev.dailyBudgets || [], nextInspections)
       }));
       setInspectionHistoryRowCount(sharedRows.length);
       setInspectionHistoryDateCount(new Set(nextInspections.map((entry) => entry.date)).size);
