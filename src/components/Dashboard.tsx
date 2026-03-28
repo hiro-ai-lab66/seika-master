@@ -38,8 +38,59 @@ type InspectionMeta = {
   tempBand: string;
   customers: number | null;
   avgPrice: number | null;
+  storeSales: number | null;
+  compositionRatio: number | null;
   highTemp: string;
   lowTemp: string;
+};
+
+const ADVERTISEMENT_CACHE_KEY = 'seika_dashboard_advertisements_cache';
+const RETRYABLE_AD_ERROR_PATTERN = /\b503\b|service unavailable/i;
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const loadCachedAdvertisements = (): SharedAdvertisementEntry[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(ADVERTISEMENT_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as SharedAdvertisementEntry[] : [];
+  } catch (error) {
+    console.warn('[Dashboard] failed to parse advertisement cache', error);
+    return [];
+  }
+};
+
+const saveCachedAdvertisements = (items: SharedAdvertisementEntry[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ADVERTISEMENT_CACHE_KEY, JSON.stringify(items));
+  } catch (error) {
+    console.warn('[Dashboard] failed to persist advertisement cache', error);
+  }
+};
+
+const isRetryableAdvertisementError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return RETRYABLE_AD_ERROR_PATTERN.test(message);
+};
+
+const fetchAdvertisementsWithRetry = async () => {
+  const retryDelays = [250, 800];
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      return await fetchSharedAdvertisements();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableAdvertisementError(error) || attempt === retryDelays.length) {
+        throw error;
+      }
+      await sleep(retryDelays[attempt]);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('広告取得に失敗しました');
 };
 
 const shellStyle: React.CSSProperties = {
@@ -330,7 +381,7 @@ const AdvertisementCard: React.FC<{
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, refreshKey = 0 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
-  const [advertisements, setAdvertisements] = useState<SharedAdvertisementEntry[]>([]);
+  const [advertisements, setAdvertisements] = useState<SharedAdvertisementEntry[]>(() => loadCachedAdvertisements());
   const [advertisementError, setAdvertisementError] = useState('');
   const [zoomImageUrl, setZoomImageUrl] = useState('');
   const [zoomImageTitle, setZoomImageTitle] = useState('');
@@ -340,6 +391,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     tempBand: '',
     customers: null,
     avgPrice: null,
+    storeSales: null,
+    compositionRatio: null,
     highTemp: '',
     lowTemp: ''
   });
@@ -393,6 +446,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const tempBand = inspectionMeta.tempBand || dailySales[0]?.temp_band || '';
   const dashboardCustomers = inspectionMeta.customers ?? currentCustomers;
   const dashboardAvgSpend = inspectionMeta.avgPrice ?? avgSpend;
+  const dashboardStoreSales = inspectionMeta.storeSales ?? todayInspection?.storeSalesFinal ?? null;
+  const dashboardCompositionRatio = inspectionMeta.compositionRatio ?? todayInspection?.compositionRatio ?? null;
   const temperatureDisplay = inspectionMeta.highTemp || inspectionMeta.lowTemp
     ? `高 ${inspectionMeta.highTemp || '-'}℃ / 低 ${inspectionMeta.lowTemp || '-'}℃`
     : (tempBand || '未設定');
@@ -437,7 +492,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       try {
         console.log('[Dashboard] starting advertisement fetch');
         const [advertisementResult, inspectionResult] = await Promise.allSettled([
-          fetchSharedAdvertisements(),
+          fetchAdvertisementsWithRetry(),
           fetchSharedCheckRows()
         ]);
         if (!isMounted) return;
@@ -445,15 +500,21 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         if (advertisementResult.status === 'fulfilled') {
           console.log('dashboard advertisement count:', advertisementResult.value.length);
           setAdvertisements(advertisementResult.value);
+          saveCachedAdvertisements(advertisementResult.value);
           setAdvertisementError('');
         } else {
           console.error('[Dashboard] failed to load advertisements', advertisementResult.reason);
-          setAdvertisements([]);
-          setAdvertisementError(
-            advertisementResult.reason instanceof Error
-              ? advertisementResult.reason.message
-              : '広告取得に失敗しました'
-          );
+          const cachedItems = loadCachedAdvertisements();
+          if (cachedItems.length > 0) {
+            setAdvertisements(cachedItems);
+            setAdvertisementError('広告取得に失敗したため、前回成功時のデータを表示しています');
+          } else {
+            setAdvertisementError(
+              advertisementResult.reason instanceof Error
+                ? advertisementResult.reason.message
+                : '広告取得に失敗しました'
+            );
+          }
         }
 
         if (inspectionResult.status === 'fulfilled') {
@@ -474,11 +535,15 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           };
           const customersValue = pickValue(['客数', '最終客数', '17時客数', '12時客数']);
           const avgPriceValue = pickValue(['客単価']);
+          const storeSalesValue = pickValue(['店計売上']);
+          const compositionRatioValue = pickValue(['構成比']);
           const extractedMeta = {
             weather: pickValue(['天候', '天気（12時）', '天気（17時）']),
             tempBand: pickValue(['気温帯']),
             customers: customersValue ? Number(customersValue) : null,
             avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null,
+            storeSales: storeSalesValue ? Number(storeSalesValue) * 1000 : null,
+            compositionRatio: compositionRatioValue ? Number(compositionRatioValue) : null,
             highTemp: pickValue(['最高気温']),
             lowTemp: pickValue(['最低気温'])
           };
@@ -498,6 +563,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             tempBand: '',
             customers: null,
             avgPrice: null,
+            storeSales: null,
+            compositionRatio: null,
             highTemp: '',
             lowTemp: ''
           });
@@ -507,13 +574,20 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       } catch (error) {
         console.error('[Dashboard] failed to refresh dashboard data', error);
         if (!isMounted) return;
-        setAdvertisements([]);
-        setAdvertisementError(error instanceof Error ? error.message : '広告取得に失敗しました');
+        const cachedItems = loadCachedAdvertisements();
+        if (cachedItems.length > 0) {
+          setAdvertisements(cachedItems);
+          setAdvertisementError('広告取得に失敗したため、前回成功時のデータを表示しています');
+        } else {
+          setAdvertisementError(error instanceof Error ? error.message : '広告取得に失敗しました');
+        }
         setInspectionMeta({
           weather: '',
           tempBand: '',
           customers: null,
           avgPrice: null,
+          storeSales: null,
+          compositionRatio: null,
           highTemp: '',
           lowTemp: ''
         });
@@ -636,7 +710,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     { label: '天候', value: weather || '未設定' },
     { label: '気温', value: temperatureDisplay },
     { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' },
-    { label: '客単価', value: dashboardAvgSpend ? `${dashboardAvgSpend.toLocaleString()}円` : '未設定' }
+    { label: '店計売上', value: dashboardStoreSales ? `${dashboardStoreSales.toLocaleString()}円` : '未設定' },
+    { label: '客単価', value: dashboardAvgSpend ? `${dashboardAvgSpend.toLocaleString()}円` : '未設定' },
+    { label: '構成比', value: dashboardCompositionRatio !== null ? `${dashboardCompositionRatio.toFixed(1)}%` : '未設定' }
   ];
   const todayAdvertisements = useMemo(() => {
     const today = toFilterDateValue(currentDate);
@@ -713,6 +789,26 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
               <span style={{ color: '#64748b' }}>今月進捗</span>
               <strong style={{ color: '#0f172a' }}>{monthProgress}%</strong>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginTop: '16px' }}>
+          <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: '14px', padding: '12px 14px' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#64748b' }}>店計売上</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+              {dashboardStoreSales ? `¥${dashboardStoreSales.toLocaleString()}` : '未設定'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: '14px', padding: '12px 14px' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#64748b' }}>客単価</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+              {dashboardAvgSpend ? `¥${dashboardAvgSpend.toLocaleString()}` : '未設定'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: '14px', padding: '12px 14px' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#64748b' }}>構成比</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+              {dashboardCompositionRatio !== null ? `${dashboardCompositionRatio.toFixed(1)}%` : '未設定'}
             </div>
           </div>
         </div>

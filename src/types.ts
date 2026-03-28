@@ -64,7 +64,9 @@ export interface InspectionEntry {
 
     // 最終計（閉店時）
     actualFinal: number | null;
+    storeSalesFinal: number | null;
     budgetRatio: number | null;
+    compositionRatio: number | null;
     diffFinal: number | null;
     accDiff: number | null;
     customersFinal: number | null;

@@ -71,7 +71,9 @@ const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): I
   diff17: existing?.diff17 ?? null,
   customers17: existing?.customers17 ?? null,
   actualFinal: existing?.actualFinal ?? null,
+  storeSalesFinal: existing?.storeSalesFinal ?? null,
   budgetRatio: existing?.budgetRatio ?? null,
+  compositionRatio: existing?.compositionRatio ?? null,
   diffFinal: existing?.diffFinal ?? null,
   accDiff: existing?.accDiff ?? null,
   customersFinal: existing?.customersFinal ?? null,
@@ -146,6 +148,12 @@ const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
         break;
       case '最終実績':
         current.actualFinal = parseSharedCheckAmount(row.content);
+        break;
+      case '店計売上':
+        current.storeSalesFinal = parseSharedCheckAmount(row.content);
+        break;
+      case '構成比':
+        current.compositionRatio = parseSharedCheckNumber(row.content);
         break;
       case '最終客数':
       case '客数':

@@ -115,6 +115,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             customers12: null,
             customers17: null,
             customersFinal: null,
+            storeSalesFinal: null,
+            compositionRatio: null,
             promotionItem: '',
             promotionTargetSales: 0,
             promotionTargetMargin: 0,
@@ -176,8 +178,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             'aiWeather17',
             'aiHighTemp',
             'aiLowTemp',
+            'storeSalesFinal',
             'aiCustomerCount',
-            'aiAvgPrice',
             'submit'
         ];
     };
@@ -229,6 +231,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 if (next.actualFinal !== null && next.actualFinal !== undefined) {
                     const finalForecast = calculateForecast(next.actualFinal, 100);
                     next.diffFinal = calculateGap(finalForecast, budget);
+                    next.budgetRatio = budget > 0 ? Number(((next.actualFinal / budget) * 100).toFixed(1)) : null;
 
                     if (next.lossAmount !== null && next.lossAmount !== undefined && next.actualFinal > 0) {
                         next.lossRate = Number(((next.lossAmount / next.actualFinal) * 100).toFixed(2));
@@ -237,7 +240,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     }
                 } else {
                     next.diffFinal = null;
+                    next.budgetRatio = null;
                     next.lossRate = 0;
+                }
+
+                if (
+                    next.actualFinal !== null &&
+                    next.actualFinal !== undefined &&
+                    next.storeSalesFinal !== null &&
+                    next.storeSalesFinal !== undefined &&
+                    next.storeSalesFinal > 0
+                ) {
+                    next.compositionRatio = Number(((next.actualFinal / next.storeSalesFinal) * 100).toFixed(1));
+                } else {
+                    next.compositionRatio = null;
                 }
 
                 const target = next.promotionTargetSales || 0;
@@ -257,7 +273,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             });
         };
         updateCalculations();
-    }, [form.actual12, form.rate12, form.actual17, form.rate17, form.actualFinal, form.totalBudget, form.promotionTargetSales, form.promotionActual12Sales, form.promotionActual17Sales, form.lossAmount]);
+    }, [form.actual12, form.rate12, form.actual17, form.rate17, form.actualFinal, form.storeSalesFinal, form.totalBudget, form.promotionTargetSales, form.promotionActual12Sales, form.promotionActual17Sales, form.lossAmount]);
 
     const handleChange = (field: keyof InspectionEntry, value: any) => {
         setForm(prev => ({ ...prev, [field]: value }));
@@ -318,6 +334,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const buildSharedCheckRows = (): SharedCheckRow[] => {
+        const currentStoreSales = parseThousandInput(storeSalesInput);
+        const currentCompositionRatio =
+            form.actualFinal !== null &&
+            form.actualFinal !== undefined &&
+            currentStoreSales !== null &&
+            currentStoreSales > 0
+                ? Number(((form.actualFinal / currentStoreSales) * 100).toFixed(1))
+                : null;
         const baseRows: SharedCheckRow[] = [
             {
                 date: currentDate,
@@ -357,6 +381,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (period === 'final') {
             baseRows.push(
                 { date: currentDate, store: STORE_NAME, item: '最終実績', content: formatCheckValue(form.actualFinal), status: form.actualFinal !== null && form.actualFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '店計売上', content: storeSalesInput, status: storeSalesInput ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '構成比', content: currentCompositionRatio !== null && currentCompositionRatio !== undefined ? String(currentCompositionRatio) : '', status: currentCompositionRatio !== null && currentCompositionRatio !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '最終客数', content: form.customersFinal?.toString() || '', status: form.customersFinal !== null && form.customersFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: 'ロス額', content: formatLossThousandInput(form.lossAmount), status: form.lossAmount !== null && form.lossAmount !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '天気（12時）', content: aiWeather12, status: aiWeather12 ? '入力済' : '未入力', owner: '', time: 'final' },
@@ -447,6 +473,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     case '最終実績':
                         next.actualFinal = parseThousandInput(row.content);
                         break;
+                    case '店計売上':
+                        next.storeSalesFinal = parseThousandInput(row.content);
+                        setStoreSalesInput(row.content);
+                        break;
+                    case '構成比':
+                        next.compositionRatio = row.content ? Number(row.content) : null;
+                        break;
                     case '最終客数':
                         next.customersFinal = row.content ? Number(row.content) : null;
                         break;
@@ -481,8 +514,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiLowTemp(rowMap.get('最低気温') || '');
             setAiWeather(rowMap.get('天候') || '');
             setAiTempBand(rowMap.get('気温帯') || '');
+            if (rowMap.get('店計売上')) {
+                setStoreSalesInput(rowMap.get('店計売上') || '');
+            } else if (rowMap.get('客数') && rowMap.get('客単価')) {
+                const legacyStoreSales = Number(rowMap.get('客数')) * Number(rowMap.get('客単価')) * 1000;
+                if (Number.isFinite(legacyStoreSales) && legacyStoreSales > 0) {
+                    setStoreSalesInput(String(Math.round(legacyStoreSales / 1000)));
+                }
+            }
             setAiCustomerCount(rowMap.get('客数') || '');
-            setAiAvgPrice(rowMap.get('客単価') || '');
         }
 
         setSharedStatus(`共有データを再取得しました（シート: ${getSharedCheckSheetName()}）`);
@@ -782,8 +822,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
 
         // 解析データを報告データに紐づけて保存
+        const normalizedStoreSalesFinal = parseThousandInput(storeSalesInput);
+        const normalizedCompositionRatio =
+            form.actualFinal !== null &&
+            form.actualFinal !== undefined &&
+            normalizedStoreSalesFinal !== null &&
+            normalizedStoreSalesFinal > 0
+                ? Number(((form.actualFinal / normalizedStoreSalesFinal) * 100).toFixed(1))
+                : null;
+
         const entryToSave = {
             ...form,
+            storeSalesFinal: normalizedStoreSalesFinal,
+            compositionRatio: normalizedCompositionRatio,
             bestVegetables: analysisVeggies,
             bestFruits: analysisFruits,
         } as InspectionEntry;
@@ -922,6 +973,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [aiWeather17, setAiWeather17] = useState<string>('');
     const [aiHighTemp, setAiHighTemp] = useState<string>('');
     const [aiLowTemp, setAiLowTemp] = useState<string>('');
+    const [storeSalesInput, setStoreSalesInput] = useState<string>(formatThousandInput(form.storeSalesFinal));
     const [aiCustomerCount, setAiCustomerCount] = useState<string>('');
     const [aiAvgPrice, setAiAvgPrice] = useState<string>('');
     const [weatherStatus, setWeatherStatus] = useState<string>('');
@@ -941,8 +993,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiWeather17(first.weather || '');
             setAiHighTemp('');
             setAiLowTemp('');
-            setAiCustomerCount(first.customer_count !== undefined ? String(first.customer_count) : '');
-            setAiAvgPrice(first.avg_price !== undefined ? String(Math.round(first.avg_price / 1000)) : '');
+            const customerCount = first.customer_count !== undefined ? String(first.customer_count) : '';
+            const avgPrice = first.avg_price !== undefined ? Math.round(first.avg_price / 1000) : null;
+            setAiCustomerCount(customerCount);
+            setStoreSalesInput(
+                customerCount && avgPrice !== null
+                    ? String(Math.round((Number(customerCount) * avgPrice * 1000) / 1000))
+                    : formatThousandInput(form.storeSalesFinal)
+            );
         } else {
             setAiWeather('');
             setAiTempBand('');
@@ -950,6 +1008,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiWeather17('');
             setAiHighTemp('');
             setAiLowTemp('');
+            setStoreSalesInput(formatThousandInput(form.storeSalesFinal));
             setAiCustomerCount('');
             setAiAvgPrice('');
         }
@@ -962,6 +1021,22 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     useEffect(() => {
         setAiTempBand(deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null));
     }, [aiHighTemp]);
+
+    useEffect(() => {
+        const storeSales = parseThousandInput(storeSalesInput);
+        const customerCount = aiCustomerCount ? Number(aiCustomerCount) : null;
+        setForm((prev) => {
+            if (prev.storeSalesFinal === storeSales) {
+                return prev;
+            }
+            return { ...prev, storeSalesFinal: storeSales };
+        });
+        if (storeSales !== null && customerCount !== null && Number.isFinite(customerCount) && customerCount > 0) {
+            setAiAvgPrice(String(Math.round(storeSales / customerCount / 1000)));
+            return;
+        }
+        setAiAvgPrice('');
+    }, [storeSalesInput, aiCustomerCount]);
 
     const handleFetchWeather = async () => {
         setIsWeatherLoading(true);
@@ -1030,10 +1105,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     setAiCustomerCount(rowMap.get('客数') || '');
                     appliedCount += 1;
                 }
-                if (!aiAvgPrice && rowMap.get('客単価')) {
-                    setAiAvgPrice(rowMap.get('客単価') || '');
-                    appliedCount += 1;
-                }
                 if (!aiWeather12 && rowMap.get('天気（12時）')) {
                     setAiWeather12(rowMap.get('天気（12時）') || '');
                     appliedCount += 1;
@@ -1081,6 +1152,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         setPromotionActual12SalesInput(formatThousandInput(form.promotionActual12Sales));
         setPromotionActual17SalesInput(formatThousandInput(form.promotionActual17Sales));
         setActual12Input(formatThousandInput(form.actual12));
+        setStoreSalesInput(formatThousandInput(form.storeSalesFinal));
         setLossAmountInput(formatLossThousandInput(form.lossAmount));
     }, [currentDate, existingEntry?.id]);
 
@@ -1489,33 +1561,79 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 {period === 'final' && (
                     <div className="entry-group">
                         <h3>最終報告 (閉店)</h3>
-                        <div className="form-group">
-                            <label>最終実績（千円）</label>
-                            <input
-                                ref={registerFieldRef('actualFinal')}
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={formatThousandInput(form.actualFinal)}
-                                onChange={e => handleAmountChange('actualFinal', e.target.value)}
-                                onKeyDown={e => handleEnterToNext(e, 'actualFinal')}
-                                placeholder="0"
-                            />
+                        <div
+                            style={{
+                                display: 'grid',
+                                gap: '10px',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                marginBottom: '14px'
+                            }}
+                        >
+                            <div className="result-item">
+                                <div className="label">店計売上</div>
+                                <div className="value">{storeSalesInput ? `${storeSalesInput}千円` : '---'}</div>
+                            </div>
+                            <div className="result-item">
+                                <div className="label">客単価</div>
+                                <div className="value">{aiAvgPrice ? `${aiAvgPrice}千円` : '---'}</div>
+                            </div>
+                            <div className="result-item">
+                                <div className="label">構成比</div>
+                                <div className="value">{form.compositionRatio !== null && form.compositionRatio !== undefined ? `${form.compositionRatio}%` : '---'}</div>
+                            </div>
                         </div>
-                        <div className="form-group">
-                            <label>最終客数</label>
-                            <input
-                                ref={registerFieldRef('customersFinal')}
-                                type="number"
-                                inputMode="numeric"
-                                value={form.customersFinal ?? ''}
-                                onChange={e => handleNumberChange('customersFinal', e.target.value)}
-                                onKeyDown={e => handleEnterToNext(e, 'customersFinal')}
-                                placeholder="0"
-                            />
+                        <div className="form-group-grid">
+                            <div className="form-group">
+                                <label>最終実績（千円）</label>
+                                <input
+                                    ref={registerFieldRef('actualFinal')}
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={formatThousandInput(form.actualFinal)}
+                                    onChange={e => handleAmountChange('actualFinal', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'actualFinal')}
+                                    placeholder="0"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>最終客数</label>
+                                <input
+                                    ref={registerFieldRef('customersFinal')}
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={form.customersFinal ?? ''}
+                                    onChange={e => handleNumberChange('customersFinal', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'customersFinal')}
+                                    placeholder="0"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>店計売上（千円）</label>
+                                <input
+                                    ref={registerFieldRef('storeSalesFinal')}
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="0"
+                                    value={storeSalesInput}
+                                    onChange={e => {
+                                        const sanitized = sanitizeThousandInput(e.target.value);
+                                        setStoreSalesInput(sanitized);
+                                        handleChange('storeSalesFinal', sanitized === '' ? null : Number(sanitized) * 1000);
+                                    }}
+                                    onKeyDown={e => handleEnterToNext(e, 'storeSalesFinal')}
+                                />
+                            </div>
                         </div>
                         <div className="form-group" style={{ gridColumn: '1 / -1', padding: '12px', background: '#ffe4e6', color: '#e11d48', fontWeight: 'bold', borderRadius: '4px', textAlign: 'center' }}>
                             CSVデバッグ機能 反映済み
+                        </div>
+                        <div className="live-results-grid">
+                            <div className="result-item">
+                                <div className="label">予算比</div>
+                                <div className="value">{form.budgetRatio !== null && form.budgetRatio !== undefined ? `${form.budgetRatio}%` : '---'}</div>
+                            </div>
                         </div>
                         <div className="form-group-grid">
                             <div className="form-group">
@@ -1585,7 +1703,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>客単価（千円）</label>
-                                    <input ref={registerFieldRef('aiAvgPrice')} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0" value={aiAvgPrice} onChange={e => setAiAvgPrice(sanitizeThousandInput(e.target.value))} onKeyDown={e => handleEnterToNext(e, 'aiAvgPrice')} />
+                                    <div className="read-only-display">{aiAvgPrice ? `${aiAvgPrice}千円` : '自動計算'}</div>
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>分析用天候</label>
