@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { DailySalesRecord, InspectionEntry, DailyBudget, SharedSalesEntry } from '../types';
-import { loadDailySales, saveDailySales } from '../storage/dailySales';
+import { loadDailySales } from '../storage/dailySales';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { appendSharedSales, fetchSharedSales, getSharedSalesSheetName } from '../services/googleSheetsSalesService';
+import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
+import { deriveTempBandFromHigh } from '../services/weatherService';
 
 interface Props {
     inspections: InspectionEntry[];
@@ -11,8 +13,9 @@ interface Props {
 }
 
 export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onOpenPopGem }) => {
-    const [allRecords, setAllRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
+    const [allRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
     const [sharedSales, setSharedSales] = useState<SharedSalesEntry[]>([]);
+    const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
     const [salesAmountInput, setSalesAmountInput] = useState('');
     const [salesCustomersInput, setSalesCustomersInput] = useState('');
     const [salesAuthorInput, setSalesAuthorInput] = useState('');
@@ -30,12 +33,6 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     }, [allRecords, inspections]);
 
     const [selectedDate, setSelectedDate] = useState<string>(dates[0] || '');
-
-    // 天候・気温帯・客数・客単価 state
-    const [weather, setWeather] = useState<string>('');
-    const [tempBand, setTempBand] = useState<string>('');
-    const [customerCount, setCustomerCount] = useState<string>('');
-    const [avgPrice, setAvgPrice] = useState<string>('');
 
     const loadSharedSales = async () => {
         setIsSharedSalesLoading(true);
@@ -58,11 +55,23 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
             setSalesAuthorInput(window.localStorage.getItem('seika_sales_author') || '');
         }
         void loadSharedSales();
+        void fetchSharedCheckRows().then(setSharedCheckRows).catch((error) => {
+            console.error('[DailySalesView] failed to load shared check rows', error);
+        });
     }, []);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
             void loadSharedSales();
+        }, 30000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            void fetchSharedCheckRows().then(setSharedCheckRows).catch((error) => {
+                console.error('[DailySalesView] failed to refresh shared check rows', error);
+            });
         }, 30000);
         return () => window.clearInterval(timer);
     }, []);
@@ -113,35 +122,6 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
         if (!selectedDate) return [];
         return allRecords.filter(r => r.date === selectedDate);
     }, [allRecords, selectedDate]);
-
-    useEffect(() => {
-        const first = dateRecords[0];
-        setWeather(first?.weather || '');
-        setTempBand(first?.temp_band || '');
-        setCustomerCount(first?.customer_count !== undefined ? String(first.customer_count) : '');
-        setAvgPrice(first?.avg_price !== undefined ? String(first.avg_price) : '');
-    }, [selectedDate, dateRecords.length]);
-
-    // 保存
-    const handleSaveMeta = () => {
-        if (dateRecords.length === 0) {
-            alert('この日付のCSVデータがありません');
-            return;
-        }
-        const updated = allRecords.map(r => {
-            if (r.date !== selectedDate) return r;
-            return {
-                ...r,
-                weather: weather || undefined,
-                temp_band: tempBand || undefined,
-                customer_count: customerCount ? parseInt(customerCount) : undefined,
-                avg_price: avgPrice ? parseInt(avgPrice) : undefined,
-            };
-        });
-        saveDailySales(updated);
-        setAllRecords(updated);
-        alert('保存しました');
-    };
 
     // 選択日の点検データ
     const inspection = useMemo(() => inspections.find(i => i.date === selectedDate), [inspections, selectedDate]);
@@ -365,6 +345,31 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
         const dow = dayNames[new Date(selectedDate + 'T00:00:00').getDay()];
         return `${parseInt(m)}/${parseInt(d)}(${dow})`;
     })() : '';
+
+    const environmentInfo = useMemo(() => {
+        const first = dateRecords[0];
+        const dateCheckRows = sharedCheckRows.filter((row) => row.date === selectedDate);
+        const pickRowContent = (items: string[]) => {
+            for (const item of items) {
+                const matched = dateCheckRows.find((row) => row.item === item && row.content);
+                if (matched?.content) return matched.content;
+            }
+            return '';
+        };
+        const derivedHighTemp = pickRowContent(['最高気温']);
+        const sharedTempBand = pickRowContent(['気温帯']);
+        const derivedTempBand = sharedTempBand || deriveTempBandFromHigh(derivedHighTemp ? Number(derivedHighTemp) : null) || '';
+        const sharedCustomerCount = pickRowContent(['最終客数', '17時客数', '12時客数', '客数']);
+        const sharedStoreSales = pickRowContent(['店計売上']);
+        const sharedAvgPrice = pickRowContent(['客単価']);
+        return {
+            weather: pickRowContent(['天候', '天気（12時）', '天気（17時）']) || first?.weather || '未設定',
+            tempBand: derivedTempBand || first?.temp_band || '未設定',
+            customerCount: sharedCustomerCount ? Number(sharedCustomerCount) : inspection?.customersFinal ?? inspection?.customers17 ?? inspection?.customers12 ?? first?.customer_count ?? null,
+            storeSales: sharedStoreSales ? Number(sharedStoreSales) * 1000 : inspection?.storeSalesFinal ?? null,
+            avgPrice: sharedAvgPrice ? Number(sharedAvgPrice) * 1000 : first?.avg_price ?? null,
+        };
+    }, [dateRecords, inspection, selectedDate, sharedCheckRows]);
 
     return (
         <div className="page-container">
@@ -610,40 +615,35 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                         </div>
                     )}
 
-                    {/* 天候・気温帯・客数・客単価入力 */}
+                    {/* 当日の環境情報 */}
                     <div className="ds-meta-form">
                         <h4>📝 当日の環境情報</h4>
                         <div className="ds-meta-grid">
                             <div className="ds-meta-item">
                                 <label>天候</label>
-                                <select value={weather} onChange={e => setWeather(e.target.value)}>
-                                    <option value="">未選択</option>
-                                    <option value="晴れ">☀️ 晴れ</option>
-                                    <option value="曇り">☁️ 曇り</option>
-                                    <option value="雨">🌧️ 雨</option>
-                                    <option value="雪">❄️ 雪</option>
-                                </select>
+                                <div className="ds-meta-readonly">{environmentInfo.weather}</div>
                             </div>
                             <div className="ds-meta-item">
                                 <label>気温帯</label>
-                                <select value={tempBand} onChange={e => setTempBand(e.target.value)}>
-                                    <option value="">未選択</option>
-                                    <option value="寒い">🥶 寒い</option>
-                                    <option value="涼しい">🌿 涼しい</option>
-                                    <option value="暖かい">🌤️ 暖かい</option>
-                                    <option value="暑い">🔥 暑い</option>
-                                </select>
+                                <div className="ds-meta-readonly">{environmentInfo.tempBand}</div>
                             </div>
                             <div className="ds-meta-item">
                                 <label>客数</label>
-                                <input type="number" inputMode="numeric" placeholder="0" value={customerCount} onChange={e => setCustomerCount(e.target.value)} />
+                                <div className="ds-meta-readonly">
+                                    {environmentInfo.customerCount !== null && environmentInfo.customerCount !== undefined ? `${environmentInfo.customerCount}名` : '---'}
+                                </div>
                             </div>
                             <div className="ds-meta-item">
-                                <label>客単価</label>
-                                <input type="number" inputMode="numeric" placeholder="0" value={avgPrice} onChange={e => setAvgPrice(e.target.value)} />
+                                <label>店計売上 / 客単価</label>
+                                <div className="ds-meta-readonly">
+                                    {environmentInfo.storeSales
+                                        ? `${fmtYen(environmentInfo.storeSales)} / ${environmentInfo.avgPrice ? fmtYen(environmentInfo.avgPrice) : '未設定'}`
+                                        : environmentInfo.avgPrice
+                                            ? `未設定 / ${fmtYen(environmentInfo.avgPrice)}`
+                                            : '未設定'}
+                                </div>
                             </div>
                         </div>
-                        <button className="ds-meta-save" onClick={handleSaveMeta}>保存</button>
                     </div>
 
                     {renderTable(veggies, '野菜ベスト', '🥬')}
@@ -745,33 +745,19 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                     color: #475569;
                     margin-bottom: 4px;
                 }
-                .ds-meta-item select,
-                .ds-meta-item input {
+                .ds-meta-readonly {
                     width: 100%;
                     padding: 8px 10px;
                     border: 1.5px solid #e2e8f0;
                     border-radius: 6px;
                     font-size: 0.88rem;
                     background: #f8fafc;
-                }
-                .ds-meta-item select:focus,
-                .ds-meta-item input:focus {
-                    border-color: #2563eb;
-                    outline: none;
-                }
-                .ds-meta-save {
-                    margin-top: 12px;
-                    width: 100%;
-                    padding: 10px;
-                    background: #2563eb;
-                    color: white;
-                    border: none;
-                    border-radius: 8px;
-                    font-size: 0.9rem;
+                    color: #0f172a;
                     font-weight: 700;
-                    cursor: pointer;
+                    min-height: 40px;
+                    display: flex;
+                    align-items: center;
                 }
-                .ds-meta-save:active { background: #1d4ed8; }
 
                 /* 日別グラフ */
                 .ds-chart-card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 18px; margin-bottom: 24px; overflow: hidden; }
