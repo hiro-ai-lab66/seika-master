@@ -36,6 +36,11 @@ const POPIBRARY_AUTHOR_KEY = 'seika_popibrary_author';
 const APP_AUTH_KEY = 'seika_app_authenticated';
 const APP_PASSWORD = (import.meta as any).env?.VITE_APP_PASSWORD || '';
 
+const buildSharedUiError = (label: string, error: unknown) => {
+  const message = error instanceof Error ? error.message : '不明なエラー';
+  return `${label}: ${message}`;
+};
+
 const parseSharedCheckAmount = (value: string) => {
   const normalized = value.replace(/,/g, '').trim();
   if (!normalized) return null;
@@ -220,6 +225,7 @@ function App() {
   const [inspectionHistoryLastUpdated, setInspectionHistoryLastUpdated] = useState<string | null>(null);
   const [inspectionHistoryRowCount, setInspectionHistoryRowCount] = useState(0);
   const [inspectionHistoryDateCount, setInspectionHistoryDateCount] = useState(0);
+  const [sharedRefreshSummary, setSharedRefreshSummary] = useState<string | null>(null);
 
   const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -419,6 +425,24 @@ function App() {
     }
   }, [activeTab]);
 
+  const refreshSharedData = async (reason: 'startup' | 'visibility' | 'inspection-save') => {
+    console.log('[App] refreshSharedData start', { reason });
+    const results = await Promise.allSettled([
+      loadInspectionHistoryFromSheets(reason === 'inspection-save' ? 'save' : 'tab'),
+      loadSellfloorRecordsFromSheets(false),
+      loadPopibraryFromSheets(false)
+    ]);
+
+    const failedCount = results.filter((result) => result.status === 'rejected').length;
+    if (failedCount > 0) {
+      setSharedRefreshSummary(`${failedCount}件の共有データ更新に失敗しました`);
+      return;
+    }
+
+    const refreshedAt = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    setSharedRefreshSummary(`共有データを更新しました (${refreshedAt})`);
+  };
+
   const loadInspectionHistoryFromSheets = async (reason: 'tab' | 'save' | 'manual') => {
     setIsInspectionSharedLoading(true);
     setInspectionSharedError(null);
@@ -455,7 +479,7 @@ function App() {
       );
     } catch (error) {
       console.error('[App] failed to load inspection history from shared_check', error);
-      setInspectionSharedError(`共有データ取得エラー: ${error instanceof Error ? error.message : 'shared_check の取得に失敗しました'}`);
+      setInspectionSharedError(buildSharedUiError('共有データ取得エラー', error));
     } finally {
       setIsInspectionSharedLoading(false);
     }
@@ -478,9 +502,8 @@ function App() {
       setNeedsSellfloorSheetsLogin(false);
     } catch (error) {
       console.error('[App] failed to load shared sellfloor records', error);
-      const message = error instanceof Error ? error.message : '取得に失敗しました';
       setNeedsSellfloorSheetsLogin(Boolean(interactiveLogin && isSheetsConfigured()));
-      setSellfloorSharedError(`共有データ取得エラー: ${message}`);
+      setSellfloorSharedError(buildSharedUiError('共有データ取得エラー', error));
     } finally {
       setIsSellfloorSharedLoading(false);
       window.setTimeout(() => {
@@ -516,9 +539,8 @@ function App() {
       setNeedsPopibrarySheetsLogin(false);
     } catch (error) {
       console.error('[App] failed to load shared popibrary', error);
-      const message = error instanceof Error ? error.message : '取得に失敗しました';
       setNeedsPopibrarySheetsLogin(Boolean(interactiveLogin && isSheetsConfigured()));
-      setPopibrarySharedError(`共有データ取得エラー: ${message}`);
+      setPopibrarySharedError(buildSharedUiError('共有データ取得エラー', error));
     } finally {
       setIsPopibrarySharedLoading(false);
     }
@@ -542,6 +564,22 @@ function App() {
     void loadInspectionHistoryFromSheets('tab');
   }, [activeTab, currentDate]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void refreshSharedData('startup');
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshSharedData('visibility');
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isAuthenticated]);
+
   const saveInspection = (entry: InspectionEntry) => {
     setState(prev => {
       const exists = prev.inspections.findIndex(i => i.date === entry.date);
@@ -553,7 +591,7 @@ function App() {
       }
       return { ...prev, inspections: newInspections };
     });
-    void loadInspectionHistoryFromSheets('save');
+    void refreshSharedData('inspection-save');
     setDashboardRefreshKey((prev) => prev + 1);
     setActiveTab('dashboard');
   };
@@ -605,7 +643,7 @@ function App() {
       return { message: isEditing ? '更新しました' : 'Google Sheets に共有保存しました' };
     } catch (error) {
       console.error('[App] failed to sync sellfloor record', error);
-      setSellfloorSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有保存に失敗しました'}`);
+      setSellfloorSharedError(buildSharedUiError('共有保存エラー', error));
       showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
       return { message: isEditing ? 'ローカル更新は完了、共有更新は失敗しました' : 'ローカル保存は完了、共有保存は失敗しました' };
     }
@@ -648,7 +686,7 @@ function App() {
       return { message: isEditing ? '更新しました' : '保存しました' };
     } catch (error) {
       console.error('[App] failed to save shared pop', error);
-      setPopibrarySharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有保存に失敗しました'}`);
+      setPopibrarySharedError(buildSharedUiError('共有保存エラー', error));
       return { message: '共有保存に失敗しました' };
     }
   };
@@ -670,7 +708,7 @@ function App() {
       showToast('POPを削除しました');
     } catch (error) {
       console.error('[App] failed to delete shared pop', error);
-      setPopibrarySharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有削除に失敗しました'}`);
+      setPopibrarySharedError(buildSharedUiError('共有削除エラー', error));
       throw error;
     }
   };
@@ -693,7 +731,7 @@ function App() {
       showToast('売場記録を削除しました');
     } catch (error) {
       console.error('[App] failed to delete shared sellfloor record', error);
-      setSellfloorSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '共有削除に失敗しました'}`);
+      setSellfloorSharedError(buildSharedUiError('共有削除エラー', error));
       throw error;
     }
   };
@@ -996,7 +1034,14 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>青果マスター</h1>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <h1>青果マスター</h1>
+          {sharedRefreshSummary && (
+            <span style={{ fontSize: '0.72rem', color: '#dbeafe', fontWeight: 700 }}>
+              {sharedRefreshSummary}
+            </span>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={() => openPopGem()}
@@ -1063,17 +1108,17 @@ function App() {
         {[
           { id: 'dashboard', icon: LayoutDashboard, label: '概要' },
           { id: 'sales', icon: PenLine, label: '点検入力' },
-          { id: 'budget', icon: Calculator, label: '予算設定' },
-          { id: 'dailyNotes', icon: NotebookText, label: '連絡事項' },
-          { id: 'inventory', icon: Boxes, label: '棚卸し' },
-          { id: 'products', icon: Package, label: '商品マスター' },
-          { id: 'ai', icon: Sparkles, label: 'AI支援' },
-          { id: 'todo', icon: CheckSquare, label: 'ToDo' },
           { id: 'history', icon: FileText, label: '履歴' },
-          { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
           { id: 'sellfloor', icon: Camera, label: '売場記録' },
           { id: 'popibrary', icon: Library, label: 'POPibrary' },
+          { id: 'dailyNotes', icon: NotebookText, label: '連絡事項' },
+          { id: 'budget', icon: Calculator, label: '予算設定' },
+          { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
+          { id: 'inventory', icon: Boxes, label: '棚卸し' },
           { id: 'market', icon: TrendingUp, label: '相場情報' },
+          { id: 'ai', icon: Sparkles, label: 'AI支援' },
+          { id: 'todo', icon: CheckSquare, label: 'ToDo' },
+          { id: 'products', icon: Package, label: '商品マスター' },
         ].map(tab => (
           <button
             key={tab.id}
@@ -1859,9 +1904,21 @@ const HistorySheet = ({
   currentDate: string;
 }) => {
   const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today'>('all');
-  const filteredInspections = dateFilterMode === 'today'
-    ? inspections.filter((entry) => entry.date === currentDate)
-    : inspections;
+  const availableMonths = Array.from(new Set(inspections.map((entry) => entry.date.slice(0, 7)))).sort((a, b) => b.localeCompare(a));
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const filteredInspections = inspections.filter((entry) => {
+    if (dateFilterMode === 'today') {
+      return entry.date === currentDate;
+    }
+    if (selectedDate) {
+      return entry.date === selectedDate;
+    }
+    if (selectedMonth !== 'all') {
+      return entry.date.startsWith(selectedMonth);
+    }
+    return true;
+  });
   const sorted = [...filteredInspections].sort((a, b) => a.date.localeCompare(b.date));
   const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
   const fmtK = (n: number | null | undefined) => {
@@ -1869,8 +1926,24 @@ const HistorySheet = ({
     return Math.round(n / 1000).toLocaleString();
   };
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString('ja-JP') : '未取得';
-  const displayScopeLabel = dateFilterMode === 'today' ? `当日 (${currentDate})` : '全履歴';
+  const displayScopeLabel = dateFilterMode === 'today'
+    ? `当日 (${currentDate})`
+    : selectedDate
+      ? `日付指定 (${selectedDate})`
+      : selectedMonth !== 'all'
+        ? `月指定 (${selectedMonth})`
+        : '全履歴';
   const displayRowCount = sorted.length;
+
+  useEffect(() => {
+    if (dateFilterMode === 'today') {
+      setSelectedDate('');
+      return;
+    }
+    if (selectedDate) {
+      setSelectedMonth(selectedDate.slice(0, 7));
+    }
+  }, [dateFilterMode, selectedDate]);
 
   console.log('[HistorySheet] render summary', {
     totalInspectionCount: inspections.length,
@@ -1962,6 +2035,31 @@ const HistorySheet = ({
         >
           当日だけ
         </button>
+        <select
+          value={selectedMonth}
+          onChange={(event) => {
+            setDateFilterMode('all');
+            setSelectedMonth(event.target.value);
+            setSelectedDate('');
+          }}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '999px', padding: '6px 12px', background: '#fff', fontWeight: 700 }}
+        >
+          <option value="all">全月</option>
+          {availableMonths.map((month) => (
+            <option key={month} value={month}>
+              {month}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(event) => {
+            setDateFilterMode('all');
+            setSelectedDate(event.target.value);
+          }}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '999px', padding: '6px 12px', background: '#fff', fontWeight: 700 }}
+        />
       </div>
       <p style={{ margin: '6px 0 0', fontSize: '0.76rem', color: '#64748b' }}>
         最終更新: {lastUpdatedLabel} / 取得行数: {sharedRowCount}件 / 履歴日数: {sharedDateCount}日 / 表示行数: {displayRowCount}日 / 表示範囲: {displayScopeLabel}
@@ -2016,6 +2114,13 @@ const HistorySheet = ({
                 <td className={`ht-num ${r.cumDiff >= 0 ? 'ht-good' : 'ht-warn'}`}>{fmtK(r.cumDiff)}</td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '18px 12px', color: '#64748b' }}>
+                  条件に一致する履歴がありません。
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

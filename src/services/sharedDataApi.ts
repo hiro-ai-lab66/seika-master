@@ -20,20 +20,28 @@ const buildReadableError = async (response: Response, fallback: string) => {
   });
 
   try {
-    const parsed = rawBody ? JSON.parse(rawBody) as { error?: unknown } : null;
+    const parsed = rawBody ? JSON.parse(rawBody) as { error?: unknown; detail?: { message?: string } } : null;
     const apiError = parsed?.error;
     if (typeof apiError === 'string' && apiError.trim()) {
-      return `status ${status}: ${apiError}`;
+      return apiError;
     }
     if (apiError && typeof apiError === 'object' && 'message' in apiError) {
       const message = (apiError as { message?: string }).message;
-      if (message) return `status ${status}: ${message}`;
+      if (message) return message;
     }
+    if (parsed?.detail?.message) return parsed.detail.message;
   } catch (error) {
     console.error('[sharedDataApi] failed to parse error body JSON', error);
   }
 
-  return rawBody ? `status ${status}: ${rawBody}` : `status ${status}: ${fallback}`;
+  if (status === 401 || status === 403) {
+    return '共有データへのアクセス権限がありません。サーバー設定または共有設定を確認してください';
+  }
+  if (status >= 500) {
+    return rawBody || '共有データサーバーでエラーが発生しました。しばらくして再実行してください';
+  }
+
+  return rawBody || fallback;
 };
 
 export const fetchSharedReadResource = async <T>(resource: SharedReadResource): Promise<T[]> => {
