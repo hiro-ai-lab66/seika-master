@@ -709,10 +709,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const weatherCardItems = [
     { label: '天候', value: weather || '未設定' },
     { label: '気温', value: temperatureDisplay },
-    { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' },
-    { label: '店計売上', value: dashboardStoreSales ? `${dashboardStoreSales.toLocaleString()}円` : '未設定' },
-    { label: '客単価', value: dashboardAvgSpend ? `${dashboardAvgSpend.toLocaleString()}円` : '未設定' },
-    { label: '構成比', value: dashboardCompositionRatio !== null ? `${dashboardCompositionRatio.toFixed(1)}%` : '未設定' }
+    { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' }
   ];
   const todayAdvertisements = useMemo(() => {
     const today = toFilterDateValue(currentDate);

@@ -1561,27 +1561,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 {period === 'final' && (
                     <div className="entry-group">
                         <h3>最終報告 (閉店)</h3>
-                        <div
-                            style={{
-                                display: 'grid',
-                                gap: '10px',
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                                marginBottom: '14px'
-                            }}
-                        >
-                            <div className="result-item">
-                                <div className="label">店計売上</div>
-                                <div className="value">{storeSalesInput ? `${storeSalesInput}千円` : '---'}</div>
-                            </div>
-                            <div className="result-item">
-                                <div className="label">客単価</div>
-                                <div className="value">{aiAvgPrice ? `${aiAvgPrice}千円` : '---'}</div>
-                            </div>
-                            <div className="result-item">
-                                <div className="label">構成比</div>
-                                <div className="value">{form.compositionRatio !== null && form.compositionRatio !== undefined ? `${form.compositionRatio}%` : '---'}</div>
-                            </div>
-                        </div>
                         <div className="form-group-grid">
                             <div className="form-group">
                                 <label>最終実績（千円）</label>
@@ -1625,6 +1604,27 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     onKeyDown={e => handleEnterToNext(e, 'storeSalesFinal')}
                                 />
                             </div>
+                        </div>
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '8px',
+                                flexWrap: 'wrap',
+                                alignItems: 'center',
+                                marginBottom: '14px',
+                                padding: '10px 12px',
+                                borderRadius: '12px',
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0'
+                            }}
+                        >
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569' }}>補助表示</span>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
+                                客単価: {aiAvgPrice ? `${aiAvgPrice}千円` : '---'}
+                            </span>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
+                                構成比: {form.compositionRatio !== null && form.compositionRatio !== undefined ? `${form.compositionRatio}%` : '---'}
+                            </span>
                         </div>
                         <div className="form-group" style={{ gridColumn: '1 / -1', padding: '12px', background: '#ffe4e6', color: '#e11d48', fontWeight: 'bold', borderRadius: '4px', textAlign: 'center' }}>
                             CSVデバッグ機能 反映済み
