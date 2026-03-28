@@ -130,6 +130,17 @@ const toFilterDateValue = (value: string) => {
   return Number.isNaN(date.getTime()) ? null : date.getTime();
 };
 
+const getPreviousDate = (value: string) => {
+  if (!value) return '';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() - 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const getAdvertisementFace = (title: string): 'front' | 'back' | 'single' => {
   if (/（表）|\(表\)|\b表\b/.test(title)) return 'front';
   if (/（裏）|\(裏\)|\b裏\b/.test(title)) return 'back';
@@ -400,7 +411,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const todayInspection = state.inspections.find((i) => i.date === currentDate);
   const todayNote = state.dailyNotes?.find((entry) => entry.date === currentDate);
   const latestMarket = useMemo(() => sortMarkets(state.marketHistory || [])[0], [state.marketHistory]);
-  const dailySales = useMemo(() => loadDailySales().filter((row) => row.date === currentDate), [currentDate]);
+  const allDailySales = useMemo(() => loadDailySales(), [currentDate, refreshKey, manualRefreshKey]);
+  const dailySales = useMemo(() => allDailySales.filter((row) => row.date === currentDate), [allDailySales, currentDate]);
+  const previousDate = useMemo(() => getPreviousDate(currentDate), [currentDate]);
 
   let currentStatus = '未報告';
   let currentActual = 0;
@@ -706,6 +719,33 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     return list.filter(Boolean).slice(0, 3);
   }, [todayNote, latestMarket]);
 
+  const yesterdayRankings = useMemo(() => {
+    const buildRanking = (department: '野菜' | '果物') =>
+      allDailySales
+        .filter((row) => row.date === previousDate && row.department === department)
+        .sort((a, b) => b.salesAmt - a.salesAmt)
+        .slice(0, 5);
+
+    const vegetables = buildRanking('野菜');
+    const fruits = buildRanking('果物');
+
+    const buildComment = (departmentLabel: string, items: typeof vegetables) => {
+      if (items.length === 0) return `${departmentLabel}は前日データがありません。`;
+      const topItem = items[0];
+      if (topItem.salesQty >= 20) {
+        return `${topItem.name} は量販継続候補です。平台や前出しの継続を検討してください。`;
+      }
+      return `${topItem.name} は旬訴求候補です。主通路や関連販売の見せ方を確認してください。`;
+    };
+
+    return {
+      vegetables,
+      fruits,
+      vegetableComment: buildComment('野菜', vegetables),
+      fruitComment: buildComment('果物', fruits)
+    };
+  }, [allDailySales, previousDate]);
+
   const weatherCardItems = [
     { label: '天候', value: weather || '未設定' },
     { label: '気温', value: temperatureDisplay },
@@ -809,6 +849,51 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             </div>
           </div>
         </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+        {[
+          {
+            title: '昨日の野菜TOP5',
+            accent: '#16a34a',
+            items: yesterdayRankings.vegetables,
+            comment: yesterdayRankings.vegetableComment
+          },
+          {
+            title: '昨日の果物TOP5',
+            accent: '#ea580c',
+            items: yesterdayRankings.fruits,
+            comment: yesterdayRankings.fruitComment
+          }
+        ].map((section) => (
+          <div key={section.title} style={{ ...cardStyle, borderColor: `${section.accent}33`, padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline', marginBottom: '12px' }}>
+              <h3 style={{ ...sectionTitleStyle, color: section.accent }}>{section.title}</h3>
+              <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 700 }}>{previousDate || '前日不明'}</span>
+            </div>
+            {section.items.length === 0 ? (
+              <div style={{ color: '#94a3b8', fontSize: '0.88rem', fontWeight: 700 }}>データなし</div>
+            ) : (
+              <div style={{ display: 'grid', gap: '8px' }}>
+                {section.items.map((item, index) => (
+                  <div key={`${section.title}-${item.code}-${index}`} style={{ display: 'grid', gap: '3px', padding: '10px 12px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline' }}>
+                      <span style={{ fontWeight: 800, color: '#0f172a' }}>{index + 1}. {item.name}</span>
+                      <span style={{ fontSize: '0.84rem', fontWeight: 900, color: section.accent }}>¥{item.salesAmt.toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', color: '#475569', fontSize: '0.8rem', fontWeight: 700 }}>
+                      <span>数量 {item.salesQty.toLocaleString()}</span>
+                      <span>売上金額 {item.salesAmt.toLocaleString()}円</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: '12px', color: '#475569', fontSize: '0.84rem', lineHeight: 1.6, fontWeight: 700 }}>
+              {section.comment}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={{ ...cardStyle, borderColor: '#fcd34d', background: 'linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)' }}>
