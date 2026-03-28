@@ -179,7 +179,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             'aiHighTemp',
             'aiLowTemp',
             'storeSalesFinal',
-            'aiCustomerCount',
             'submit'
         ];
     };
@@ -391,7 +390,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 { date: currentDate, store: STORE_NAME, item: '最低気温', content: aiLowTemp, status: aiLowTemp ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '天候', content: aiWeather, status: aiWeather ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '気温帯', content: aiTempBand, status: aiTempBand ? '入力済' : '未入力', owner: '', time: 'final' },
-                { date: currentDate, store: STORE_NAME, item: '客数', content: aiCustomerCount, status: aiCustomerCount ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '客数', content: form.customersFinal?.toString() || '', status: form.customersFinal !== null && form.customersFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '客単価', content: aiAvgPrice, status: aiAvgPrice ? '入力済' : '未入力', owner: '', time: 'final' }
             );
         }
@@ -483,6 +482,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     case '最終客数':
                         next.customersFinal = row.content ? Number(row.content) : null;
                         break;
+                    case '客数':
+                        if (next.customersFinal === null || next.customersFinal === undefined) {
+                            next.customersFinal = row.content ? Number(row.content) : null;
+                        }
+                        break;
                     case 'ロス額':
                         next.lossAmount = parseLossThousandInput(row.content);
                         setLossAmountInput(row.content);
@@ -522,7 +526,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     setStoreSalesInput(String(Math.round(legacyStoreSales / 1000)));
                 }
             }
-            setAiCustomerCount(rowMap.get('客数') || '');
         }
 
         setSharedStatus(`共有データを再取得しました（シート: ${getSharedCheckSheetName()}）`);
@@ -896,7 +899,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 ...r,
                 weather: deriveOverallWeather(aiWeather12, aiWeather17) || aiWeather || undefined,
                 temp_band: deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null) || aiTempBand || undefined,
-                customer_count: aiCustomerCount ? parseInt(aiCustomerCount) : undefined,
+                customer_count: form.customersFinal ?? undefined,
                 avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
             };
         });
@@ -974,7 +977,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [aiHighTemp, setAiHighTemp] = useState<string>('');
     const [aiLowTemp, setAiLowTemp] = useState<string>('');
     const [storeSalesInput, setStoreSalesInput] = useState<string>(formatThousandInput(form.storeSalesFinal));
-    const [aiCustomerCount, setAiCustomerCount] = useState<string>('');
     const [aiAvgPrice, setAiAvgPrice] = useState<string>('');
     const [weatherStatus, setWeatherStatus] = useState<string>('');
     const [weatherError, setWeatherError] = useState<string>('');
@@ -993,12 +995,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiWeather17(first.weather || '');
             setAiHighTemp('');
             setAiLowTemp('');
-            const customerCount = first.customer_count !== undefined ? String(first.customer_count) : '';
             const avgPrice = first.avg_price !== undefined ? Math.round(first.avg_price / 1000) : null;
-            setAiCustomerCount(customerCount);
+            if ((form.customersFinal === null || form.customersFinal === undefined) && first.customer_count !== undefined) {
+                setForm((prev) => ({ ...prev, customersFinal: first.customer_count ?? null }));
+            }
             setStoreSalesInput(
-                customerCount && avgPrice !== null
-                    ? String(Math.round((Number(customerCount) * avgPrice * 1000) / 1000))
+                first.customer_count !== undefined && avgPrice !== null
+                    ? String(Math.round(((first.customer_count || 0) * avgPrice * 1000) / 1000))
                     : formatThousandInput(form.storeSalesFinal)
             );
         } else {
@@ -1009,7 +1012,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiHighTemp('');
             setAiLowTemp('');
             setStoreSalesInput(formatThousandInput(form.storeSalesFinal));
-            setAiCustomerCount('');
             setAiAvgPrice('');
         }
     }, [currentDate]);
@@ -1024,19 +1026,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     useEffect(() => {
         const storeSales = parseThousandInput(storeSalesInput);
-        const customerCount = aiCustomerCount ? Number(aiCustomerCount) : null;
+        const customerCount = form.customersFinal;
         setForm((prev) => {
             if (prev.storeSalesFinal === storeSales) {
                 return prev;
             }
             return { ...prev, storeSalesFinal: storeSales };
         });
-        if (storeSales !== null && customerCount !== null && Number.isFinite(customerCount) && customerCount > 0) {
+        if (storeSales !== null && typeof customerCount === 'number' && Number.isFinite(customerCount) && customerCount > 0) {
             setAiAvgPrice(String(Math.round(storeSales / customerCount / 1000)));
             return;
         }
         setAiAvgPrice('');
-    }, [storeSalesInput, aiCustomerCount]);
+    }, [storeSalesInput, form.customersFinal]);
 
     const handleFetchWeather = async () => {
         setIsWeatherLoading(true);
@@ -1101,10 +1103,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     return next;
                 });
 
-                if (!aiCustomerCount && rowMap.get('客数')) {
-                    setAiCustomerCount(rowMap.get('客数') || '');
-                    appliedCount += 1;
-                }
                 if (!aiWeather12 && rowMap.get('天気（12時）')) {
                     setAiWeather12(rowMap.get('天気（12時）') || '');
                     appliedCount += 1;
@@ -1125,7 +1123,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 console.warn('[InspectionForm] failed to prefill previous day values', error);
             }
         })();
-    }, [currentDate, aiCustomerCount, aiAvgPrice, aiWeather12, aiWeather17, aiTempBand]);
+    }, [currentDate, aiAvgPrice, aiWeather12, aiWeather17, aiTempBand]);
 
     // 画面表示時に shared_budget から当日の売上目標を取得して自動反映
     useEffect(() => {
@@ -1699,7 +1697,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>客数</label>
-                                    <input ref={registerFieldRef('aiCustomerCount')} type="number" inputMode="numeric" placeholder="0" value={aiCustomerCount} onChange={e => setAiCustomerCount(e.target.value)} onKeyDown={e => handleEnterToNext(e, 'aiCustomerCount')} />
+                                    <div className="read-only-display">{form.customersFinal !== null && form.customersFinal !== undefined ? `${form.customersFinal}名` : '---'}</div>
                                 </div>
                                 <div className="ai-meta-item">
                                     <label>客単価（千円）</label>
