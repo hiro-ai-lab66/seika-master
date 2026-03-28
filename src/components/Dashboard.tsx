@@ -150,6 +150,62 @@ const getAdvertisementFace = (title: string): 'front' | 'back' | 'single' => {
 const getAdvertisementBaseTitle = (title: string) =>
   title.replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '').trim() || title.trim() || '無題の広告';
 
+const formatRankingNames = (items: ReturnType<typeof loadDailySales>) =>
+  items.slice(0, 2).map((item) => item.name).join('・');
+
+const buildDepartmentTrendComment = (departmentLabel: '野菜' | '果物', items: ReturnType<typeof loadDailySales>) => {
+  if (items.length === 0) {
+    return `${departmentLabel}は前日データがないため、定番のフェイス確保と鮮度感の維持を優先してください。`;
+  }
+
+  const totalSales = items.reduce((sum, item) => sum + item.salesAmt, 0);
+  const totalQty = items.reduce((sum, item) => sum + item.salesQty, 0);
+  const topShare = totalSales > 0 ? items[0].salesAmt / totalSales : 0;
+  const topTwoShare = totalSales > 0 ? (items[0].salesAmt + (items[1]?.salesAmt || 0)) / totalSales : 0;
+  const yoyAvailableItems = items.filter((item) => typeof item.salesYoY === 'number');
+  const yoyStrongCount = yoyAvailableItems.filter((item) => (item.salesYoY || 0) >= 100).length;
+  const yoyWeakCount = yoyAvailableItems.filter((item) => (item.salesYoY || 0) < 100).length;
+  const leadNames = formatRankingNames(items);
+
+  if (topShare >= 0.38 || topTwoShare >= 0.62) {
+    return `${departmentLabel}は${leadNames}に売上が集まっています。上位商品の前出しと平台の量感を朝から揃えてください。`;
+  }
+
+  if (yoyAvailableItems.length >= 3 && yoyStrongCount >= 3) {
+    return `${departmentLabel}はTOP5の動きが前年超えで安定しています。${leadNames}を軸に関連販売まで広げてください。`;
+  }
+
+  if (yoyAvailableItems.length >= 3 && yoyWeakCount >= 3) {
+    return `${departmentLabel}はTOP5の昨比が弱めです。${leadNames}の見せ方を強めて買上点数アップを狙ってください。`;
+  }
+
+  if (totalQty >= 60) {
+    return `${departmentLabel}は数量がしっかり動いています。${leadNames}の欠品防止と継続補充を優先してください。`;
+  }
+
+  return `${departmentLabel}は${items[0].name}を先頭に動いています。上位商品のフェイス確保と旬訴求を揃えてください。`;
+};
+
+const buildOverallTrendComment = (
+  vegetables: ReturnType<typeof loadDailySales>,
+  fruits: ReturnType<typeof loadDailySales>,
+  currentGap: number | null
+) => {
+  const vegetableLead = vegetables[0]?.name;
+  const fruitLead = fruits[0]?.name;
+
+  if (!vegetableLead && !fruitLead) {
+    return '全体では前日ランキングが未取得のため、定番のボリューム感と欠品防止を優先してください。';
+  }
+
+  const leadText = [vegetableLead, fruitLead].filter(Boolean).join('と');
+  if (currentGap !== null && currentGap < 0) {
+    return `全体では未達見込みです。${leadText}を起点に前出しを早め、朝の売場量感を先に作ってください。`;
+  }
+
+  return `全体では${leadText}を基準に主力商品の量感を維持し、売れ筋中心の売場でスタートしてください。`;
+};
+
 const AdvertisementCard: React.FC<{
   group: AdvertisementCardGroup;
   onOpenImage: (imageUrl: string, title: string) => void;
@@ -397,6 +453,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [zoomImageUrl, setZoomImageUrl] = useState('');
   const [zoomImageTitle, setZoomImageTitle] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
+  const [briefingStatus, setBriefingStatus] = useState('');
   const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
     weather: '',
     tempBand: '',
@@ -621,6 +678,38 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     }, 300);
   };
 
+  const handleCopyMorningBriefing = async () => {
+    if (!morningBriefingText) return;
+    try {
+      await navigator.clipboard.writeText(morningBriefingText);
+      setBriefingStatus('コピーしました');
+    } catch (error) {
+      console.error('[Dashboard] failed to copy morning briefing', error);
+      setBriefingStatus('コピー失敗');
+    }
+    window.setTimeout(() => setBriefingStatus(''), 1500);
+  };
+
+  const handleShareMorningBriefing = async () => {
+    if (!morningBriefingText) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: '朝礼用まとめ',
+          text: morningBriefingText
+        });
+        setBriefingStatus('共有しました');
+      } else {
+        await navigator.clipboard.writeText(morningBriefingText);
+        setBriefingStatus('共有未対応のためコピーしました');
+      }
+    } catch (error) {
+      console.error('[Dashboard] failed to share morning briefing', error);
+      setBriefingStatus('共有失敗');
+    }
+    window.setTimeout(() => setBriefingStatus(''), 1500);
+  };
+
   const adviceReasons = useMemo(() => {
     const reasons: string[] = [];
     if (currentGap !== null && currentGap < 0) reasons.push(`予算差額 ${currentGap.toLocaleString()}円で未達。`);
@@ -729,22 +818,23 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const vegetables = buildRanking('野菜');
     const fruits = buildRanking('果物');
 
-    const buildComment = (departmentLabel: string, items: typeof vegetables) => {
-      if (items.length === 0) return `${departmentLabel}は前日データがありません。`;
-      const topItem = items[0];
-      if (topItem.salesQty >= 20) {
-        return `${topItem.name} は量販継続候補です。平台や前出しの継続を検討してください。`;
-      }
-      return `${topItem.name} は旬訴求候補です。主通路や関連販売の見せ方を確認してください。`;
-    };
-
     return {
       vegetables,
       fruits,
-      vegetableComment: buildComment('野菜', vegetables),
-      fruitComment: buildComment('果物', fruits)
+      vegetableComment: buildDepartmentTrendComment('野菜', vegetables),
+      fruitComment: buildDepartmentTrendComment('果物', fruits)
     };
   }, [allDailySales, previousDate]);
+
+  const morningBriefingLines = useMemo(() => {
+    return [
+      yesterdayRankings.vegetableComment,
+      yesterdayRankings.fruitComment,
+      buildOverallTrendComment(yesterdayRankings.vegetables, yesterdayRankings.fruits, currentGap)
+    ];
+  }, [yesterdayRankings, currentGap]);
+
+  const morningBriefingText = useMemo(() => morningBriefingLines.join('\n'), [morningBriefingLines]);
 
   const weatherCardItems = [
     { label: '天候', value: weather || '未設定' },
@@ -894,6 +984,58 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             </div>
           </div>
         ))}
+      </div>
+
+      <div style={{ ...cardStyle, borderColor: '#bfdbfe', background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <div>
+            <h3 style={sectionTitleStyle}>朝礼用まとめ</h3>
+            <div style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 700, marginTop: '4px' }}>
+              {previousDate || '前日不明'} の野菜・果物TOP5から自動生成
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="button-secondary"
+              style={{ width: 'auto', padding: '8px 12px' }}
+              onClick={handleCopyMorningBriefing}
+            >
+              コピー
+            </button>
+            <button
+              type="button"
+              className="button-primary"
+              style={{ width: 'auto', padding: '8px 12px' }}
+              onClick={handleShareMorningBriefing}
+            >
+              共有
+            </button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gap: '8px' }}>
+          {morningBriefingLines.map((line, index) => (
+            <div
+              key={`${line}-${index}`}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #dbeafe',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                color: '#1e3a8a',
+                fontWeight: 700,
+                lineHeight: 1.7
+              }}
+            >
+              {line}
+            </div>
+          ))}
+        </div>
+        {briefingStatus && (
+          <div style={{ color: '#0369a1', fontSize: '0.8rem', fontWeight: 700, marginTop: '10px' }}>
+            {briefingStatus}
+          </div>
+        )}
       </div>
 
       <div style={{ ...cardStyle, borderColor: '#fcd34d', background: 'linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)' }}>
