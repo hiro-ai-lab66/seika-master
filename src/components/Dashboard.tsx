@@ -38,6 +38,8 @@ type InspectionMeta = {
   tempBand: string;
   customers: number | null;
   avgPrice: number | null;
+  highTemp: string;
+  lowTemp: string;
 };
 
 const shellStyle: React.CSSProperties = {
@@ -337,7 +339,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     weather: '',
     tempBand: '',
     customers: null,
-    avgPrice: null
+    avgPrice: null,
+    highTemp: '',
+    lowTemp: ''
   });
   const todayBudgetEntry = state.dailyBudgets.find((b) => b.date === currentDate);
   const todayInspection = state.inspections.find((i) => i.date === currentDate);
@@ -389,6 +393,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const tempBand = inspectionMeta.tempBand || dailySales[0]?.temp_band || '';
   const dashboardCustomers = inspectionMeta.customers ?? currentCustomers;
   const dashboardAvgSpend = inspectionMeta.avgPrice ?? avgSpend;
+  const temperatureDisplay = inspectionMeta.highTemp || inspectionMeta.lowTemp
+    ? `高 ${inspectionMeta.highTemp || '-'}℃ / 低 ${inspectionMeta.lowTemp || '-'}℃`
+    : (tempBand || '未設定');
   const csvTotal = dailySales.reduce((sum, row) => sum + row.salesAmt, 0);
   const csvDiffRate =
     todayInspection?.actualFinal && todayInspection.actualFinal > 0 && csvTotal > 0
@@ -450,15 +457,39 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         }
 
         if (inspectionResult.status === 'fulfilled') {
-          const dateRows = inspectionResult.value.filter((row) => row.date === currentDate && row.time === 'final');
-          const rowMap = new Map(dateRows.map((row) => [row.item, row.content]));
-          const customersValue = rowMap.get('客数') || rowMap.get('最終客数') || '';
-          const avgPriceValue = rowMap.get('客単価') || '';
-          setInspectionMeta({
-            weather: rowMap.get('天気（12時）') || rowMap.get('天候') || '',
-            tempBand: rowMap.get('気温帯') || '',
+          const dateRows = inspectionResult.value.filter((row) => row.date === currentDate);
+          const sortPriority = (time: string) => {
+            if (time === 'final') return 0;
+            if (time === '17:00') return 1;
+            if (time === '12:00') return 2;
+            return 3;
+          };
+          const sortedDateRows = [...dateRows].sort((a, b) => sortPriority(a.time) - sortPriority(b.time));
+          const pickValue = (items: string[]) => {
+            for (const item of items) {
+              const matched = sortedDateRows.find((row) => row.item === item && row.content);
+              if (matched?.content) return matched.content;
+            }
+            return '';
+          };
+          const customersValue = pickValue(['客数', '最終客数', '17時客数', '12時客数']);
+          const avgPriceValue = pickValue(['客単価']);
+          const extractedMeta = {
+            weather: pickValue(['天候', '天気（12時）', '天気（17時）']),
+            tempBand: pickValue(['気温帯']),
             customers: customersValue ? Number(customersValue) : null,
-            avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null
+            avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null,
+            highTemp: pickValue(['最高気温']),
+            lowTemp: pickValue(['最低気温'])
+          };
+          console.log('[Dashboard] extracted inspection meta from shared_check', {
+            currentDate,
+            rowCount: dateRows.length,
+            rows: sortedDateRows,
+            extractedMeta
+          });
+          setInspectionMeta({
+            ...extractedMeta
           });
         } else {
           console.error('[Dashboard] failed to load inspection meta from shared_check', inspectionResult.reason);
@@ -466,7 +497,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             weather: '',
             tempBand: '',
             customers: null,
-            avgPrice: null
+            avgPrice: null,
+            highTemp: '',
+            lowTemp: ''
           });
         }
 
@@ -480,7 +513,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           weather: '',
           tempBand: '',
           customers: null,
-          avgPrice: null
+          avgPrice: null,
+          highTemp: '',
+          lowTemp: ''
         });
       }
     };
@@ -599,7 +634,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
   const weatherCardItems = [
     { label: '天候', value: weather || '未設定' },
-    { label: '気温帯', value: tempBand || '未設定' },
+    { label: '気温', value: temperatureDisplay },
     { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' },
     { label: '客単価', value: dashboardAvgSpend ? `${dashboardAvgSpend.toLocaleString()}円` : '未設定' }
   ];
