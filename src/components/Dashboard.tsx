@@ -6,7 +6,7 @@ import { loadDailySales } from '../storage/dailySales';
 import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
 import { buildGoogleDriveImageDisplayUrl } from '../services/storageService';
 import { ImageZoomModal } from './ImageZoomModal';
-import { fetchSharedCheckRows } from '../services/googleSheetsCheckService';
+import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
 
 interface Props {
   state: AppState;
@@ -39,6 +39,9 @@ type InspectionMeta = {
   customers: number | null;
   avgPrice: number | null;
   storeSales: number | null;
+  actual12: number | null;
+  actual17: number | null;
+  actualFinal: number | null;
   compositionRatio: number | null;
   highTemp: string;
   lowTemp: string;
@@ -149,6 +152,49 @@ const getAdvertisementFace = (title: string): 'front' | 'back' | 'single' => {
 
 const getAdvertisementBaseTitle = (title: string) =>
   title.replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '').trim() || title.trim() || '無題の広告';
+
+const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
+
+const normalizeCheckTime = (value: string) => {
+  const normalized = normalizeCheckText(value).toLowerCase();
+  if (normalized === 'final' || normalized === '最終' || normalized === '最終計') return 'final';
+  if (normalized === '17:00' || normalized === '17時' || normalized === '17時点') return '17:00';
+  if (normalized === '12:00' || normalized === '12時' || normalized === '12時点') return '12:00';
+  return normalized;
+};
+
+const parseCheckNumber = (value: string) => {
+  if (!value) return null;
+  const normalized = value.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  if (!normalized) return null;
+  const parsed = Number(normalized[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const findCheckValue = (
+  rows: SharedCheckRow[],
+  candidates: Array<{ item: string; time?: 'final' | '17:00' | '12:00' }>
+) => {
+  const normalizedRows = rows.map((row) => ({
+    ...row,
+    normalizedItem: normalizeCheckText(row.item),
+    normalizedTime: normalizeCheckTime(row.time)
+  }));
+
+  for (const candidate of candidates) {
+    const normalizedItem = normalizeCheckText(candidate.item);
+    const matched = normalizedRows.find((row) =>
+      row.normalizedItem === normalizedItem &&
+      (!candidate.time || row.normalizedTime === candidate.time) &&
+      row.content
+    );
+    if (matched?.content) {
+      return matched.content;
+    }
+  }
+
+  return '';
+};
 
 const formatRankingNames = (items: ReturnType<typeof loadDailySales>) =>
   items.slice(0, 2).map((item) => item.name).join('・');
@@ -460,6 +506,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     customers: null,
     avgPrice: null,
     storeSales: null,
+    actual12: null,
+    actual17: null,
+    actualFinal: null,
     compositionRatio: null,
     highTemp: '',
     lowTemp: ''
@@ -498,6 +547,26 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
     if (todayBudgetEntry && todayInspection.totalBudget !== todayBudgetEntry.totalBudget && currentPrediction !== null) {
       currentGap = currentPrediction - todayBudgetEntry.totalBudget;
+    }
+  }
+
+  if (currentPrediction === null) {
+    if (inspectionMeta.actualFinal !== null) {
+      currentStatus = 'shared_check 最終';
+      currentActual = inspectionMeta.actualFinal;
+      currentPrediction = inspectionMeta.actualFinal;
+    } else if (inspectionMeta.actual17 !== null) {
+      currentStatus = 'shared_check 17:00';
+      currentActual = inspectionMeta.actual17;
+      currentPrediction = inspectionMeta.actual17;
+    } else if (inspectionMeta.actual12 !== null) {
+      currentStatus = 'shared_check 12:00';
+      currentActual = inspectionMeta.actual12;
+      currentPrediction = inspectionMeta.actual12;
+    }
+
+    if (currentPrediction !== null && currentBudget > 0) {
+      currentGap = currentPrediction - currentBudget;
     }
   }
 
@@ -589,34 +658,98 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
         if (inspectionResult.status === 'fulfilled') {
           const dateRows = inspectionResult.value.filter((row) => row.date === currentDate);
+          console.log('[Dashboard] shared_check rows for date', {
+            currentDate,
+            rowCount: dateRows.length,
+            rows: dateRows
+          });
+
           const sortPriority = (time: string) => {
-            if (time === 'final') return 0;
-            if (time === '17:00') return 1;
-            if (time === '12:00') return 2;
+            const normalized = normalizeCheckTime(time);
+            if (normalized === 'final') return 0;
+            if (normalized === '17:00') return 1;
+            if (normalized === '12:00') return 2;
             return 3;
           };
           const sortedDateRows = [...dateRows].sort((a, b) => sortPriority(a.time) - sortPriority(b.time));
-          const pickValue = (items: string[]) => {
-            for (const item of items) {
-              const matched = sortedDateRows.find((row) => row.item === item && row.content);
-              if (matched?.content) return matched.content;
-            }
-            return '';
-          };
-          const customersValue = pickValue(['客数', '最終客数', '17時客数', '12時客数']);
-          const avgPriceValue = pickValue(['客単価']);
-          const storeSalesValue = pickValue(['店計売上']);
-          const compositionRatioValue = pickValue(['構成比']);
+          const finalSalesValue = findCheckValue(sortedDateRows, [
+            { item: '最終実績', time: 'final' },
+            { item: '最終売上', time: 'final' },
+            { item: '店計売上', time: 'final' },
+            { item: '売上', time: 'final' }
+          ]);
+          const sales17Value = findCheckValue(sortedDateRows, [
+            { item: '17時実績', time: '17:00' },
+            { item: '17時売上', time: '17:00' },
+            { item: '売上', time: '17:00' }
+          ]);
+          const sales12Value = findCheckValue(sortedDateRows, [
+            { item: '12時実績', time: '12:00' },
+            { item: '12時売上', time: '12:00' },
+            { item: '売上', time: '12:00' }
+          ]);
+          const customersValue = findCheckValue(sortedDateRows, [
+            { item: '最終客数', time: 'final' },
+            { item: '17時客数', time: '17:00' },
+            { item: '12時客数', time: '12:00' },
+            { item: '客数' }
+          ]);
+          const avgPriceValue = findCheckValue(sortedDateRows, [
+            { item: '客単価', time: 'final' },
+            { item: '客単価', time: '17:00' },
+            { item: '客単価', time: '12:00' },
+            { item: '客単価' }
+          ]);
+          const storeSalesValue = findCheckValue(sortedDateRows, [
+            { item: '店計売上', time: 'final' },
+            { item: '店計売上', time: '17:00' },
+            { item: '店計売上', time: '12:00' },
+            { item: '店計売上' }
+          ]);
+          const compositionRatioValue = findCheckValue(sortedDateRows, [
+            { item: '構成比', time: 'final' },
+            { item: '構成比', time: '17:00' },
+            { item: '構成比', time: '12:00' },
+            { item: '構成比' }
+          ]);
+          const weatherValue = findCheckValue(sortedDateRows, [
+            { item: '天候' },
+            { item: '天気（12時）', time: '12:00' },
+            { item: '天気（17時）', time: '17:00' }
+          ]);
+          const highTempValue = findCheckValue(sortedDateRows, [
+            { item: '最高気温' }
+          ]);
+          const lowTempValue = findCheckValue(sortedDateRows, [
+            { item: '最低気温' }
+          ]);
           const extractedMeta = {
-            weather: pickValue(['天候', '天気（12時）', '天気（17時）']),
-            tempBand: pickValue(['気温帯']),
-            customers: customersValue ? Number(customersValue) : null,
-            avgPrice: avgPriceValue ? Number(avgPriceValue) * 1000 : null,
-            storeSales: storeSalesValue ? Number(storeSalesValue) * 1000 : null,
-            compositionRatio: compositionRatioValue ? Number(compositionRatioValue) : null,
-            highTemp: pickValue(['最高気温']),
-            lowTemp: pickValue(['最低気温'])
+            weather: weatherValue,
+            tempBand: findCheckValue(sortedDateRows, [{ item: '気温帯' }]),
+            customers: parseCheckNumber(customersValue),
+            avgPrice: parseCheckNumber(avgPriceValue),
+            storeSales: parseCheckNumber(storeSalesValue),
+            actual12: parseCheckNumber(sales12Value),
+            actual17: parseCheckNumber(sales17Value),
+            actualFinal: parseCheckNumber(finalSalesValue) ?? parseCheckNumber(storeSalesValue),
+            compositionRatio: parseCheckNumber(compositionRatioValue),
+            highTemp: highTempValue,
+            lowTemp: lowTempValue
           };
+          console.log('[Dashboard] shared_check extracted values', {
+            sales: {
+              final: extractedMeta.actualFinal,
+              at17: extractedMeta.actual17,
+              at12: extractedMeta.actual12
+            },
+            customer_count: extractedMeta.customers,
+            weather: extractedMeta.weather,
+            temperature: {
+              high: extractedMeta.highTemp,
+              low: extractedMeta.lowTemp,
+              tempBand: extractedMeta.tempBand
+            }
+          });
           console.log('[Dashboard] extracted inspection meta from shared_check', {
             currentDate,
             rowCount: dateRows.length,
@@ -634,6 +767,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             customers: null,
             avgPrice: null,
             storeSales: null,
+            actual12: null,
+            actual17: null,
+            actualFinal: null,
             compositionRatio: null,
             highTemp: '',
             lowTemp: ''
@@ -657,6 +793,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           customers: null,
           avgPrice: null,
           storeSales: null,
+          actual12: null,
+          actual17: null,
+          actualFinal: null,
           compositionRatio: null,
           highTemp: '',
           lowTemp: ''
