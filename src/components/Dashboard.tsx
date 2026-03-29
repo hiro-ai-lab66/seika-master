@@ -157,18 +157,18 @@ const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
 const normalizeDateKey = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return '';
-  const isoMatch = trimmed.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  const normalized = trimmed.includes('/')
+    ? trimmed.replace(/\//g, '-')
+    : trimmed;
+  const parsed = new Date(normalized);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (isoMatch) {
     return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
   }
-  const parsed = new Date(trimmed);
-  if (!Number.isNaN(parsed.getTime())) {
-    const year = parsed.getFullYear();
-    const month = String(parsed.getMonth() + 1).padStart(2, '0');
-    const day = String(parsed.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  return trimmed.replace(/\//g, '-');
+  return normalized;
 };
 
 const normalizeDepartmentLabel = (value: string) => normalizeCheckText(value).toLowerCase();
@@ -1010,6 +1010,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
   const yesterdayRankings = useMemo(() => {
     const normalizedPreviousDate = normalizeDateKey(previousDate);
+    console.log('[Dashboard] daily_sales all rows', allDailySales);
+    allDailySales.forEach((row) => {
+      console.log('[Dashboard] row.date raw', row.date);
+    });
     const rankingDebugRows = allDailySales.map((row, index) => {
       const normalizedRowDate = normalizeDateKey(row.date);
       const matchesDate = normalizedRowDate === normalizedPreviousDate;
@@ -1059,11 +1063,16 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       targetDate: normalizedPreviousDate,
       totalRecords: allDailySales.length,
       rowDates: allDailySales.map((row) => row.date),
+      rowsBeforeFilter: allDailySales.length,
       yesterdayRecordsLength: yesterdayRecords.length,
       rowsMatchingPreviousDate: yesterdayRecords.length,
+      rowsAfterFilter: yesterdayRecords.length,
       vegetableFilterPreview: yesterdayRecords.filter((row) => isVegetableDepartment(row.department)).length,
       fruitFilterPreview: yesterdayRecords.filter((row) => isFruitDepartment(row.department)).length
     });
+    console.log('[Dashboard] targetDate', normalizedPreviousDate);
+    console.log('[Dashboard] rows before filter', allDailySales.length);
+    console.log('[Dashboard] rows after filter', yesterdayRecords.length);
     console.log('[Dashboard] ranking exclusion analysis', rankingDebugRows);
 
     const vegetables = buildRanking('野菜');
