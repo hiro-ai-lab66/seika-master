@@ -154,7 +154,32 @@ const getAdvertisementBaseTitle = (title: string) =>
   title.replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '').trim() || title.trim() || '無題の広告';
 
 const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
-const normalizeDateKey = (value: string) => value.replace(/\//g, '-').trim();
+const normalizeDateKey = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const isoMatch = trimmed.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return trimmed.replace(/\//g, '-');
+};
+
+const normalizeDepartmentLabel = (value: string) => normalizeCheckText(value).toLowerCase();
+const isVegetableDepartment = (value: string) => {
+  const normalized = normalizeDepartmentLabel(value);
+  return normalized.includes('野菜') || normalized.includes('やさい') || normalized.includes('veg');
+};
+const isFruitDepartment = (value: string) => {
+  const normalized = normalizeDepartmentLabel(value);
+  return normalized.includes('果物') || normalized.includes('くだもの') || normalized.includes('フルーツ') || normalized.includes('fruit');
+};
 
 const normalizeCheckTime = (value: string) => {
   const normalized = normalizeCheckText(value).toLowerCase();
@@ -984,26 +1009,74 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   }, [todayNote, latestMarket]);
 
   const yesterdayRankings = useMemo(() => {
+    const normalizedPreviousDate = normalizeDateKey(previousDate);
+    const rankingDebugRows = allDailySales.map((row, index) => {
+      const normalizedRowDate = normalizeDateKey(row.date);
+      const matchesDate = normalizedRowDate === normalizedPreviousDate;
+      const vegetableMatch = isVegetableDepartment(row.department);
+      const fruitMatch = isFruitDepartment(row.department);
+      const amountValid = Number.isFinite(Number(row.salesAmt));
+      const qtyValid = Number.isFinite(Number(row.salesQty));
+      const exclusionReasons: string[] = [];
+
+      if (!matchesDate) exclusionReasons.push('date_mismatch');
+      if (!vegetableMatch && !fruitMatch) exclusionReasons.push('department_mismatch');
+      if (!amountValid) exclusionReasons.push('invalid_sales_amount');
+      if (!qtyValid) exclusionReasons.push('invalid_sales_qty');
+
+      return {
+        index,
+        name: row.name,
+        rawDate: row.date,
+        normalizedRowDate,
+        targetDate: normalizedPreviousDate,
+        department: row.department,
+        salesAmt: row.salesAmt,
+        salesQty: row.salesQty,
+        vegetableMatch,
+        fruitMatch,
+        matchesDate,
+        exclusionReasons
+      };
+    });
+
+    const yesterdayRecords = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate);
     const buildRanking = (department: '野菜' | '果物') =>
-      allDailySales
-        .filter((row) => normalizeDateKey(row.date) === normalizeDateKey(previousDate) && row.department === department)
-        .sort((a, b) => b.salesAmt - a.salesAmt)
+      yesterdayRecords
+        .filter((row) => {
+          if (!Number.isFinite(Number(row.salesAmt)) || !Number.isFinite(Number(row.salesQty))) return false;
+          return department === '野菜'
+            ? isVegetableDepartment(row.department)
+            : isFruitDepartment(row.department);
+        })
+        .sort((a, b) => Number(b.salesAmt) - Number(a.salesAmt))
         .slice(0, 5);
 
-    const yesterdayRecords = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizeDateKey(previousDate));
     console.log('[Dashboard] daily_sales lookup for rankings', {
       currentDate,
+      selectedDate: currentDate,
       previousDate,
+      targetDate: normalizedPreviousDate,
       totalRecords: allDailySales.length,
+      rowDates: allDailySales.map((row) => row.date),
       yesterdayRecordsLength: yesterdayRecords.length,
-      vegetableRecordsLength: yesterdayRecords.filter((row) => row.department === '野菜').length,
-      fruitRecordsLength: yesterdayRecords.filter((row) => row.department === '果物').length
+      rowsMatchingPreviousDate: yesterdayRecords.length,
+      vegetableFilterPreview: yesterdayRecords.filter((row) => isVegetableDepartment(row.department)).length,
+      fruitFilterPreview: yesterdayRecords.filter((row) => isFruitDepartment(row.department)).length
     });
+    console.log('[Dashboard] ranking exclusion analysis', rankingDebugRows);
 
     const vegetables = buildRanking('野菜');
     const fruits = buildRanking('果物');
+    console.log('[Dashboard] category filter state', {
+      selectedDate: currentDate,
+      previousDate,
+      rowsAfterVegetableFilter: yesterdayRecords.filter((row) => isVegetableDepartment(row.department)),
+      rowsAfterFruitFilter: yesterdayRecords.filter((row) => isFruitDepartment(row.department))
+    });
     console.log('[Dashboard] ranking source', yesterdayRecords);
     console.log('[Dashboard] top5 source before render', {
+      selectedDate: currentDate,
       previousDate,
       recordsLength: yesterdayRecords.length,
       vegetablesCount: vegetables.length,
