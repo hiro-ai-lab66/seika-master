@@ -160,13 +160,10 @@ const normalizeDateKey = (value: string) => {
   const normalized = trimmed.includes('/')
     ? trimmed.replace(/\//g, '-')
     : trimmed;
-  const parsed = new Date(normalized);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
-  }
-  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // new Date() を使わず正規表現で直接抽出（タイムゾーンずれを防止）
+  const isoMatch = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (isoMatch) {
-    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
   }
   return normalized;
 };
@@ -568,7 +565,28 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const todayInspection = state.inspections.find((i) => i.date === currentDate);
   const todayNote = state.dailyNotes?.find((entry) => entry.date === currentDate);
   const latestMarket = useMemo(() => sortMarkets(state.marketHistory || [])[0], [state.marketHistory]);
-  const allDailySales = useMemo(() => loadDailySales(), [currentDate, refreshKey, manualRefreshKey]);
+  // localStorage変更を検知してdaily_salesを再読み込みするためのカウンター
+  const [dailySalesVersion, setDailySalesVersion] = useState(0);
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'seika_daily_sales_v1') {
+        setDailySalesVersion(v => v + 1);
+      }
+    };
+    // 同一タブでのページ遷移時（点検画面→Dashboard等）にも再読み込み
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setDailySalesVersion(v => v + 1);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+  const allDailySales = useMemo(() => loadDailySales(), [currentDate, refreshKey, manualRefreshKey, dailySalesVersion]);
   const dailySales = useMemo(() => allDailySales.filter((row) => row.date === currentDate), [allDailySales, currentDate]);
   const previousDate = useMemo(() => getPreviousDate(currentDate), [currentDate]);
 
