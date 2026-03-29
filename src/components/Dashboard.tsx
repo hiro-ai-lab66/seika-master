@@ -171,6 +171,11 @@ const parseCheckNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const parseCheckAmount = (value: string) => {
+  const parsed = parseCheckNumber(value);
+  return parsed === null ? null : Math.round(parsed * 1000);
+};
+
 const findCheckValue = (
   rows: SharedCheckRow[],
   candidates: Array<{ item: string; time?: 'final' | '17:00' | '12:00' }>
@@ -521,54 +526,56 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const dailySales = useMemo(() => allDailySales.filter((row) => row.date === currentDate), [allDailySales, currentDate]);
   const previousDate = useMemo(() => getPreviousDate(currentDate), [currentDate]);
 
-  let currentStatus = '未報告';
-  let currentActual = 0;
-  let currentPrediction: number | null = null;
-  let currentGap: number | null = null;
   const currentBudget = todayBudgetEntry?.totalBudget || todayInspection?.totalBudget || 0;
+  const actualFinal = todayInspection?.actualFinal ?? inspectionMeta.actualFinal;
+  const actual17 = todayInspection?.actual17 ?? inspectionMeta.actual17;
+  const actual12 = todayInspection?.actual12 ?? inspectionMeta.actual12;
+  const sales = actualFinal ?? actual17 ?? actual12 ?? 0;
+  const customerCount = todayInspection?.customersFinal ?? todayInspection?.customers17 ?? todayInspection?.customers12 ?? inspectionMeta.customers ?? 0;
+  const weather = inspectionMeta.weather || dailySales[0]?.weather || '';
+  const tempBand = inspectionMeta.tempBand || dailySales[0]?.temp_band || '';
+  const temperature = inspectionMeta.highTemp || inspectionMeta.lowTemp
+    ? `高 ${inspectionMeta.highTemp || '-'}℃ / 低 ${inspectionMeta.lowTemp || '-'}℃`
+    : (tempBand || '未設定');
 
-  if (todayInspection && currentBudget > 0) {
-    if (todayInspection.actual17 !== null && todayInspection.forecast17 !== null) {
+  let currentStatus = '未報告';
+  let currentActual = sales;
+  let currentPrediction: number | null = sales > 0 ? sales : null;
+  let currentGap: number | null = currentPrediction !== null && currentBudget > 0 ? currentPrediction - currentBudget : null;
+
+  if (todayInspection) {
+    if (todayInspection.actualFinal !== null) {
+      currentStatus = '閉店（確定）';
+      currentPrediction = todayInspection.actualFinal;
+      currentGap = todayInspection.diffFinal ?? (currentBudget > 0 ? todayInspection.actualFinal - currentBudget : null);
+    } else if (todayInspection.actual17 !== null && todayInspection.forecast17 !== null) {
       currentStatus = '17:00 時点予測';
-      currentActual = todayInspection.actual17;
       currentPrediction = todayInspection.forecast17;
-      currentGap = todayInspection.diff17;
+      currentGap = todayInspection.diff17 ?? (currentBudget > 0 ? todayInspection.forecast17 - currentBudget : null);
     } else if (todayInspection.actual12 !== null && todayInspection.forecast12 !== null) {
       currentStatus = '12:00 時点予測';
-      currentActual = todayInspection.actual12;
       currentPrediction = todayInspection.forecast12;
-      currentGap = todayInspection.diff12;
-    } else if (todayInspection.actualFinal !== null) {
-      currentStatus = '閉店（確定）';
-      currentActual = todayInspection.actualFinal;
-      currentPrediction = todayInspection.actualFinal;
-      currentGap = todayInspection.diffFinal;
+      currentGap = todayInspection.diff12 ?? (currentBudget > 0 ? todayInspection.forecast12 - currentBudget : null);
+    } else if (sales > 0) {
+      currentStatus = actualFinal !== null ? 'shared_check 最終' : actual17 !== null ? 'shared_check 17:00' : 'shared_check 12:00';
     }
 
     if (todayBudgetEntry && todayInspection.totalBudget !== todayBudgetEntry.totalBudget && currentPrediction !== null) {
       currentGap = currentPrediction - todayBudgetEntry.totalBudget;
     }
+  } else if (sales > 0) {
+    currentStatus = actualFinal !== null ? 'shared_check 最終' : actual17 !== null ? 'shared_check 17:00' : 'shared_check 12:00';
   }
 
-  if (currentPrediction === null) {
-    if (inspectionMeta.actualFinal !== null) {
-      currentStatus = 'shared_check 最終';
-      currentActual = inspectionMeta.actualFinal;
-      currentPrediction = inspectionMeta.actualFinal;
-    } else if (inspectionMeta.actual17 !== null) {
-      currentStatus = 'shared_check 17:00';
-      currentActual = inspectionMeta.actual17;
-      currentPrediction = inspectionMeta.actual17;
-    } else if (inspectionMeta.actual12 !== null) {
-      currentStatus = 'shared_check 12:00';
-      currentActual = inspectionMeta.actual12;
-      currentPrediction = inspectionMeta.actual12;
-    }
-
-    if (currentPrediction !== null && currentBudget > 0) {
-      currentGap = currentPrediction - currentBudget;
-    }
-  }
+  console.log('[Dashboard] sales binding', {
+    currentDate,
+    actualFinal,
+    actual17,
+    actual12,
+    sales,
+    weather,
+    temperature
+  });
 
   const currentMonth = currentDate.substring(0, 7);
   const monthGoal = state.dailyBudgets
@@ -579,17 +586,13 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     .reduce((sum, i) => sum + (i.actualFinal || i.actual17 || i.actual12 || 0), 0);
   const monthProgress = monthGoal > 0 ? Math.round((monthActual / monthGoal) * 100) : 0;
 
-  const currentCustomers = todayInspection?.customersFinal || todayInspection?.customers17 || todayInspection?.customers12 || 0;
+  const currentCustomers = customerCount;
   const avgSpend = currentCustomers > 0 && currentActual > 0 ? Math.round(currentActual / currentCustomers) : null;
-  const weather = inspectionMeta.weather || dailySales[0]?.weather || '';
-  const tempBand = inspectionMeta.tempBand || dailySales[0]?.temp_band || '';
-  const dashboardCustomers = inspectionMeta.customers ?? currentCustomers;
+  const dashboardCustomers = customerCount;
   const dashboardAvgSpend = inspectionMeta.avgPrice ?? avgSpend;
   const dashboardStoreSales = inspectionMeta.storeSales ?? todayInspection?.storeSalesFinal ?? null;
   const dashboardCompositionRatio = inspectionMeta.compositionRatio ?? todayInspection?.compositionRatio ?? null;
-  const temperatureDisplay = inspectionMeta.highTemp || inspectionMeta.lowTemp
-    ? `高 ${inspectionMeta.highTemp || '-'}℃ / 低 ${inspectionMeta.lowTemp || '-'}℃`
-    : (tempBand || '未設定');
+  const temperatureDisplay = temperature;
   const csvTotal = dailySales.reduce((sum, row) => sum + row.salesAmt, 0);
   const csvDiffRate =
     todayInspection?.actualFinal && todayInspection.actualFinal > 0 && csvTotal > 0
@@ -727,11 +730,11 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             weather: weatherValue,
             tempBand: findCheckValue(sortedDateRows, [{ item: '気温帯' }]),
             customers: parseCheckNumber(customersValue),
-            avgPrice: parseCheckNumber(avgPriceValue),
-            storeSales: parseCheckNumber(storeSalesValue),
-            actual12: parseCheckNumber(sales12Value),
-            actual17: parseCheckNumber(sales17Value),
-            actualFinal: parseCheckNumber(finalSalesValue) ?? parseCheckNumber(storeSalesValue),
+            avgPrice: parseCheckAmount(avgPriceValue),
+            storeSales: parseCheckAmount(storeSalesValue),
+            actual12: parseCheckAmount(sales12Value),
+            actual17: parseCheckAmount(sales17Value),
+            actualFinal: parseCheckAmount(finalSalesValue) ?? parseCheckAmount(storeSalesValue),
             compositionRatio: parseCheckNumber(compositionRatioValue),
             highTemp: highTempValue,
             lowTemp: lowTempValue
@@ -954,8 +957,25 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         .sort((a, b) => b.salesAmt - a.salesAmt)
         .slice(0, 5);
 
+    const yesterdayRecords = allDailySales.filter((row) => row.date === previousDate);
+    console.log('[Dashboard] daily_sales lookup for rankings', {
+      currentDate,
+      previousDate,
+      totalRecords: allDailySales.length,
+      yesterdayRecordsLength: yesterdayRecords.length,
+      vegetableRecordsLength: yesterdayRecords.filter((row) => row.department === '野菜').length,
+      fruitRecordsLength: yesterdayRecords.filter((row) => row.department === '果物').length
+    });
+
     const vegetables = buildRanking('野菜');
     const fruits = buildRanking('果物');
+    console.log('[Dashboard] top5 source before render', {
+      previousDate,
+      vegetablesCount: vegetables.length,
+      fruitsCount: fruits.length,
+      vegetables,
+      fruits
+    });
 
     return {
       vegetables,
