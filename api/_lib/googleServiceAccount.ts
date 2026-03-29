@@ -2,7 +2,10 @@ import { createSign } from 'node:crypto';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
-const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const GOOGLE_API_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.file'
+].join(' ');
 
 type TokenCache = {
   accessToken: string;
@@ -20,6 +23,14 @@ const getRequiredEnv = (name: string) => {
 };
 
 const getPrivateKey = () => getRequiredEnv('GOOGLE_PRIVATE_KEY').replace(/\\n/g, '\n');
+const getServiceAccountEmail = () => getRequiredEnv('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+const getServiceAccountProjectId = () => {
+  const explicit = process.env.GOOGLE_PROJECT_ID?.trim();
+  if (explicit) return explicit;
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '';
+  const match = email.match(/@(.*?)\.iam\.gserviceaccount\.com$/);
+  return match?.[1] || '';
+};
 
 const serializeError = (error: unknown) => {
   if (error instanceof Error) {
@@ -47,8 +58,8 @@ const buildJwtAssertion = () => {
     typ: 'JWT'
   };
   const payload = {
-    iss: getRequiredEnv('GOOGLE_SERVICE_ACCOUNT_EMAIL'),
-    scope: GOOGLE_SHEETS_SCOPE,
+    iss: getServiceAccountEmail(),
+    scope: GOOGLE_API_SCOPES,
     aud: GOOGLE_TOKEN_URL,
     exp: now + 3600,
     iat: now
@@ -74,11 +85,12 @@ export const getGoogleAccessToken = async () => {
 
   console.log('[googleServiceAccount] initializing service account auth', {
     serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    serviceAccountProjectId: getServiceAccountProjectId(),
     privateKeyConfigured: Boolean(process.env.GOOGLE_PRIVATE_KEY),
     privateKeyHasEscapedNewlines: Boolean(process.env.GOOGLE_PRIVATE_KEY?.includes('\\n')),
     privateKeyLineCount: getPrivateKey().split('\n').length,
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
-    scope: GOOGLE_SHEETS_SCOPE
+    scope: GOOGLE_API_SCOPES
   });
 
   const body = new URLSearchParams({
@@ -214,3 +226,9 @@ export const appendGoogleSheetValues = async (sheetName: string, a1Range: string
 };
 
 export const formatServerError = (error: unknown) => serializeError(error);
+export const getGoogleServiceAccountSummary = () => ({
+  serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '',
+  serviceAccountProjectId: getServiceAccountProjectId(),
+  spreadsheetId: process.env.GOOGLE_SHEET_ID?.trim() || '',
+  driveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() || ''
+});
