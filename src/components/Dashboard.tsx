@@ -154,6 +154,7 @@ const getAdvertisementBaseTitle = (title: string) =>
   title.replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '').trim() || title.trim() || '無題の広告';
 
 const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
+const normalizeDateKey = (value: string) => value.replace(/\//g, '-').trim();
 
 const normalizeCheckTime = (value: string) => {
   const normalized = normalizeCheckText(value).toLowerCase();
@@ -199,6 +200,26 @@ const findCheckValue = (
   }
 
   return '';
+};
+
+const findCheckValueByMatcher = (
+  rows: SharedCheckRow[],
+  matcher: (item: string) => boolean,
+  preferredTimes: Array<'final' | '17:00' | '12:00'> = []
+) => {
+  const normalizedRows = rows.map((row) => ({
+    ...row,
+    normalizedItem: normalizeCheckText(row.item),
+    normalizedTime: normalizeCheckTime(row.time)
+  }));
+
+  for (const time of preferredTimes) {
+    const matched = normalizedRows.find((row) => row.normalizedTime === time && matcher(row.normalizedItem) && row.content);
+    if (matched?.content) return matched.content;
+  }
+
+  const matched = normalizedRows.find((row) => matcher(row.normalizedItem) && row.content);
+  return matched?.content || '';
 };
 
 const formatRankingNames = (items: ReturnType<typeof loadDailySales>) =>
@@ -666,6 +687,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             rowCount: dateRows.length,
             rows: dateRows
           });
+          console.log('[Dashboard] shared_check item values', {
+            currentDate,
+            items: dateRows.map((row) => ({ item: row.item, time: row.time, content: row.content }))
+          });
 
           const sortPriority = (time: string) => {
             const normalized = normalizeCheckTime(time);
@@ -715,21 +740,29 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             { item: '構成比', time: '12:00' },
             { item: '構成比' }
           ]);
-          const weatherValue = findCheckValue(sortedDateRows, [
+          const weatherValue = findCheckValueByMatcher(
+            sortedDateRows,
+            (item) => item.includes('天気') || item.includes('天候'),
+            ['12:00', '17:00']
+          ) || findCheckValue(sortedDateRows, [
             { item: '天候' },
             { item: '天気（12時）', time: '12:00' },
             { item: '天気（17時）', time: '17:00' }
           ]);
-          const highTempValue = findCheckValue(sortedDateRows, [
-            { item: '最高気温' }
-          ]);
-          const lowTempValue = findCheckValue(sortedDateRows, [
-            { item: '最低気温' }
-          ]);
+          const highTempValue = findCheckValueByMatcher(
+            sortedDateRows,
+            (item) => item.includes('最高気温')
+          );
+          const lowTempValue = findCheckValueByMatcher(
+            sortedDateRows,
+            (item) => item.includes('最低気温')
+          );
           const extractedMeta = {
             weather: weatherValue,
             tempBand: findCheckValue(sortedDateRows, [{ item: '気温帯' }]),
-            customers: parseCheckNumber(customersValue),
+            customers: parseCheckNumber(
+              customersValue || findCheckValueByMatcher(sortedDateRows, (item) => item.includes('客数'), ['final', '17:00', '12:00'])
+            ),
             avgPrice: parseCheckAmount(avgPriceValue),
             storeSales: parseCheckAmount(storeSalesValue),
             actual12: parseCheckAmount(sales12Value),
@@ -953,11 +986,11 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const yesterdayRankings = useMemo(() => {
     const buildRanking = (department: '野菜' | '果物') =>
       allDailySales
-        .filter((row) => row.date === previousDate && row.department === department)
+        .filter((row) => normalizeDateKey(row.date) === normalizeDateKey(previousDate) && row.department === department)
         .sort((a, b) => b.salesAmt - a.salesAmt)
         .slice(0, 5);
 
-    const yesterdayRecords = allDailySales.filter((row) => row.date === previousDate);
+    const yesterdayRecords = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizeDateKey(previousDate));
     console.log('[Dashboard] daily_sales lookup for rankings', {
       currentDate,
       previousDate,
@@ -969,8 +1002,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
     const vegetables = buildRanking('野菜');
     const fruits = buildRanking('果物');
+    console.log('[Dashboard] ranking source', yesterdayRecords);
     console.log('[Dashboard] top5 source before render', {
       previousDate,
+      recordsLength: yesterdayRecords.length,
       vegetablesCount: vegetables.length,
       fruitsCount: fruits.length,
       vegetables,
