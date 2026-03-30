@@ -5,7 +5,14 @@ const STORAGE_KEY = 'seika_daily_sales_v1';
 export const loadDailySales = (): DailySalesRecord[] => {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            console.log('[dailySales] load', {
+                rowCount: Array.isArray(parsed) ? parsed.length : 0,
+                sampleRows: Array.isArray(parsed) ? parsed.slice(0, 10) : []
+            });
+            return parsed;
+        }
     } catch (e) {
         console.error('Failed to load daily sales:', e);
     }
@@ -14,6 +21,10 @@ export const loadDailySales = (): DailySalesRecord[] => {
 
 export const saveDailySales = (records: DailySalesRecord[]): void => {
     try {
+        console.log('[dailySales] save', {
+            rowCount: records.length,
+            sampleRows: records.slice(0, 10)
+        });
         localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
     } catch (e) {
         console.error('Failed to save daily sales:', e);

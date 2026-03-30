@@ -684,6 +684,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 header: true,
                 skipEmptyLines: true,
                 complete: (results) => {
+                    console.log('[InspectionForm] csv parsed data', {
+                        type,
+                        currentDate,
+                        rowCount: results.data.length,
+                        headers: results.meta.fields || [],
+                        sampleRows: results.data.slice(0, 5)
+                    });
                     if (results.data.length === 0) {
                         alert("解析に失敗しました。データが空です。");
                         return;
@@ -777,6 +784,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 salesAmt: it.salesAmt ?? 0,
                                 department: dept,
                             }));
+                        console.log('[InspectionForm] daily_sales save payload', {
+                            type,
+                            department: dept,
+                            currentDate,
+                            parsedItemCount: items.length,
+                            salesRecordCount: salesRecords.length,
+                            salesRecords: salesRecords.slice(0, 10)
+                        });
                         upsertDailySales(currentDate, dept, salesRecords);
 
                         void (async () => {

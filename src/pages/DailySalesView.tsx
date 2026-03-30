@@ -6,6 +6,15 @@ import { appendSharedSales, fetchSharedSales, getSharedSalesSheetName } from '..
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
 import { deriveTempBandFromHigh } from '../services/weatherService';
 
+const normalizeSalesDate = (value: string) => {
+    const trimmed = value.trim().replace(/\//g, '-');
+    const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (match) {
+        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+    }
+    return trimmed;
+};
+
 interface Props {
     inspections: InspectionEntry[];
     dailyBudgets: DailyBudget[];
@@ -13,7 +22,7 @@ interface Props {
 }
 
 export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onOpenPopGem }) => {
-    const [allRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
+    const [allRecords, setAllRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
     const [sharedSales, setSharedSales] = useState<SharedSalesEntry[]>([]);
     const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
     const [salesAmountInput, setSalesAmountInput] = useState('');
@@ -24,9 +33,18 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     const [isSharedSalesLoading, setIsSharedSalesLoading] = useState(false);
     const [isSharedSalesSaving, setIsSharedSalesSaving] = useState(false);
 
+    const reloadDailySales = () => {
+        const records = loadDailySales();
+        console.log('[DailySalesView] daily_sales before render', {
+            rowCount: records.length,
+            sampleRows: records.slice(0, 10)
+        });
+        setAllRecords(records);
+    };
+
     // 点検データとCSVデータの両方から日付を収集
     const dates = useMemo(() => {
-        const csvDates = [...new Set(allRecords.map(r => r.date))];
+        const csvDates = [...new Set(allRecords.map(r => normalizeSalesDate(r.date)))];
         const inspDates = inspections.map(i => i.date);
         const all = [...new Set([...csvDates, ...inspDates])];
         return all.sort((a, b) => b.localeCompare(a));
@@ -54,11 +72,37 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
         if (typeof window !== 'undefined') {
             setSalesAuthorInput(window.localStorage.getItem('seika_sales_author') || '');
         }
+        reloadDailySales();
         void loadSharedSales();
         void fetchSharedCheckRows().then(setSharedCheckRows).catch((error) => {
             console.error('[DailySalesView] failed to load shared check rows', error);
         });
     }, []);
+
+    useEffect(() => {
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === 'seika_daily_sales_v1') {
+                reloadDailySales();
+            }
+        };
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                reloadDailySales();
+            }
+        };
+        window.addEventListener('storage', handleStorage);
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (dates.length > 0 && !dates.includes(selectedDate)) {
+            setSelectedDate(dates[0]);
+        }
+    }, [dates, selectedDate]);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -120,7 +164,17 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     // 選択日変更時に既存値をロード
     const dateRecords = useMemo(() => {
         if (!selectedDate) return [];
-        return allRecords.filter(r => r.date === selectedDate);
+        const normalizedSelectedDate = normalizeSalesDate(selectedDate);
+        const filtered = allRecords.filter(r => normalizeSalesDate(r.date) === normalizedSelectedDate);
+        console.log('[DailySalesView] records for selected date', {
+            selectedDate,
+            normalizedSelectedDate,
+            allRecordCount: allRecords.length,
+            filteredCount: filtered.length,
+            rowDates: allRecords.map((record) => record.date),
+            filteredRows: filtered
+        });
+        return filtered;
     }, [allRecords, selectedDate]);
 
     // 選択日の点検データ
