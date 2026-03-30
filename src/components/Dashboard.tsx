@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry } from '../types';
+import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry } from '../types';
 import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
@@ -7,6 +7,7 @@ import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisement
 import { buildGoogleDriveImageDisplayUrl } from '../services/storageService';
 import { ImageZoomModal } from './ImageZoomModal';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
+import { fetchSharedNotices } from '../services/googleSheetsNoticeService';
 
 interface Props {
   state: AppState;
@@ -583,6 +584,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [briefingStatus, setBriefingStatus] = useState('');
   const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
+  const [sharedNotices, setSharedNotices] = useState<SharedNoticeEntry[]>([]);
   const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
     weather: '',
     tempBand: '',
@@ -732,9 +734,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const loadDashboardData = async () => {
       try {
         console.log('[Dashboard] starting advertisement fetch');
-        const [advertisementResult, inspectionResult] = await Promise.allSettled([
+        const [advertisementResult, inspectionResult, noticeResult] = await Promise.allSettled([
           fetchAdvertisementsWithRetry(),
-          fetchSharedCheckRows()
+          fetchSharedCheckRows(),
+          fetchSharedNotices()
         ]);
         if (!isMounted) return;
 
@@ -892,6 +895,18 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           });
         }
 
+        if (noticeResult.status === 'fulfilled') {
+          setSharedNotices(noticeResult.value);
+          console.log('[Dashboard] loaded shared notices', {
+            currentDate,
+            noticeCount: noticeResult.value.length,
+            dates: Array.from(new Set(noticeResult.value.map((item) => item.date))).slice(0, 10)
+          });
+        } else {
+          console.error('[Dashboard] failed to load shared notices', noticeResult.reason);
+          setSharedNotices([]);
+        }
+
         setLastUpdatedAt(new Date().toISOString());
       } catch (error) {
         console.error('[Dashboard] failed to refresh dashboard data', error);
@@ -917,6 +932,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           lowTemp: ''
         });
         setSharedCheckRows([]);
+        setSharedNotices([]);
       }
     };
 
@@ -1057,12 +1073,39 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   }, [todayInspection, state.chirashiImage, state.chirashiDate, latestMarket]);
 
   const importantNotices = useMemo(() => {
+    const normalizedCurrentDate = normalizeDateKey(currentDate);
+    const sortedSharedNotices = [...sharedNotices].sort((a, b) => {
+      const dateCompare = normalizeDateKey(b.date).localeCompare(normalizeDateKey(a.date));
+      if (dateCompare !== 0) return dateCompare;
+      if (a.priority !== b.priority) return a.priority ? -1 : 1;
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    });
+    const matchedNoticeDate = sortedSharedNotices
+      .map((notice) => normalizeDateKey(notice.date))
+      .find((date) => date && date <= normalizedCurrentDate);
+    const fallbackNoticeDate = matchedNoticeDate || (sortedSharedNotices[0] ? normalizeDateKey(sortedSharedNotices[0].date) : '');
+    const selectedSharedNotices = sortedSharedNotices
+      .filter((notice) => normalizeDateKey(notice.date) === fallbackNoticeDate)
+      .sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority ? -1 : 1;
+        return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+      });
+
+    console.log('[Dashboard] important notice fallback', {
+      currentDate,
+      normalizedCurrentDate,
+      sharedNoticeCount: sharedNotices.length,
+      fallbackNoticeDate,
+      selectedSharedNoticeCount: selectedSharedNotices.length
+    });
+
     const list: string[] = [];
+    selectedSharedNotices.forEach((notice) => list.push(notice.content));
     if (todayNote?.announcements) list.push(todayNote.announcements);
     (latestMarket?.analysis.notices || []).slice(0, 2).forEach((notice) => list.push(notice));
     if (todayNote?.inspectionNotes) list.push(todayNote.inspectionNotes);
     return list.filter(Boolean).slice(0, 3);
-  }, [todayNote, latestMarket]);
+  }, [currentDate, sharedNotices, todayNote, latestMarket]);
 
   const yesterdayRankings = useMemo(() => {
     const normalizedPreviousDate = normalizeDateKey(previousDate);
