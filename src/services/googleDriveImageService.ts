@@ -1,7 +1,26 @@
 import { authorizedGoogleApiFetch, ensureSharedSheetsSession } from './googleSheetsInventoryService';
 
 const getDriveFolderId = () => (import.meta as any).env?.VITE_GOOGLE_DRIVE_FOLDER_ID?.trim() || '';
+const getGoogleClientId = () => (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
+const getOauthProjectHint = () => {
+  const clientId = getGoogleClientId();
+  const match = clientId.match(/^(\d+)-/);
+  return match?.[1] || '';
+};
 const maskFolderId = (value: string) => value.length > 10 ? `${value.slice(0, 4)}...${value.slice(-4)}` : value;
+
+const buildDriveOauthError = (detail: string) => {
+  const projectHint = getOauthProjectHint();
+  if (/Google Drive API has not been used|disabled/i.test(detail)) {
+    return [
+      `Google Drive API が OAuth client の project=${projectHint || 'unknown'} で無効です。`,
+      'Google Cloud Console で Drive API を有効化してください。',
+      'あわせて OAuth consent screen と Authorized JavaScript origins に現在の Vercel URL が入っているか確認してください。',
+      detail
+    ].join(' ');
+  }
+  return detail || 'Google Drive への画像アップロードに失敗しました';
+};
 
 const readFileAsDataUrl = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -98,9 +117,15 @@ export const uploadImageFileToGoogleDrive = async (
   await ensureDriveSession();
 
   const folderId = getDriveFolderId();
+  const clientId = getGoogleClientId();
+  const oauthProjectHint = getOauthProjectHint();
   console.log('[googleDriveImageService] resolved drive folder id', {
     configured: Boolean(folderId),
     folderId: folderId ? maskFolderId(folderId) : ''
+  });
+  console.log('[googleDriveImageService] oauth client context', {
+    clientConfigured: Boolean(clientId),
+    oauthProjectHint
   });
 
   if (!folderId) {
@@ -138,7 +163,7 @@ export const uploadImageFileToGoogleDrive = async (
 
   if (!uploadResponse.ok) {
     const detail = await uploadResponse.text().catch(() => '');
-    throw new Error(detail || 'Google Drive への画像アップロードに失敗しました');
+    throw new Error(buildDriveOauthError(detail));
   }
 
   const uploadPayload = await uploadResponse.json() as { id?: string; parents?: string[] };
@@ -163,7 +188,7 @@ export const uploadImageFileToGoogleDrive = async (
 
   if (!permissionResponse.ok) {
     const detail = await permissionResponse.text().catch(() => '');
-    throw new Error(detail || 'Google Drive の共有権限設定に失敗しました');
+    throw new Error(buildDriveOauthError(detail || 'Google Drive の共有権限設定に失敗しました'));
   }
 
   console.log('[googleDriveImageService] user oauth upload success', {
