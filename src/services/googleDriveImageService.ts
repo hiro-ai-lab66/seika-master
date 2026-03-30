@@ -1,9 +1,6 @@
-type DriveUploadResponse = {
-  url?: string;
-  error?: string;
-  serviceAccountProjectId?: string;
-  serviceAccountEmail?: string;
-};
+import { authorizedGoogleApiFetch, ensureSharedSheetsSession } from './googleSheetsInventoryService';
+
+const DRIVE_FOLDER_ID = (import.meta as any).env?.VITE_GOOGLE_DRIVE_FOLDER_ID?.trim() || '';
 
 const readFileAsDataUrl = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -69,49 +66,104 @@ const compressImageForDrive = async (
   });
 };
 
+const buildMultipartBody = async (metadata: Record<string, unknown>, file: File, boundary: string): Promise<Blob> => {
+  const delimiter = `--${boundary}\r\n`;
+  const closeDelimiter = `--${boundary}--`;
+  const metadataPart = `${delimiter}Content-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`;
+  const headerPart = `${delimiter}Content-Type: ${file.type || 'image/jpeg'}\r\n\r\n`;
+
+  return new Blob([
+    metadataPart,
+    headerPart,
+    file,
+    '\r\n',
+    closeDelimiter
+  ]);
+};
+
+const ensureDriveSession = async () => {
+  const ready = await ensureSharedSheetsSession(true);
+  if (!ready) {
+    throw new Error('Google Drive にログインしてください');
+  }
+};
+
+const createDriveImageUrl = (fileId: string) => `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
+
 export const uploadImageFileToGoogleDrive = async (
   file: File,
   options: { fileNamePrefix: string; maxWidth: number; maxHeight: number; quality: number }
 ): Promise<string> => {
+  await ensureDriveSession();
+
+  if (!DRIVE_FOLDER_ID) {
+    throw new Error('VITE_GOOGLE_DRIVE_FOLDER_ID が未設定です');
+  }
+
   const compressedFile = await compressImageForDrive(file, {
     maxWidth: options.maxWidth,
     maxHeight: options.maxHeight,
     quality: options.quality
   });
-  const dataUrl = await readFileAsDataUrl(compressedFile);
-  const uploadResponse = await fetch('/api/drive-upload', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
-    body: JSON.stringify({
-      fileName: `${options.fileNamePrefix}_${Date.now()}.jpg`,
-      mimeType: compressedFile.type || 'image/jpeg',
-      dataUrl
-    })
+
+  const metadata: Record<string, unknown> = {
+    name: `${options.fileNamePrefix}_${Date.now()}.jpg`,
+    parents: [DRIVE_FOLDER_ID]
+  };
+  const boundary = `seika_drive_upload_${crypto.randomUUID()}`;
+  const body = await buildMultipartBody(metadata, compressedFile, boundary);
+
+  console.log('[googleDriveImageService] upload via user oauth', {
+    folderId: DRIVE_FOLDER_ID,
+    fileName: metadata.name
   });
 
-  let payload: DriveUploadResponse | null = null;
-  try {
-    payload = await uploadResponse.clone().json();
-  } catch (error) {
-    console.error('[googleDriveImageService] failed to parse upload response', error);
-  }
+  const uploadResponse = await authorizedGoogleApiFetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,parents&supportsAllDrives=false',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/related; boundary=${boundary}`
+      },
+      body
+    }
+  );
 
   if (!uploadResponse.ok) {
-    const message = payload?.error || 'Google Drive への画像アップロードに失敗しました';
-    throw new Error(message);
+    const detail = await uploadResponse.text().catch(() => '');
+    throw new Error(detail || 'Google Drive への画像アップロードに失敗しました');
   }
 
-  if (!payload?.url) {
-    throw new Error('Google Drive の画像URLを取得できませんでした');
+  const uploadPayload = await uploadResponse.json() as { id?: string; parents?: string[] };
+  const fileId = uploadPayload.id;
+  if (!fileId) {
+    throw new Error('Google Drive のファイルIDを取得できませんでした');
   }
 
-  console.log('[googleDriveImageService] upload succeeded via shared server project', {
-    serviceAccountProjectId: payload.serviceAccountProjectId,
-    serviceAccountEmail: payload.serviceAccountEmail
+  const permissionResponse = await authorizedGoogleApiFetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=false`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        role: 'reader',
+        type: 'anyone'
+      })
+    }
+  );
+
+  if (!permissionResponse.ok) {
+    const detail = await permissionResponse.text().catch(() => '');
+    throw new Error(detail || 'Google Drive の共有権限設定に失敗しました');
+  }
+
+  console.log('[googleDriveImageService] user oauth upload success', {
+    fileId,
+    folderId: DRIVE_FOLDER_ID,
+    parents: uploadPayload.parents || [DRIVE_FOLDER_ID]
   });
 
-  return payload.url;
+  return createDriveImageUrl(fileId);
 };
