@@ -1,6 +1,6 @@
 import { getGoogleAccessToken, getGoogleServiceAccountSummary } from './_lib/googleServiceAccount.js';
 
-const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
+const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,parents&supportsAllDrives=true';
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 
 const getRequiredEnv = (name: string) => {
@@ -56,6 +56,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const folderId = getRequiredEnv('GOOGLE_DRIVE_FOLDER_ID');
+    console.log('[drive-upload] resolved folderId', folderId);
     const accessToken = await getGoogleAccessToken();
     const summary = getGoogleServiceAccountSummary();
     const dataMatch = dataUrl.match(/^data:(.*?);base64,(.*)$/);
@@ -67,15 +68,18 @@ export default async function handler(req: any, res: any) {
     const actualMimeType = dataMatch[1] || mimeType;
     const fileBuffer = Buffer.from(dataMatch[2], 'base64');
     const boundary = `seika_server_drive_upload_${Date.now()}`;
-    const uploadBody = buildMultipartBody({
+    const requestBody = {
       name: fileName,
       parents: [folderId]
-    }, actualMimeType, fileBuffer, boundary);
+    };
+    const uploadBody = buildMultipartBody(requestBody, actualMimeType, fileBuffer, boundary);
 
     console.log('[drive-upload] upload start', {
       fileName,
       mimeType: actualMimeType,
       folderId,
+      parents: requestBody.parents,
+      requestBody,
       fileSize: fileBuffer.length,
       serviceAccountEmail: summary.serviceAccountEmail,
       serviceAccountProjectId: summary.serviceAccountProjectId
@@ -109,7 +113,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const permissionResponse = await fetch(`${DRIVE_API_BASE}/${fileId}/permissions`, {
+    const permissionResponse = await fetch(`${DRIVE_API_BASE}/${fileId}/permissions?supportsAllDrives=true`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -135,6 +139,7 @@ export default async function handler(req: any, res: any) {
     console.log('[drive-upload] upload success', {
       fileId,
       folderId,
+      parents: uploadPayload.parents || requestBody.parents,
       serviceAccountProjectId: summary.serviceAccountProjectId
     });
 
