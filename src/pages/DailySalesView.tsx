@@ -3,7 +3,7 @@ import type { DailySalesRecord, InspectionEntry, DailyBudget, SharedSalesEntry }
 import { getLocalTodayDateString } from '../utils/calculations';
 import { appendSharedSales, fetchSharedSales, getSharedSalesSheetName } from '../services/googleSheetsSalesService';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
-import { fetchSharedDailySales } from '../services/googleSheetsDailySalesService';
+import { fetchSharedDailySales, getSharedDailySalesSheetName } from '../services/googleSheetsDailySalesService';
 import { deriveTempBandFromHigh } from '../services/weatherService';
 
 const normalizeSalesDate = (value: string) => {
@@ -47,7 +47,7 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
             setAllRecords(records);
         } catch (error) {
             console.error('[DailySalesView] failed to load shared daily sales', error);
-            setDailySalesError(error instanceof Error ? error.message : 'daily_sales を取得できませんでした');
+            setDailySalesError(error instanceof Error ? error.message : `${getSharedDailySalesSheetName()} を取得できませんでした`);
             setAllRecords([]);
         } finally {
             setIsDailySalesLoading(false);
@@ -446,7 +446,7 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                     <div>
                         <h3 style={{ margin: 0, color: '#0f172a' }}>共有売上履歴</h3>
                         <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.9rem' }}>
-                            shared_sales に保存し、全端末で同じ売上履歴を表示します。30秒ごとに自動更新します。
+                            最終実績の共有値は {getSharedSalesSheetName()}、CSV明細は {getSharedDailySalesSheetName()} に保存し、全端末で同じ売上履歴を表示します。30秒ごとに自動更新します。
                         </p>
                     </div>
                     <button
@@ -494,7 +494,7 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
 
                 {sharedSalesStatus && <div style={{ color: '#0369a1', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{sharedSalesStatus}</div>}
                 {sharedSalesError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{sharedSalesError}</div>}
-                {isDailySalesLoading && <div style={{ color: '#475569', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>daily_sales を Google Sheets から読み込み中です</div>}
+                {isDailySalesLoading && <div style={{ color: '#475569', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{getSharedDailySalesSheetName()} を Google Sheets から読み込み中です</div>}
                 {dailySalesError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{dailySalesError}</div>}
 
                 <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>

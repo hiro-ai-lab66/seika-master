@@ -1,4 +1,5 @@
 import type { SharedSalesEntry } from '../types';
+import { SHARED_SALES_SHEET_NAME } from '../../sharedSheetNames';
 import {
     ensureSharedSheetsSession,
     getSharedSpreadsheetId,
@@ -8,7 +9,7 @@ import {
 } from './googleSheetsInventoryService';
 import { postSharedWriteAction } from './sharedDataApi';
 
-const SALES_SHEET_NAME = 'shared_sales';
+const SALES_SHEET_NAME = SHARED_SALES_SHEET_NAME;
 const HEADER_ROW = ['id', '日付', '売上', '客数', '作成者', '更新日時'];
 
 const escapeSheetName = (sheetName: string) => `'${sheetName.replace(/'/g, "''")}'`;

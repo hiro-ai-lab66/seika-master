@@ -1,4 +1,5 @@
 import type { DailySalesRecord } from '../types';
+import { SHARED_DAILY_SALES_SHEET_NAME } from '../../sharedSheetNames';
 import { fetchSharedReadResource, postSharedWriteAction } from './sharedDataApi';
 
 export type SharedDailySalesUpsertPayload = {
@@ -23,6 +24,8 @@ const normalizeDailySalesDate = (value: string) => {
     }
     return trimmed;
 };
+
+export const getSharedDailySalesSheetName = () => SHARED_DAILY_SALES_SHEET_NAME;
 
 export const fetchSharedDailySales = async (): Promise<DailySalesRecord[]> => {
     const records = await fetchSharedReadResource<DailySalesRecord>('dailySales');

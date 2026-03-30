@@ -1,4 +1,5 @@
-import { appendGoogleSheetValues, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { appendGoogleSheetValues, ensureGoogleSheetExists, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_NOTICE_SHEET_NAME, SHARED_SALES_SHEET_NAME } from '../sharedSheetNames.js';
 
 const nowIso = () => new Date().toISOString();
 
@@ -20,6 +21,7 @@ const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => 
 const buildErrorMessage = (error: unknown) => error instanceof Error ? error.message : '共有データの保存に失敗しました';
 
 const ensureHeader = async (sheetName: string, header: string[]) => {
+  await ensureGoogleSheetExists(sheetName);
   const widthLetter = String.fromCharCode('A'.charCodeAt(0) + header.length - 1);
   const existing = await readGoogleSheetValues(sheetName, `A1:${widthLetter}1`);
   const current = existing[0] || [];
@@ -38,7 +40,7 @@ const replaceRows = async (sheetName: string, width: number, rows: string[][]) =
 
 const SHEETS = {
   check: {
-    name: 'shared_check',
+    name: SHARED_CHECK_SHEET_NAME,
     header: ['日付', '店舗', '項目', '内容', '状態', '担当', '時間'],
     width: 7
   },
@@ -48,12 +50,12 @@ const SHEETS = {
     width: 7
   },
   sales: {
-    name: 'shared_sales',
+    name: SHARED_SALES_SHEET_NAME,
     header: ['id', '日付', '売上', '客数', '作成者', '更新日時'],
     width: 6
   },
   notice: {
-    name: 'shared_notice',
+    name: SHARED_NOTICE_SHEET_NAME,
     header: ['id', '日付', '内容', '作成者', '更新日時', '重要フラグ', '既読ユーザー', '作成日時'],
     width: 8
   },
@@ -78,7 +80,7 @@ const SHEETS = {
     width: 7
   },
   dailySales: {
-    name: 'daily_sales',
+    name: SHARED_DAILY_SALES_SHEET_NAME,
     header: ['日付', 'コード', '名称', '売上数', '売上数昨比', '売上高', '部門', '天候', '気温帯', '客数', '客単価'],
     width: 11
   }

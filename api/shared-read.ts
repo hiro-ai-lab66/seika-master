@@ -1,4 +1,5 @@
-import { readGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { ensureGoogleSheetExists, readGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_NOTICE_SHEET_NAME } from '../sharedSheetNames.js';
 
 const normalizeDriveImageUrl = (url: string) => {
   if (!url) return '';
@@ -21,7 +22,7 @@ const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => 
 
 const resourceConfigs = {
   check: {
-    sheetName: 'shared_check',
+    sheetName: SHARED_CHECK_SHEET_NAME,
     range: 'A2:G',
     mapRows: (rows: string[][]) =>
       parseRows(rows).map((row, index) => ({
@@ -36,7 +37,7 @@ const resourceConfigs = {
       }))
   },
   notice: {
-    sheetName: 'shared_notice',
+    sheetName: SHARED_NOTICE_SHEET_NAME,
     range: 'A2:H',
     mapRows: (rows: string[][]) =>
       parseRows(rows)
@@ -154,7 +155,7 @@ const resourceConfigs = {
         .sort((a, b) => b.date.localeCompare(a.date))
   },
   dailySales: {
-    sheetName: 'daily_sales',
+    sheetName: SHARED_DAILY_SALES_SHEET_NAME,
     range: 'A2:K',
     mapRows: (rows: string[][]) =>
       parseRows(rows)
@@ -198,6 +199,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    await ensureGoogleSheetExists(config.sheetName);
     console.log('[shared-read] target sheet:', config.sheetName);
     const rows = await readGoogleSheetValues(config.sheetName, config.range);
     const items = config.mapRows(rows);

@@ -211,6 +211,79 @@ const writeValues = async (
   });
 };
 
+export const readGoogleSpreadsheetMetadata = async () => {
+  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const accessToken = await getGoogleAccessToken();
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[googleServiceAccount] metadata read failed', {
+      spreadsheetId,
+      status: response.status,
+      body: errorText
+    });
+    throw new Error(`Google Sheets メタデータ取得に失敗しました: ${errorText}`);
+  }
+
+  return response.json() as Promise<{ sheets?: Array<{ properties?: { title?: string } }> }>;
+};
+
+export const ensureGoogleSheetExists = async (sheetName: string) => {
+  const metadata = await readGoogleSpreadsheetMetadata();
+  const existingNames = (metadata.sheets || [])
+    .map((sheet) => sheet.properties?.title || '')
+    .filter(Boolean);
+
+  if (existingNames.includes(sheetName)) {
+    return;
+  }
+
+  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const accessToken = await getGoogleAccessToken();
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}:batchUpdate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      requests: [
+        {
+          addSheet: {
+            properties: {
+              title: sheetName
+            }
+          }
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[googleServiceAccount] add sheet failed', {
+      spreadsheetId,
+      sheetName,
+      status: response.status,
+      body: errorText
+    });
+    throw new Error(`Google Sheets シート作成に失敗しました: ${errorText}`);
+  }
+
+  console.log('[googleServiceAccount] sheet created', {
+    spreadsheetId,
+    sheetName
+  });
+};
+
 export const writeGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
   const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
