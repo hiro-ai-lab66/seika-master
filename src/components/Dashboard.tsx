@@ -49,6 +49,11 @@ type InspectionMeta = {
 };
 
 type SharedRankingItem = DailySalesRecord;
+type NoticeSection = {
+  heading: string;
+  bullets: string[];
+  paragraphs: string[];
+};
 
 const ADVERTISEMENT_CACHE_KEY = 'seika_dashboard_advertisements_cache';
 const RETRYABLE_AD_ERROR_PATTERN = /\b503\b|service unavailable/i;
@@ -277,6 +282,48 @@ const parseSharedRankingRows = (rows: SharedCheckRow[], targetDate: string, type
   return parsedItems
     .sort((a, b) => Number(b.salesAmt) - Number(a.salesAmt))
     .slice(0, 5);
+};
+
+const parseNoticeSections = (text: string): NoticeSection[] => {
+  const normalized = text.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const blockSource = normalized.includes('■')
+    ? normalized.split('■').map((part) => part.trim()).filter(Boolean)
+    : [normalized];
+
+  return blockSource.map((block, index) => {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const firstLine = lines[0] || '';
+    const heading = normalized.includes('■')
+      ? firstLine
+      : `連絡 ${index + 1}`;
+    const bodyLines = normalized.includes('■') ? lines.slice(1) : lines;
+    const bullets: string[] = [];
+    const paragraphs: string[] = [];
+
+    bodyLines.forEach((line) => {
+      if (line.includes('・')) {
+        line
+          .split('・')
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .forEach((part) => bullets.push(part));
+        return;
+      }
+      paragraphs.push(line);
+    });
+
+    if (bodyLines.length === 0 && !bullets.length && heading) {
+      paragraphs.push(heading);
+    }
+
+    return {
+      heading,
+      bullets: Array.from(new Set(bullets)),
+      paragraphs: Array.from(new Set(paragraphs))
+    };
+  });
 };
 
 const formatRankingNames = (items: ReturnType<typeof loadDailySales>) =>
@@ -1104,8 +1151,16 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     if (todayNote?.announcements) list.push(todayNote.announcements);
     (latestMarket?.analysis.notices || []).slice(0, 2).forEach((notice) => list.push(notice));
     if (todayNote?.inspectionNotes) list.push(todayNote.inspectionNotes);
-    return list.filter(Boolean).slice(0, 3);
+    return Array.from(new Set(list.filter(Boolean))).slice(0, 3);
   }, [currentDate, sharedNotices, todayNote, latestMarket]);
+
+  const formattedImportantNotices = useMemo(
+    () => importantNotices.map((notice, index) => ({
+      key: `${index}-${notice}`,
+      sections: parseNoticeSections(notice)
+    })),
+    [importantNotices]
+  );
 
   const yesterdayRankings = useMemo(() => {
     const normalizedPreviousDate = normalizeDateKey(previousDate);
@@ -1480,12 +1535,32 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             <h3 style={sectionTitleStyle}>重要連絡</h3>
           </div>
           <div style={{ display: 'grid', gap: '10px' }}>
-            {importantNotices.length === 0 ? (
+            {formattedImportantNotices.length === 0 ? (
               <div style={{ color: '#64748b', fontSize: '0.9rem' }}>重要連絡はありません。</div>
             ) : (
-              importantNotices.map((notice, index) => (
-                <div key={`${notice}-${index}`} style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '12px 14px', color: '#7c2d12', lineHeight: 1.6 }}>
-                  {notice}
+              formattedImportantNotices.map((notice) => (
+                <div key={notice.key} style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '12px 14px', color: '#7c2d12', display: 'grid', gap: '10px' }}>
+                  {notice.sections.map((section, sectionIndex) => (
+                    <div key={`${notice.key}-${section.heading}-${sectionIndex}`} style={{ display: 'grid', gap: '6px' }}>
+                      <div style={{ fontWeight: 900, color: '#9a3412', fontSize: '0.86rem' }}>
+                        {section.heading}
+                      </div>
+                      {section.paragraphs.map((paragraph, paragraphIndex) => (
+                        <div key={`${notice.key}-p-${paragraphIndex}`} style={{ lineHeight: 1.7, fontSize: '0.9rem' }}>
+                          {paragraph}
+                        </div>
+                      ))}
+                      {section.bullets.length > 0 && (
+                        <div style={{ display: 'grid', gap: '4px' }}>
+                          {section.bullets.map((bullet, bulletIndex) => (
+                            <div key={`${notice.key}-b-${bulletIndex}`} style={{ lineHeight: 1.7, fontSize: '0.88rem' }}>
+                              ・{bullet}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               ))
             )}
