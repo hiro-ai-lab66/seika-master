@@ -1,6 +1,7 @@
 import { authorizedGoogleApiFetch, ensureSharedSheetsSession } from './googleSheetsInventoryService';
 
-const DRIVE_FOLDER_ID = (import.meta as any).env?.VITE_GOOGLE_DRIVE_FOLDER_ID?.trim() || '';
+const getDriveFolderId = () => (import.meta as any).env?.VITE_GOOGLE_DRIVE_FOLDER_ID?.trim() || '';
+const maskFolderId = (value: string) => value.length > 10 ? `${value.slice(0, 4)}...${value.slice(-4)}` : value;
 
 const readFileAsDataUrl = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -96,7 +97,13 @@ export const uploadImageFileToGoogleDrive = async (
 ): Promise<string> => {
   await ensureDriveSession();
 
-  if (!DRIVE_FOLDER_ID) {
+  const folderId = getDriveFolderId();
+  console.log('[googleDriveImageService] resolved drive folder id', {
+    configured: Boolean(folderId),
+    folderId: folderId ? maskFolderId(folderId) : ''
+  });
+
+  if (!folderId) {
     throw new Error('VITE_GOOGLE_DRIVE_FOLDER_ID が未設定です');
   }
 
@@ -108,13 +115,13 @@ export const uploadImageFileToGoogleDrive = async (
 
   const metadata: Record<string, unknown> = {
     name: `${options.fileNamePrefix}_${Date.now()}.jpg`,
-    parents: [DRIVE_FOLDER_ID]
+    parents: [folderId]
   };
   const boundary = `seika_drive_upload_${crypto.randomUUID()}`;
   const body = await buildMultipartBody(metadata, compressedFile, boundary);
 
   console.log('[googleDriveImageService] upload via user oauth', {
-    folderId: DRIVE_FOLDER_ID,
+    folderId: maskFolderId(folderId),
     fileName: metadata.name
   });
 
@@ -161,8 +168,8 @@ export const uploadImageFileToGoogleDrive = async (
 
   console.log('[googleDriveImageService] user oauth upload success', {
     fileId,
-    folderId: DRIVE_FOLDER_ID,
-    parents: uploadPayload.parents || [DRIVE_FOLDER_ID]
+    folderId: maskFolderId(folderId),
+    parents: uploadPayload.parents || [folderId]
   });
 
   return createDriveImageUrl(fileId);
