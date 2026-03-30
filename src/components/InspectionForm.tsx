@@ -4,8 +4,8 @@ import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculat
 import { Upload, Cloud, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
-import { upsertDailySales, loadDailySales, saveDailySales } from '../storage/dailySales';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
+import { enrichSharedDailySalesByDate, fetchSharedDailySalesByDate, upsertSharedDailySalesForDateDepartment } from '../services/googleSheetsDailySalesService';
 import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesService';
 import { fetchSharedBudgetForDate } from '../services/googleSheetsBudgetService';
 import { deriveOverallWeather, deriveTempBandFromHigh, fetchDailyWeatherSnapshot } from '../services/weatherService';
@@ -792,10 +792,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             salesRecordCount: salesRecords.length,
                             salesRecords: salesRecords.slice(0, 10)
                         });
-                        upsertDailySales(currentDate, dept, salesRecords);
 
                         void (async () => {
                             try {
+                                await upsertSharedDailySalesForDateDepartment({
+                                    date: currentDate,
+                                    department: dept,
+                                    records: salesRecords
+                                });
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
                                 const sharedRows = await fetchSharedCheckRows();
@@ -907,18 +911,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
 
         // AI分析用メタデータをdaily_salesに反映
-        const allDailySales = loadDailySales();
-        const updatedSales = allDailySales.map(r => {
-            if (r.date !== currentDate) return r;
-            return {
-                ...r,
+        try {
+            await enrichSharedDailySalesByDate({
+                date: currentDate,
                 weather: deriveOverallWeather(aiWeather12, aiWeather17) || aiWeather || undefined,
                 temp_band: deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null) || aiTempBand || undefined,
                 customer_count: form.customersFinal ?? undefined,
                 avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
-            };
-        });
-        saveDailySales(updatedSales);
+            });
+        } catch (dailySalesError) {
+            console.error('[InspectionForm] failed to enrich shared daily sales metadata', dailySalesError);
+        }
 
         let completionMessage = '報告を保存しました';
         try {
@@ -1001,25 +1004,44 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     // 既存daily_salesから値をロード
     useEffect(() => {
-        const existing = loadDailySales().filter(r => r.date === currentDate);
-        if (existing.length > 0) {
-            const first = existing[0];
-            setAiWeather(first.weather || '');
-            setAiTempBand(first.temp_band || '');
-            setAiWeather12(first.weather || '');
-            setAiWeather17(first.weather || '');
-            setAiHighTemp('');
-            setAiLowTemp('');
-            const avgPrice = first.avg_price !== undefined ? Math.round(first.avg_price / 1000) : null;
-            if ((form.customersFinal === null || form.customersFinal === undefined) && first.customer_count !== undefined) {
-                setForm((prev) => ({ ...prev, customersFinal: first.customer_count ?? null }));
+        let cancelled = false;
+
+        const loadSharedDailySalesMeta = async () => {
+            try {
+                const existing = await fetchSharedDailySalesByDate(currentDate);
+                if (cancelled) return;
+
+                console.log('[InspectionForm] shared daily_sales for prefill', {
+                    currentDate,
+                    rowCount: existing.length,
+                    rows: existing
+                });
+
+                if (existing.length > 0) {
+                    const first = existing[0];
+                    setAiWeather(first.weather || '');
+                    setAiTempBand(first.temp_band || '');
+                    setAiWeather12(first.weather || '');
+                    setAiWeather17(first.weather || '');
+                    setAiHighTemp('');
+                    setAiLowTemp('');
+                    const avgPrice = first.avg_price !== undefined ? Math.round(first.avg_price / 1000) : null;
+                    if ((form.customersFinal === null || form.customersFinal === undefined) && first.customer_count !== undefined) {
+                        setForm((prev) => ({ ...prev, customersFinal: first.customer_count ?? null }));
+                    }
+                    setStoreSalesInput(
+                        first.customer_count !== undefined && avgPrice !== null
+                            ? String(Math.round(((first.customer_count || 0) * avgPrice * 1000) / 1000))
+                            : formatThousandInput(form.storeSalesFinal)
+                    );
+                    setAiAvgPrice(first.avg_price !== undefined ? String(Math.round(first.avg_price / 1000)) : '');
+                    return;
+                }
+            } catch (error) {
+                console.error('[InspectionForm] failed to load shared daily sales for prefill', error);
             }
-            setStoreSalesInput(
-                first.customer_count !== undefined && avgPrice !== null
-                    ? String(Math.round(((first.customer_count || 0) * avgPrice * 1000) / 1000))
-                    : formatThousandInput(form.storeSalesFinal)
-            );
-        } else {
+
+            if (cancelled) return;
             setAiWeather('');
             setAiTempBand('');
             setAiWeather12('');
@@ -1028,7 +1050,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setAiLowTemp('');
             setStoreSalesInput(formatThousandInput(form.storeSalesFinal));
             setAiAvgPrice('');
-        }
+        };
+
+        void loadSharedDailySalesMeta();
+
+        return () => {
+            cancelled = true;
+        };
     }, [currentDate]);
 
     useEffect(() => {

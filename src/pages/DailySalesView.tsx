@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { DailySalesRecord, InspectionEntry, DailyBudget, SharedSalesEntry } from '../types';
-import { loadDailySales } from '../storage/dailySales';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { appendSharedSales, fetchSharedSales, getSharedSalesSheetName } from '../services/googleSheetsSalesService';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
+import { fetchSharedDailySales } from '../services/googleSheetsDailySalesService';
 import { deriveTempBandFromHigh } from '../services/weatherService';
 
 const normalizeSalesDate = (value: string) => {
@@ -22,7 +22,7 @@ interface Props {
 }
 
 export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onOpenPopGem }) => {
-    const [allRecords, setAllRecords] = useState<DailySalesRecord[]>(() => loadDailySales());
+    const [allRecords, setAllRecords] = useState<DailySalesRecord[]>([]);
     const [sharedSales, setSharedSales] = useState<SharedSalesEntry[]>([]);
     const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
     const [salesAmountInput, setSalesAmountInput] = useState('');
@@ -32,14 +32,26 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     const [sharedSalesError, setSharedSalesError] = useState('');
     const [isSharedSalesLoading, setIsSharedSalesLoading] = useState(false);
     const [isSharedSalesSaving, setIsSharedSalesSaving] = useState(false);
+    const [isDailySalesLoading, setIsDailySalesLoading] = useState(false);
+    const [dailySalesError, setDailySalesError] = useState('');
 
-    const reloadDailySales = () => {
-        const records = loadDailySales();
-        console.log('[DailySalesView] daily_sales before render', {
-            rowCount: records.length,
-            sampleRows: records.slice(0, 10)
-        });
-        setAllRecords(records);
+    const reloadDailySales = async () => {
+        setIsDailySalesLoading(true);
+        setDailySalesError('');
+        try {
+            const records = await fetchSharedDailySales();
+            console.log('[DailySalesView] daily_sales before render', {
+                rowCount: records.length,
+                sampleRows: records.slice(0, 10)
+            });
+            setAllRecords(records);
+        } catch (error) {
+            console.error('[DailySalesView] failed to load shared daily sales', error);
+            setDailySalesError(error instanceof Error ? error.message : 'daily_sales を取得できませんでした');
+            setAllRecords([]);
+        } finally {
+            setIsDailySalesLoading(false);
+        }
     };
 
     // 点検データとCSVデータの両方から日付を収集
@@ -72,7 +84,7 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
         if (typeof window !== 'undefined') {
             setSalesAuthorInput(window.localStorage.getItem('seika_sales_author') || '');
         }
-        reloadDailySales();
+        void reloadDailySales();
         void loadSharedSales();
         void fetchSharedCheckRows().then(setSharedCheckRows).catch((error) => {
             console.error('[DailySalesView] failed to load shared check rows', error);
@@ -80,20 +92,13 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
     }, []);
 
     useEffect(() => {
-        const handleStorage = (event: StorageEvent) => {
-            if (event.key === 'seika_daily_sales_v1') {
-                reloadDailySales();
-            }
-        };
         const handleVisibility = () => {
             if (document.visibilityState === 'visible') {
-                reloadDailySales();
+                void reloadDailySales();
             }
         };
-        window.addEventListener('storage', handleStorage);
         document.addEventListener('visibilitychange', handleVisibility);
         return () => {
-            window.removeEventListener('storage', handleStorage);
             document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, []);
@@ -103,6 +108,13 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
             setSelectedDate(dates[0]);
         }
     }, [dates, selectedDate]);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            void reloadDailySales();
+        }, 30000);
+        return () => window.clearInterval(timer);
+    }, []);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -482,6 +494,8 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
 
                 {sharedSalesStatus && <div style={{ color: '#0369a1', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{sharedSalesStatus}</div>}
                 {sharedSalesError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{sharedSalesError}</div>}
+                {isDailySalesLoading && <div style={{ color: '#475569', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>daily_sales を Google Sheets から読み込み中です</div>}
+                {dailySalesError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{dailySalesError}</div>}
 
                 <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
                     {sharedSales.length === 0 ? (

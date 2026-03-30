@@ -152,6 +152,34 @@ const resourceConfigs = {
           updatedAt: row[6] || ''
         }))
         .sort((a, b) => b.date.localeCompare(a.date))
+  },
+  dailySales: {
+    sheetName: 'daily_sales',
+    range: 'A2:K',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row) => ({
+          date: row[0] || '',
+          code: row[1] || '',
+          name: row[2] || '',
+          salesQty: Number(row[3] || '0') || 0,
+          salesYoY: row[4] ? Number(row[4]) || 0 : undefined,
+          salesAmt: Number(row[5] || '0') || 0,
+          department: row[6] === '果物' ? '果物' : '野菜',
+          weather: row[7] || undefined,
+          temp_band: row[8] || undefined,
+          customer_count: row[9] ? Number(row[9]) || 0 : undefined,
+          avg_price: row[10] ? Number(row[10]) || 0 : undefined
+        }))
+        .sort((a, b) => {
+          const dateCompare = b.date.localeCompare(a.date);
+          if (dateCompare !== 0) return dateCompare;
+          const deptCompare = a.department.localeCompare(b.department);
+          if (deptCompare !== 0) return deptCompare;
+          const amtCompare = b.salesAmt - a.salesAmt;
+          if (amtCompare !== 0) return amtCompare;
+          return b.salesQty - a.salesQty;
+        })
   }
 } as const;
 

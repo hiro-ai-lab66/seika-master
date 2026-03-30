@@ -76,6 +76,11 @@ const SHEETS = {
     name: 'shared_daily_notes',
     header: ['id', '日付', '本日の予定', '定時点検で気づいたこと', 'その他の連絡事項', '作成者', '更新日時'],
     width: 7
+  },
+  dailySales: {
+    name: 'daily_sales',
+    header: ['日付', 'コード', '名称', '売上数', '売上数昨比', '売上高', '部門', '天候', '気温帯', '客数', '客単価'],
+    width: 11
   }
 } as const;
 
@@ -123,6 +128,15 @@ const normalizeBudgetDate = (raw: string): string => {
   const slashMatch = trimmed.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
   if (slashMatch) {
     return `${slashMatch[1]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[3].padStart(2, '0')}`;
+  }
+  return trimmed;
+};
+
+const normalizeDailySalesDate = (raw: string): string => {
+  const trimmed = (raw || '').trim().replace(/\//g, '-');
+  const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
   }
   return trimmed;
 };
@@ -306,6 +320,81 @@ async function handleNoticeDelete(payload: any) {
   const existing = await readParsedRows(sheet.name, sheet.width);
   const remaining = existing.filter((row) => Number(row[0] || '0') !== noticeId);
   await replaceRows(sheet.name, sheet.width, remaining);
+  return { ok: true };
+}
+
+async function handleDailySalesUpsert(payload: any) {
+  const { date, department, records } = payload as {
+    date: string;
+    department: '野菜' | '果物';
+    records: Array<{
+      date: string;
+      code: string;
+      name: string;
+      salesQty: number;
+      salesYoY?: number;
+      salesAmt: number;
+      department: '野菜' | '果物';
+      weather?: string;
+      temp_band?: string;
+      customer_count?: number;
+      avg_price?: number;
+    }>;
+  };
+  const sheet = SHEETS.dailySales;
+  await ensureHeader(sheet.name, sheet.header);
+  const existing = await readParsedRows(sheet.name, sheet.width);
+  const normalizedDate = normalizeDailySalesDate(date);
+  const preserved = existing.filter((row) => !(normalizeDailySalesDate(row[0] || '') === normalizedDate && (row[6] || '') === department));
+  const nextRows = [
+    ...preserved,
+    ...records.map((record) => [
+      normalizeDailySalesDate(record.date || normalizedDate),
+      record.code || '',
+      record.name || '',
+      String(record.salesQty ?? 0),
+      record.salesYoY === undefined || record.salesYoY === null ? '' : String(record.salesYoY),
+      String(record.salesAmt ?? 0),
+      record.department || department,
+      record.weather || '',
+      record.temp_band || '',
+      record.customer_count === undefined || record.customer_count === null ? '' : String(record.customer_count),
+      record.avg_price === undefined || record.avg_price === null ? '' : String(record.avg_price)
+    ])
+  ];
+  await replaceRows(sheet.name, sheet.width, nextRows);
+  return { ok: true, rowCount: records.length };
+}
+
+async function handleDailySalesEnrich(payload: any) {
+  const { date, weather, temp_band, customer_count, avg_price } = payload as {
+    date: string;
+    weather?: string;
+    temp_band?: string;
+    customer_count?: number | null;
+    avg_price?: number | null;
+  };
+  const sheet = SHEETS.dailySales;
+  await ensureHeader(sheet.name, sheet.header);
+  const existing = await readParsedRows(sheet.name, sheet.width);
+  const normalizedDate = normalizeDailySalesDate(date);
+  const nextRows = existing.map((row) => {
+    if (normalizeDailySalesDate(row[0] || '') !== normalizedDate) return row;
+    return [
+      row[0] || '',
+      row[1] || '',
+      row[2] || '',
+      row[3] || '',
+      row[4] || '',
+      row[5] || '',
+      row[6] || '',
+      weather ?? (row[7] || ''),
+      temp_band ?? (row[8] || ''),
+      customer_count === undefined || customer_count === null ? (row[9] || '') : String(customer_count),
+      avg_price === undefined || avg_price === null ? (row[10] || '') : String(avg_price)
+    ];
+  });
+  await replaceRows(sheet.name, sheet.width, nextRows);
   return { ok: true };
 }
 
@@ -494,7 +583,9 @@ const handlers: Record<string, (payload: any) => Promise<any>> = {
   'sellfloor:update': (payload) => handleSellfloorUpsert(payload, 'update'),
   'sellfloor:delete': handleSellfloorDelete,
   'budget:upsert': handleBudgetUpsert,
-  'dailyNotes:upsert': handleDailyNotesUpsert
+  'dailyNotes:upsert': handleDailyNotesUpsert,
+  'dailySales:upsertForDateDepartment': handleDailySalesUpsert,
+  'dailySales:enrichByDate': handleDailySalesEnrich
 };
 
 export default async function handler(req: any, res: any) {

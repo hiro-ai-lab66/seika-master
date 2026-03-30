@@ -1,5 +1,5 @@
-export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes';
-export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes';
+export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales';
+export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales';
 
 type SharedReadResponse<T> = {
   sheetName: string;
