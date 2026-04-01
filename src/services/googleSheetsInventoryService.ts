@@ -14,7 +14,7 @@ const SHEETS_SCOPE = [
 const TOKEN_STORAGE_KEY = 'seika_sheets_access_token';
 const TOKEN_EXPIRY_STORAGE_KEY = 'seika_sheets_access_token_expiry';
 const MIGRATION_KEY = 'seika_inventory_sheet_migrated_v1';
-const HEADER_ROW = ['日付', '店舗', '品目', '規格', '数量', '単価'];
+const HEADER_ROW = ['日付', '店舗', '品目', '規格', '数量', '単価', '売価'];
 
 type TokenResponse = {
     access_token?: string;
@@ -31,6 +31,7 @@ export type SharedInventoryRow = {
     spec: string;
     quantity: number;
     unitPrice: number;
+    sellingPrice: number;
 };
 
 let tokenClient: any = null;
@@ -333,7 +334,7 @@ export const readSharedSpreadsheetMetadata = async () => {
 
 const ensureHeaderRow = async () => {
     const sheetName = await resolveInventorySheetName();
-    const headerRange = buildSheetRange(sheetName, 'A1:F1');
+    const headerRange = buildSheetRange(sheetName, 'A1:G1');
     const result = await fetchSheetValues(headerRange);
     const header = result.values?.[0] || [];
     const hasValidHeader = HEADER_ROW.every((label, index) => header[index] === label);
@@ -345,7 +346,7 @@ const ensureHeaderRow = async () => {
 const listRows = async (): Promise<SharedInventoryRow[]> => {
     await ensureHeaderRow();
     const sheetName = await resolveInventorySheetName();
-    const result = await fetchSheetValues(buildSheetRange(sheetName, 'A2:F'));
+    const result = await fetchSheetValues(buildSheetRange(sheetName, 'A2:G'));
     const rows = result.values || [];
 
     return rows
@@ -357,7 +358,8 @@ const listRows = async (): Promise<SharedInventoryRow[]> => {
             item: row[2] || '',
             spec: row[3] || '月末',
             quantity: toNumber(row[4]),
-            unitPrice: toNumber(row[5])
+            unitPrice: toNumber(row[5]),
+            sellingPrice: toNumber(row[6])
         }));
 };
 
@@ -368,7 +370,8 @@ const buildInventoryRowValues = (item: InventoryItem): string[] => {
         item: item.name,
         spec: buildSpec(item),
         quantity: item.qty,
-        unitPrice: item.cost || 0
+        unitPrice: item.cost || 0,
+        sellingPrice: item.price || 0
     };
 
     return [
@@ -377,7 +380,8 @@ const buildInventoryRowValues = (item: InventoryItem): string[] => {
         row.item,
         row.spec,
         String(row.quantity),
-        String(row.unitPrice)
+        String(row.unitPrice),
+        String(row.sellingPrice)
     ];
 };
 
@@ -487,6 +491,8 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
     const existingRows = await listRows();
     const existingMap = new Map(existingRows.map(row => [buildRowKey(row), row.rowNumber]));
     const sheetName = await resolveInventorySheetName();
+    // ヘッダー行を最新化（売価列追加対応）
+    await ensureHeaderRow();
 
     for (const item of items) {
         const row: SharedInventoryRow = {
@@ -495,7 +501,8 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
             item: item.name,
             spec: buildSpec(item),
             quantity: item.qty,
-            unitPrice: item.cost || 0
+            unitPrice: item.cost || 0,
+            sellingPrice: item.price || 0
         };
         const values = [[
             row.date,
@@ -503,15 +510,16 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
             row.item,
             row.spec,
             String(row.quantity),
-            String(row.unitPrice)
+            String(row.unitPrice),
+            String(row.sellingPrice)
         ]];
         const rowKey = buildRowKey(row);
         const existingRowNumber = existingMap.get(rowKey);
 
         if (existingRowNumber) {
-            await updateSheetValues(buildSheetRange(sheetName, `A${existingRowNumber}:F${existingRowNumber}`), values);
+            await updateSheetValues(buildSheetRange(sheetName, `A${existingRowNumber}:G${existingRowNumber}`), values);
         } else {
-            await appendSheetValues(buildSheetRange(sheetName, 'A:F'), values);
+            await appendSheetValues(buildSheetRange(sheetName, 'A:G'), values);
         }
     }
 };
@@ -524,9 +532,9 @@ export const replaceSharedInventoryItems = async (items: InventoryItem[]) => {
     console.log('[InventorySheets] replace rows', { existingRows: existingRows.length, items: items.length, rowCount });
     const values = Array.from({ length: rowCount }, (_, index) => {
         const item = items[index];
-        return item ? buildInventoryRowValues(item) : ['', '', '', '', '', ''];
+        return item ? buildInventoryRowValues(item) : ['', '', '', '', '', '', ''];
     });
-    await updateSheetValues(buildSheetRange(sheetName, `A2:F${rowCount + 1}`), values);
+    await updateSheetValues(buildSheetRange(sheetName, `A2:G${rowCount + 1}`), values);
 };
 
 export const shouldMigrateLocalInventory = (): boolean => {
@@ -570,6 +578,7 @@ export const convertSharedRowsToInventoryItems = (
             category,
             department: type === '果物' || category?.includes('果物') ? '果物' : '野菜',
             cost: row.unitPrice,
+            price: row.sellingPrice,
             area,
             updatedAt: new Date().toISOString()
         };
