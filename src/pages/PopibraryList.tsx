@@ -79,7 +79,7 @@ export const PopLibraryList: React.FC<PopLibraryListProps> = ({
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '920px', margin: '0 auto' }}>
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h2 style={{ margin: 0 }}>Pop Library</h2>
+          <h2 style={{ margin: 0 }}>Pop Library TEST-20260401</h2>
           <span className="date-badge-outline">{filteredPops.length}件</span>
         </div>
         <button
