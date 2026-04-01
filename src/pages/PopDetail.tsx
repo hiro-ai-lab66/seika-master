@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Tag, MessageCircle, Calendar, ExternalLink, Image as ImageIcon, Edit, Trash2 } from 'lucide-react';
 import type { PopItem } from '../types';
-import { buildGoogleDriveImageDisplayUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 
 interface PopDetailProps {
   pop: PopItem;
@@ -11,10 +11,13 @@ interface PopDetailProps {
 }
 
 export const PopDetail: React.FC<PopDetailProps> = ({ pop, onEdit, onDelete, onBack }) => {
-  const imageSource = buildGoogleDriveImageDisplayUrl(pop.thumbUrl || '', 1600);
+  const imageCandidates = buildGoogleDriveImageCandidates(pop.thumbUrl || '', 1600);
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
+  const imageSource = imageCandidates[imageCandidateIndex] || buildGoogleDriveImageDisplayUrl(pop.thumbUrl || '', 1600);
   const hasRemoteImage = isRemoteImageUrl(imageSource);
   const originalImageUrl = normalizeDriveImageUrl(pop.thumbUrl || '');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [imageAccessError, setImageAccessError] = useState(false);
 
   const handleDelete = async () => {
     if (!window.confirm('本当に削除しますか？')) {
@@ -51,11 +54,26 @@ export const PopDetail: React.FC<PopDetailProps> = ({ pop, onEdit, onDelete, onB
               src={imageSource}
               alt={pop.title}
               style={{ width: '100%', maxHeight: '400px', objectFit: 'contain' }}
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                const nextCandidate = imageCandidates[imageCandidateIndex + 1];
+                console.error('[PopDetail] image load failed', {
+                  originalUrl: pop.thumbUrl,
+                  attemptedSrc: imageSource,
+                  currentSrc: event.currentTarget.currentSrc,
+                  nextCandidate
+                });
+                if (nextCandidate && nextCandidate !== imageSource) {
+                  setImageCandidateIndex((prev) => prev + 1);
+                  return;
+                }
+                setImageAccessError(true);
+              }}
             />
           ) : (
-            <div style={{ minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: imageAccessError ? '#b91c1c' : '#94a3b8', flexDirection: 'column', gap: '8px' }}>
               <ImageIcon size={40} />
-              <span>画像URLは未登録です</span>
+              <span>{imageAccessError ? '画像を表示できません。Drive の公開設定を確認してください' : '画像URLは未登録です'}</span>
             </div>
           )}
         </div>

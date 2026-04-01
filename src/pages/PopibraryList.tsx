@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, LogIn, Plus, RefreshCw, Search, Tag } from 'lucide-react';
 import type { PopItem, SellfloorRecord } from '../types';
-import { buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageOpenUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageFallbackUrl, buildGoogleDriveImageOpenUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 import { ImageZoomModal } from '../components/ImageZoomModal';
 
 interface PopibraryListProps {
@@ -46,6 +46,19 @@ export const PopibraryList: React.FC<PopibraryListProps> = ({
     const matchesCategory = categoryFilter === 'すべて' || pop.categoryLarge === categoryFilter;
     return matchesSearch && matchesCategory;
   });
+
+  useEffect(() => {
+    console.log('[PopibraryList] saved pops received', {
+      rowCount: savedPops.length,
+      samplePops: savedPops.slice(0, 10).map((pop) => ({
+        id: pop.id,
+        title: pop.title,
+        thumbUrl: pop.thumbUrl,
+        author: pop.author,
+        updatedAt: pop.updatedAt
+      }))
+    });
+  }, [savedPops]);
 
   const linkedUsage = sellfloorRecords.reduce<Record<string, number>>((acc, record) => {
     if (record.popId) {
@@ -240,8 +253,9 @@ const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void; onZ
 
 const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => void }> = ({ pop, onZoomImage }) => {
   const [thumbnailSrc, setThumbnailSrc] = useState('');
-  const [normalizedSrc, setNormalizedSrc] = useState('');
-  const [didFallbackToOriginal, setDidFallbackToOriginal] = useState(false);
+  const [fallbackCandidates, setFallbackCandidates] = useState<string[]>([]);
+  const [currentCandidateIndex, setCurrentCandidateIndex] = useState(0);
+  const [imageAccessError, setImageAccessError] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -251,22 +265,28 @@ const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => 
       const normalizedUrl = normalizeDriveImageUrl(originalUrl);
       const fileId = extractGoogleDriveFileId(originalUrl);
       const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
+      const fallbackUrl = buildGoogleDriveImageFallbackUrl(originalUrl);
+      const candidates = buildGoogleDriveImageCandidates(originalUrl, 800);
       console.log('[PopibraryList] thumbnail src', {
         originalUrl,
         normalizedUrl,
         fileId,
         displayUrl,
+        fallbackUrl,
+        candidates,
       });
 
       if (!displayUrl) {
         setThumbnailSrc('');
-        setNormalizedSrc('');
-        setDidFallbackToOriginal(false);
+        setFallbackCandidates([]);
+        setCurrentCandidateIndex(0);
+        setImageAccessError(false);
         return;
       }
 
-      setNormalizedSrc(normalizedUrl);
-      setDidFallbackToOriginal(false);
+      setFallbackCandidates(candidates);
+      setCurrentCandidateIndex(0);
+      setImageAccessError(false);
 
       if (isRemoteImageUrl(displayUrl)) {
         setThumbnailSrc(displayUrl);
@@ -328,28 +348,31 @@ const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => 
           onError={(event) => {
             console.error('[PopibraryList] thumbnail load failed', {
               originalUrl: pop.thumbUrl,
-              normalizedUrl: normalizedSrc,
+              candidates: fallbackCandidates,
               attemptedSrc: thumbnailSrc,
               currentSrc: event.currentTarget.currentSrc,
-              didFallbackToOriginal,
+              currentCandidateIndex,
             });
 
-            if (!didFallbackToOriginal && normalizedSrc && normalizedSrc !== thumbnailSrc) {
-              console.log('[PopibraryList] fallback to normalized image url', {
+            const nextCandidate = fallbackCandidates[currentCandidateIndex + 1];
+            if (nextCandidate && nextCandidate !== thumbnailSrc) {
+              console.log('[PopibraryList] fallback to next candidate', {
                 originalUrl: pop.thumbUrl,
-              normalizedUrl: normalizedSrc,
-            });
-              setDidFallbackToOriginal(true);
-              setThumbnailSrc(normalizedSrc);
+                nextCandidate,
+              });
+              setCurrentCandidateIndex((prev) => prev + 1);
+              setThumbnailSrc(nextCandidate);
               return;
             }
+
+            setImageAccessError(true);
           }}
           style={{ display: 'block', width: '88px', minWidth: '88px', maxWidth: '88px', height: '88px', minHeight: '88px', maxHeight: '88px', objectFit: 'cover', flexShrink: 0 }}
         />
       ) : (
-        <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', height: '100%' }}>
+        <div style={{ color: imageAccessError ? '#b91c1c' : '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', height: '100%', padding: '6px', textAlign: 'center' }}>
           <ImageIcon size={24} />
-          <span style={{ fontSize: '0.72rem' }}>画像なし</span>
+          <span style={{ fontSize: '0.72rem' }}>{imageAccessError ? '公開設定を確認' : '画像なし'}</span>
         </div>
       )}
     </div>

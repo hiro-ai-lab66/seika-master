@@ -570,6 +570,14 @@ function App() {
 
     try {
       const sharedPops = await fetchSharedPopibraryItems();
+      console.log('[App] shared popibrary load result', {
+        rowCount: sharedPops.length,
+        sampleItems: sharedPops.slice(0, 10).map((item) => ({
+          id: item.id,
+          title: item.title,
+          thumbUrl: item.thumbUrl
+        }))
+      });
       setState((prev) => ({
         ...prev,
         popData: sharedPops

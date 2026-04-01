@@ -5,7 +5,18 @@ const POPIBRARY_SHEET_NAME = (import.meta as any).env?.VITE_POPIBRARY_SHEET_TAB?
 let resolvedPopibrarySheetNameCache: string | null = POPIBRARY_SHEET_NAME;
 
 export const fetchSharedPopibraryItems = async (): Promise<PopItem[]> => {
-    return fetchSharedReadResource<PopItem>('popibrary');
+    const items = await fetchSharedReadResource<PopItem>('popibrary');
+    console.log('[PopibraryService] fetched pop items', {
+        rowCount: items.length,
+        sampleItems: items.slice(0, 10).map((item) => ({
+            id: item.id,
+            title: item.title,
+            thumbUrl: item.thumbUrl,
+            author: item.author,
+            updatedAt: item.updatedAt
+        }))
+    });
+    return items;
 };
 
 export const appendSharedPopibraryItem = async (pop: PopItem) => {
