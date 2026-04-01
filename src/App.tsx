@@ -1157,7 +1157,7 @@ function App() {
           { id: 'sales', icon: PenLine, label: '点検入力' },
           { id: 'history', icon: FileText, label: '履歴' },
           { id: 'sellfloor', icon: Camera, label: '売場記録' },
-          { id: 'popibrary', icon: Library, label: 'Pop Library v2' },
+          { id: 'popibrary', icon: Library, label: 'Pop Library' },
           { id: 'dailyNotes', icon: NotebookText, label: '連絡事項' },
           { id: 'budget', icon: Calculator, label: '予算設定' },
           { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
