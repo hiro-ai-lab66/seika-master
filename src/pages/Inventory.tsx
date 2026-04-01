@@ -62,6 +62,7 @@ type SharedInventoryPanelProps = {
     onLogin: () => void;
     onReload: () => void;
     onSave: () => void;
+    onExport?: () => void;
 };
 
 const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
@@ -76,8 +77,16 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
     showStatusCard = true,
     onLogin,
     onReload,
-    onSave
-}) => (
+    onSave,
+    onExport
+}) => {
+    console.log('render export button', {
+        hasOnExport: Boolean(onExport),
+        isConfigured,
+        isAuthenticated
+    });
+
+    return (
     <>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
             <button
@@ -124,6 +133,48 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
                 <Cloud size={16} />
                 Googleシートに保存
             </button>
+            {onExport && (
+                <button
+                    className="btn-action primary"
+                    style={{
+                        padding: '10px 16px',
+                        fontSize: '0.9rem',
+                        minWidth: '130px',
+                        width: 'auto',
+                        display: 'inline-flex',
+                        visibility: 'visible'
+                    }}
+                    onClick={onExport}
+                >
+                    <Printer size={16} />
+                    Excel出力
+                </button>
+            )}
+            {onExport && (
+                <button
+                    type="button"
+                    style={{
+                        padding: '10px 16px',
+                        fontSize: '0.9rem',
+                        minWidth: '150px',
+                        width: 'auto',
+                        display: 'inline-flex',
+                        visibility: 'visible',
+                        alignItems: 'center',
+                        gap: '8px',
+                        border: '2px solid #0f172a',
+                        background: '#f59e0b',
+                        color: '#111827',
+                        borderRadius: '10px',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                    }}
+                    onClick={onExport}
+                >
+                    <Printer size={16} />
+                    Excel出力（強制）
+                </button>
+            )}
         </div>
 
         {showStatusCard && (
@@ -155,7 +206,8 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
             </div>
         )}
     </>
-);
+    );
+};
 
 type InventoryAreaSectionProps = {
     areaLabel: string;
@@ -440,6 +492,39 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const currentDepartmentInventory = useMemo(() => {
         return todaysInventory.filter(item => (item.department || '野菜') === currentDepartment);
     }, [todaysInventory, currentDepartment]);
+
+    useEffect(() => {
+        const isMobile = typeof window !== 'undefined' ? window.innerWidth <= 768 : false;
+        console.log('[Inventory] export button visibility state', {
+            isMobile,
+            currentDate,
+            currentType,
+            currentDepartment,
+            currentValueType,
+            todaysInventoryCount: todaysInventory.length,
+            currentDepartmentInventoryCount: currentDepartmentInventory.length,
+            exportButtonRendered: true
+        });
+    }, [currentDate, currentDepartment, currentDepartmentInventory.length, currentType, currentValueType, todaysInventory.length]);
+
+    const handleExcelExport = () => {
+        console.log('[Inventory] Excel export button clicked', {
+            isMobile: typeof window !== 'undefined' ? window.innerWidth <= 768 : false,
+            currentDate,
+            currentType,
+            currentDepartment,
+            currentValueType,
+            currentDepartmentInventoryCount: currentDepartmentInventory.length,
+            templatePaths: ['/templates/棚卸帳票類_原本.xlsx', '/templates/inventory_template.xlsx']
+        });
+        exportInventoryToExcel(inventoryItems, currentDate, {
+            type: currentType,
+            department: currentDepartment,
+            valueType: currentValueType,
+            storeName: '古沢店',
+            executionTime
+        });
+    };
 
     // 日付・区分の変更時に、該当する理論原価をlocalStorageから復元する
     useEffect(() => {
@@ -972,6 +1057,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                             onLogin={handleSheetsLogin}
                             onReload={handleReloadSharedInventory}
                             onSave={handleSaveSharedInventory}
+                            onExport={handleExcelExport}
                         />
                         {currentDepartmentInventory.length > 0 && currentType === 'mid' && (
                             <button
@@ -980,23 +1066,6 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                                 onClick={handleCopyToMonthend}
                             >
                                 <Copy size={16} /> 15日→月末へコピー（上書き）
-                            </button>
-                        )}
-                        {currentDepartmentInventory.length > 0 && (
-                            <button
-                                className="btn-action primary"
-                                style={{ padding: '8px 16px', fontSize: '0.9rem', width: 'auto' }}
-                                onClick={() => {
-                                    exportInventoryToExcel(inventoryItems, currentDate, {
-                                        type: currentType,
-                                        department: currentDepartment,
-                                        valueType: currentValueType,
-                                        storeName: '古沢店',
-                                        executionTime
-                                    });
-                                }}
-                            >
-                                <Printer size={16} /> Excel出力
                             </button>
                         )}
                     </div>
@@ -1014,6 +1083,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     onLogin={handleSheetsLogin}
                     onReload={handleReloadSharedInventory}
                     onSave={handleSaveSharedInventory}
+                    onExport={handleExcelExport}
                 />
 
                 <div style={{ marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold', color: '#475569' }}>
