@@ -9,156 +9,149 @@ type ExportOptions = {
     executionTime?: string;
 };
 
-const DETAIL_ROW_START = 12;
-const DETAIL_ROW_END = 160;
-const normalizeName = (value: string) => value.replace(/\s+/g, '').replace(/　/g, '').trim();
+const TEMPLATE_CANDIDATES = [
+    '/templates/棚卸帳票類_原本.xlsx',
+    '/templates/inventory_template.xlsx'
+];
+const TARGET_SHEETS: Record<InventoryDepartment, string> = {
+    野菜: '野菜',
+    果物: '果物'
+};
+const WRITE_BLOCKS = [
+    { start: 12, end: 36 },
+    { start: 49, end: 73 },
+    { start: 86, end: 110 }
+] as const;
+const MAX_EXPORT_ROWS = WRITE_BLOCKS.reduce((sum, block) => sum + (block.end - block.start + 1), 0);
+const COLUMN_MAP = {
+    name: 'A',
+    qty: 'B',
+    unit: 'C',
+    cost: 'D',
+    price: 'E',
+    costAmount: 'F',
+    salesAmount: 'G'
+} as const;
 
-const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) return dateStr;
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+const buildWritableRows = () => {
+    const rows: number[] = [];
+    WRITE_BLOCKS.forEach((block) => {
+        for (let row = block.start; row <= block.end; row += 1) {
+            rows.push(row);
+        }
+    });
+    return rows;
 };
 
-const getSummarySheetName = (department: InventoryDepartment, valueType: InventoryValueType) => {
-    if (department === '野菜') {
-        return valueType === 'cost' ? '野菜　原価' : '野菜　売価';
-    }
-    return valueType === 'cost' ? '果物　原価 ' : '果物　売価';
-};
+const WRITABLE_ROWS = buildWritableRows();
 
-const setCellValue = (sheet: XLSX.WorkSheet, address: string, value: string | number | null, formula?: string) => {
-    if (value === null || value === undefined || value === '') {
-        delete sheet[address];
-        return;
-    }
+const loadTemplateWorkbook = async () => {
+    let lastStatus = '';
 
-    const cell: XLSX.CellObject = {
-        t: typeof value === 'number' ? 'n' : 's',
-        v: value
-    };
-
-    if (formula) {
-        cell.f = formula;
-    }
-
-    sheet[address] = cell;
-};
-
-const updateHeaderValues = (
-    sheet: XLSX.WorkSheet,
-    department: InventoryDepartment,
-    formattedDate: string,
-    storeName: string,
-    executionTime: string
-) => {
-    setCellValue(sheet, 'C5', storeName);
-    setCellValue(sheet, 'C7', department);
-    setCellValue(sheet, 'F7', `         ${formattedDate}`);
-    setCellValue(sheet, 'C9', '後方');
-    setCellValue(sheet, 'E9', `実施時間　${executionTime}`);
-};
-
-const buildDetailRowMap = (sheet: XLSX.WorkSheet) => {
-    const rowMap = new Map<string, number>();
-    let subtotalRow = DETAIL_ROW_END + 1;
-
-    for (let row = DETAIL_ROW_START; row <= DETAIL_ROW_END; row += 1) {
-        const nameCell = sheet[`B${row}`];
-        if (!nameCell?.v) continue;
-
-        const rawName = String(nameCell.v).trim();
-        if (!rawName || rawName === '品名') continue;
-        if (rawName === '小計') {
-            subtotalRow = row;
+    for (const templatePath of TEMPLATE_CANDIDATES) {
+        console.log('[Inventory] try template path', templatePath);
+        const response = await fetch(templatePath);
+        if (!response.ok) {
+            lastStatus = `${templatePath} [${response.status}]`;
+            console.log('[Inventory] template fetch failed', templatePath, response.status);
             continue;
         }
 
-        rowMap.set(normalizeName(rawName), row);
-    }
-
-    return { rowMap, subtotalRow };
-};
-
-const clearTemplateValueCells = (sheet: XLSX.WorkSheet, rowMap: Map<string, number>, subtotalRow: number) => {
-    rowMap.forEach((row) => {
-        ['F', 'H', 'I', 'J', 'K'].forEach((column) => {
-            delete sheet[`${column}${row}`];
+        const workbook = XLSX.read(await response.arrayBuffer(), {
+            type: 'array',
+            cellFormula: true,
+            cellStyles: true,
+            cellNF: true
         });
-    });
 
-    for (let row = subtotalRow + 1; row <= subtotalRow + 20; row += 1) {
-        ['B', 'F', 'G', 'H', 'I', 'J', 'K'].forEach((column) => {
-            delete sheet[`${column}${row}`];
-        });
-    }
-};
-
-const writeMatchedRows = (sheet: XLSX.WorkSheet, items: InventoryItem[]) => {
-    const { rowMap, subtotalRow } = buildDetailRowMap(sheet);
-    const unmatchedItems: InventoryItem[] = [];
-
-    clearTemplateValueCells(sheet, rowMap, subtotalRow);
-
-    items.forEach((item) => {
-        const row = rowMap.get(normalizeName(item.name));
-        if (!row) {
-            unmatchedItems.push(item);
-            return;
+        if (!templatePath) {
+            throw new Error('templatePath が未設定です');
         }
 
-        const cost = item.cost || 0;
-        const price = item.price || 0;
-        const unit = item.unit === 'ケース' ? '箱' : (item.unit || '');
+        console.log('[Inventory] using template path', templatePath);
+        console.log('[excelExport] loaded template workbook', {
+            templatePath,
+            sheetNames: workbook.SheetNames
+        });
 
-        setCellValue(sheet, `F${row}`, item.qty || 0);
-        if (unit) {
-            setCellValue(sheet, `G${row}`, unit);
-        }
-        setCellValue(sheet, `H${row}`, cost);
-        setCellValue(sheet, `I${row}`, price);
-        setCellValue(sheet, `J${row}`, item.qty * cost, `F${row}*H${row}`);
-        setCellValue(sheet, `K${row}`, item.qty * price, `F${row}*I${row}`);
-    });
+        return { workbook, templatePath };
+    }
 
-    return { unmatchedItems, subtotalRow };
+    throw new Error(`テンプレートファイルの読み込みに失敗しました: ${lastStatus}`);
 };
 
-const updateSummarySheet = (
+const cloneCellWithoutValue = (cell?: XLSX.CellObject): XLSX.CellObject => {
+    if (!cell) {
+        return { t: 'z' };
+    }
+
+    const nextCell = { ...cell };
+    delete nextCell.v;
+    delete nextCell.w;
+    delete nextCell.r;
+    delete nextCell.h;
+    return nextCell;
+};
+
+const setCellValuePreservingTemplate = (
     sheet: XLSX.WorkSheet,
-    department: InventoryDepartment,
-    formattedDate: string,
-    items: InventoryItem[],
-    valueType: InventoryValueType,
-    storeName: string
+    address: string,
+    value: string | number | null | undefined
 ) => {
-    const totalAmount = items.reduce((sum, item) => {
-        const unitValue = valueType === 'price' ? (item.price || 0) : (item.cost || 0);
-        return sum + item.qty * unitValue;
-    }, 0);
+    const baseCell = cloneCellWithoutValue(sheet[address]);
 
-    setCellValue(sheet, 'C9', `　　棚卸実施日：西暦　${formattedDate}`);
-    setCellValue(sheet, 'D15', `店舗名：　${storeName}`);
-    setCellValue(sheet, 'D17', `部門名：　${department}`);
-    setCellValue(sheet, 'I15', 51);
-    setCellValue(sheet, 'I17', department === '野菜' ? 1 : 2);
-    setCellValue(sheet, 'H20', totalAmount);
-};
-
-const writeUnassignedItemsToDetailSheet = (sheet: XLSX.WorkSheet, items: InventoryItem[], startRow: number) => {
-    if (items.length === 0) {
+    if (value === null || value === undefined || value === '') {
+        delete baseCell.f;
+        baseCell.t = 'z';
+        sheet[address] = baseCell;
         return;
     }
 
-    setCellValue(sheet, `B${startRow}`, '未登録商品');
+    delete baseCell.f;
+    baseCell.t = typeof value === 'number' ? 'n' : 's';
+    baseCell.v = value;
+    sheet[address] = baseCell;
+};
+
+const clearWritableCells = (sheet: XLSX.WorkSheet) => {
+    WRITABLE_ROWS.forEach((row) => {
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.name}${row}`, null);
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.qty}${row}`, null);
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.cost}${row}`, null);
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.price}${row}`, null);
+    });
+};
+
+const getFilteredItems = (
+    items: InventoryItem[],
+    options: Pick<ExportOptions, 'department' | 'type'>
+) => {
+    return items
+        .filter((item) =>
+            (item.inventoryType || 'monthend') === options.type &&
+            (item.department || '野菜') === options.department &&
+            item.qty > 0
+        )
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+};
+
+const writeInventoryRows = (sheet: XLSX.WorkSheet, items: InventoryItem[]) => {
+    clearWritableCells(sheet);
+
     items.forEach((item, index) => {
-        const row = startRow + index + 1;
-        setCellValue(sheet, `B${row}`, item.name);
-        setCellValue(sheet, `F${row}`, item.qty);
-        if (item.unit) setCellValue(sheet, `G${row}`, item.unit);
-        setCellValue(sheet, `H${row}`, item.cost || 0);
-        setCellValue(sheet, `I${row}`, item.price || 0);
-        setCellValue(sheet, `J${row}`, item.qty * (item.cost || 0), `F${row}*H${row}`);
-        setCellValue(sheet, `K${row}`, item.qty * (item.price || 0), `F${row}*I${row}`);
+        const row = WRITABLE_ROWS[index];
+        console.log('[Inventory] write start', {
+            row,
+            col: 'A,B,D,E',
+            name: item.name,
+            qty: item.qty || 0,
+            cost: item.cost || 0,
+            price: item.price || 0
+        });
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.name}${row}`, item.name);
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.qty}${row}`, item.qty || 0);
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.cost}${row}`, item.cost || 0);
+        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.price}${row}`, item.price || 0);
     });
 };
 
@@ -168,41 +161,80 @@ export const exportInventoryToExcel = async (
     options: ExportOptions
 ) => {
     try {
-        const response = await fetch('/templates/inventory_template.xlsx');
-        if (!response.ok) {
-            throw new Error(`テンプレートファイルの読み込みに失敗しました [${response.status}]`);
+        const filteredItems = getFilteredItems(items, options);
+        if (filteredItems.length > MAX_EXPORT_ROWS) {
+            throw new Error(`出力件数が ${MAX_EXPORT_ROWS} 件を超えています（${filteredItems.length}件）。75件以内に絞ってください`);
         }
 
-        const workbook = XLSX.read(await response.arrayBuffer(), { type: 'array', cellFormula: true });
-        const detailSheet = workbook.Sheets[options.department];
-        const summarySheet = workbook.Sheets[getSummarySheetName(options.department, options.valueType)];
+        const { workbook, templatePath } = await loadTemplateWorkbook();
+        console.log('[Inventory] resolved template path on export', templatePath);
+        const targetSheetName = TARGET_SHEETS[options.department];
+        const targetSheet = workbook.Sheets[targetSheetName];
 
-        if (!detailSheet) {
-            throw new Error(`テンプレートに「${options.department}」シートがありません`);
-        }
-        if (!summarySheet) {
-            throw new Error('テンプレートに集計シートがありません');
+        if (!targetSheet) {
+            throw new Error(`テンプレートに「${targetSheetName}」シートがありません`);
         }
 
-        const formattedDate = formatDate(dateStr);
-        const storeName = options.storeName || '古沢店';
-        const executionTime = options.executionTime || '16：00　　　～　18：00';
-        const filteredItems = items
-            .filter(item =>
-                (item.inventoryType || 'monthend') === options.type &&
-                (item.department || '野菜') === options.department &&
-                item.qty > 0
-            )
-            .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+        console.log('[Inventory] target sheet', targetSheetName);
+        console.log('[Inventory] resolved inventory column map', {
+            sheetName: targetSheetName,
+            inputStartRow: WRITE_BLOCKS[0].start,
+            itemNameCol: COLUMN_MAP.name,
+            quantityCol: COLUMN_MAP.qty,
+            unitCol: COLUMN_MAP.unit,
+            costCol: COLUMN_MAP.cost,
+            priceCol: COLUMN_MAP.price,
+            costAmountCol: COLUMN_MAP.costAmount,
+            salesAmountCol: COLUMN_MAP.salesAmount,
+        });
+        console.log('[excelExport] writing inventory rows', {
+            templatePath,
+            targetSheetName,
+            dateStr,
+            blocks: WRITE_BLOCKS,
+            rowCount: filteredItems.length,
+            sampleRows: filteredItems.slice(0, 10).map((item, index) => ({
+                index,
+                targetRow: WRITABLE_ROWS[index],
+                name: item.name,
+                qty: item.qty,
+                cost: item.cost || 0,
+                price: item.price || 0
+            }))
+        });
 
-        updateHeaderValues(detailSheet, options.department, formattedDate, storeName, executionTime);
-        const { unmatchedItems, subtotalRow } = writeMatchedRows(detailSheet, filteredItems);
-        updateSummarySheet(summarySheet, options.department, formattedDate, filteredItems, options.valueType, storeName);
-        writeUnassignedItemsToDetailSheet(detailSheet, unmatchedItems, subtotalRow + 1);
+        writeInventoryRows(targetSheet, filteredItems);
+
+        console.log('[Inventory] workbook verification', {
+            templatePath,
+            targetSheetName,
+            firstWrittenCell: {
+                A12: targetSheet['A12']?.v,
+                B12: targetSheet['B12']?.v,
+                C12: targetSheet['C12']?.v,
+                D12: targetSheet['D12']?.v,
+                E12: targetSheet['E12']?.v,
+            },
+            preservedCells: {
+                G12: targetSheet['G12']?.v,
+                C12: targetSheet['C12']?.v,
+            },
+            formulas: {
+                F12: targetSheet['F12']?.f || null,
+                G12: targetSheet['G12']?.f || null,
+                F37: targetSheet['F37']?.f || null,
+                G37: targetSheet['G37']?.f || null,
+                F74: targetSheet['F74']?.f || null,
+                G74: targetSheet['G74']?.f || null,
+                F111: targetSheet['F111']?.f || null,
+                G111: targetSheet['G111']?.f || null
+            }
+        });
 
         XLSX.writeFile(
             workbook,
-            `inventory_${dateStr}_${options.department}_${options.type}_${options.valueType}.xlsx`
+            `inventory_${dateStr}_${options.department}_${options.type}_${options.valueType}.xlsx`,
+            { cellStyles: true }
         );
     } catch (error) {
         console.error('Excel出力エラー:', error);
