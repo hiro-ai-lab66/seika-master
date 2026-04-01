@@ -2,11 +2,11 @@ import type { PopItem } from '../types';
 import { fetchSharedReadResource, postSharedWriteAction } from './sharedDataApi';
 
 const POPIBRARY_SHEET_NAME = (import.meta as any).env?.VITE_POPIBRARY_SHEET_TAB?.trim() || 'shared_popibrary';
-let resolvedPopibrarySheetNameCache: string | null = POPIBRARY_SHEET_NAME;
+let resolvedPopLibrarySheetNameCache: string | null = POPIBRARY_SHEET_NAME;
 
-export const fetchSharedPopibraryItems = async (): Promise<PopItem[]> => {
+export const fetchSharedPopLibraryItems = async (): Promise<PopItem[]> => {
     const items = await fetchSharedReadResource<PopItem>('popibrary');
-    console.log('[PopibraryService] fetched pop items', {
+    console.log('[PopLibraryService] fetched pop items', {
         rowCount: items.length,
         sampleItems: items.slice(0, 10).map((item) => ({
             id: item.id,
@@ -19,16 +19,16 @@ export const fetchSharedPopibraryItems = async (): Promise<PopItem[]> => {
     return items;
 };
 
-export const appendSharedPopibraryItem = async (pop: PopItem) => {
+export const appendSharedPopLibraryItem = async (pop: PopItem) => {
     return postSharedWriteAction<PopItem>('popibrary', 'append', { pop });
 };
 
-export const updateSharedPopibraryItem = async (pop: PopItem) => {
+export const updateSharedPopLibraryItem = async (pop: PopItem) => {
     return postSharedWriteAction<PopItem>('popibrary', 'update', { pop });
 };
 
-export const deleteSharedPopibraryItem = async (popId: string) => {
+export const deleteSharedPopLibraryItem = async (popId: string) => {
     await postSharedWriteAction('popibrary', 'delete', { popId });
 };
 
-export const getSharedPopibrarySheetName = () => resolvedPopibrarySheetNameCache || POPIBRARY_SHEET_NAME;
+export const getSharedPopLibrarySheetName = () => resolvedPopLibrarySheetNameCache || POPIBRARY_SHEET_NAME;

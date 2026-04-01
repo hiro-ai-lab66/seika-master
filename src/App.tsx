@@ -14,7 +14,7 @@ import { DailySalesView } from './pages/DailySalesView';
 import { SellfloorRecordForm } from './pages/SellfloorRecordForm';
 import { SellfloorRecordList } from './pages/SellfloorRecordList';
 import { SellfloorRecordDetail } from './pages/SellfloorRecordDetail';
-import { PopibraryList } from './pages/PopibraryList';
+import { PopLibraryList } from './pages/PopibraryList';
 import { PopDetail } from './pages/PopDetail';
 import { PopLibraryForm } from './pages/PopLibraryForm';
 import { MarketInfoList } from './pages/MarketInfoList';
@@ -25,7 +25,7 @@ import { DailyNotesPage } from './pages/DailyNotesPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { isSheetsConfigured } from './services/googleSheetsInventoryService';
-import { appendSharedPopibraryItem, deleteSharedPopibraryItem, fetchSharedPopibraryItems, getSharedPopibrarySheetName, updateSharedPopibraryItem } from './services/googleSheetsPopibraryService';
+import { appendSharedPopLibraryItem, deleteSharedPopLibraryItem, fetchSharedPopLibraryItems, getSharedPopLibrarySheetName, updateSharedPopLibraryItem } from './services/googleSheetsPopibraryService';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow } from './services/googleSheetsCheckService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './services/storageService';
 
@@ -569,7 +569,7 @@ function App() {
     setPopibrarySharedError(null);
 
     try {
-      const sharedPops = await fetchSharedPopibraryItems();
+      const sharedPops = await fetchSharedPopLibraryItems();
       console.log('[App] shared popibrary load result', {
         rowCount: sharedPops.length,
         sampleItems: sharedPops.slice(0, 10).map((item) => ({
@@ -582,7 +582,7 @@ function App() {
         ...prev,
         popData: sharedPops
       }));
-      setPopibrarySharedStatus(`共有データを表示中（シート: ${getSharedPopibrarySheetName()}）`);
+      setPopibrarySharedStatus(`共有データを表示中（シート: ${getSharedPopLibrarySheetName()}）`);
       setNeedsPopibrarySheetsLogin(false);
     } catch (error) {
       console.error('[App] failed to load shared popibrary', error);
@@ -715,8 +715,8 @@ function App() {
 
     try {
       const savedPop = isEditing
-        ? await updateSharedPopibraryItem(normalizedPop)
-        : await appendSharedPopibraryItem(normalizedPop);
+        ? await updateSharedPopLibraryItem(normalizedPop)
+        : await appendSharedPopLibraryItem(normalizedPop);
       const latestPops = [savedPop, ...popibraryItemsRef.current.filter((item) => item.id !== savedPop.id)]
         .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
 
@@ -740,7 +740,7 @@ function App() {
 
   const deletePop = async (id: string) => {
     try {
-      await deleteSharedPopibraryItem(id);
+      await deleteSharedPopLibraryItem(id);
       setState(prev => ({
         ...prev,
         popData: (prev.popData || []).filter((item) => item.id !== id)
@@ -976,7 +976,7 @@ function App() {
                     onBack={() => setPopibraryView('list')}
                   />;
         }
-        return <PopibraryList 
+        return <PopLibraryList 
                  savedPops={state.popData || []} 
                  sellfloorRecords={state.sellfloorRecords || []}
                  onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
@@ -1157,7 +1157,7 @@ function App() {
           { id: 'sales', icon: PenLine, label: '点検入力' },
           { id: 'history', icon: FileText, label: '履歴' },
           { id: 'sellfloor', icon: Camera, label: '売場記録' },
-          { id: 'popibrary', icon: Library, label: 'POPibrary' },
+          { id: 'popibrary', icon: Library, label: 'POP Library' },
           { id: 'dailyNotes', icon: NotebookText, label: '連絡事項' },
           { id: 'budget', icon: Calculator, label: '予算設定' },
           { id: 'dailySales', icon: BarChart3, label: '売上履歴' },

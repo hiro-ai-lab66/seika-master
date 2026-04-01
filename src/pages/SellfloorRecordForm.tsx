@@ -392,7 +392,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
           {selectedPopId && (
               <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <ImageIcon size={24} color="#166534" />
-                  <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>POPibraryから連携されました</span>
+                  <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>POP Libraryから連携されました</span>
               </div>
           )}
         </div>
