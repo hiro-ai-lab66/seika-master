@@ -1014,11 +1014,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         });
         console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
-            const normalizedCode = normalizeJanCode(rawCode).code || '-';
             const renderedCode = formatBestItemCode(rawCode);
             return {
                 rawCode,
-                normalizedCode,
                 renderedCode,
                 className: 'best-table > .col-code/.col-name/.col-num',
                 columnSettings: BEST_TABLE_COLUMNS
@@ -1026,11 +1024,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }));
         console.log('[fruit best] first3 rows', fruitItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
-            const normalizedCode = normalizeJanCode(rawCode).code || '-';
             const renderedCode = formatBestItemCode(rawCode);
             return {
                 rawCode,
-                normalizedCode,
                 renderedCode,
                 className: 'best-table > .col-code/.col-name/.col-num',
                 columnSettings: BEST_TABLE_COLUMNS
@@ -1061,13 +1057,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                             const renderedCode = formatBestItemCode(item.code);
-                            const normalizedCode = renderedCode;
                             if (title.includes('野菜') && idx < 3) {
-                                console.log('[veg best] raw/normalized/rendered', item.code || '', normalizedCode, renderedCode);
+                                console.log('[veg best] raw/rendered', item.code || '', renderedCode);
                             }
                             return (
                                 <tr key={`${title}-${renderedCode}-${idx}`} className={rowClass}>
-                                    <td className="col-code" title={renderedCode}>{renderedCode}</td>
+                                    <td className="col-code">{renderedCode}</td>
                                     <td className="col-name" title={item.name}>{item.name}</td>
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
                                     <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
