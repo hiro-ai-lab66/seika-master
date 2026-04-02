@@ -83,6 +83,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const day = String(baseDate.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     };
+    const BEST_TABLE_COLUMNS = [
+        { key: 'code', className: 'col-code', width: '118px' },
+        { key: 'name', className: 'col-name', width: '196px' },
+        { key: 'qty', className: 'col-num', width: '92px' },
+        { key: 'yoy', className: 'col-num', width: '102px' },
+        { key: 'amount', className: 'col-num', width: '108px' },
+    ] as const;
+    const formatBestItemCode = (rawCode?: string) => {
+        if (!rawCode) return '-';
+        const normalized = normalizeJanCode(rawCode);
+        return normalized.code || rawCode.trim() || '-';
+    };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
@@ -609,6 +621,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             if (digits.length === 13) {
                 return { code: digits, warning: 'JANコードが指数表記でした。元CSVでは文字列形式を推奨します。', scientific: true };
             }
+            if (digits.length > 0 && digits.length <= 12) {
+                return { code: calcJAN13(digits), warning: 'JANコードが指数表記でした。元CSVでは文字列形式を推奨します。', scientific: true };
+            }
             return {
                 code: undefined,
                 warning: 'JANコードが指数表記のため正しく読み取れませんでした。CSV作成時にJANコード列を文字列形式にしてください。',
@@ -624,7 +639,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (digits.length === 13) {
             return { code: digits, warning: null as string | null, scientific: false };
         }
-        if (digits.length === 12) {
+        if (digits.length > 0 && digits.length <= 12) {
             return { code: calcJAN13(digits), warning: null as string | null, scientific: false };
         }
         return {
@@ -646,7 +661,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             sum += parseInt(padded[i], 10) * weight;
         }
         const cd = (10 - (sum % 10)) % 10;
-        return digits + cd.toString();
+        return `${padded}${cd.toString()}`;
     };
 
     const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'veggie' | 'fruit') => {
@@ -983,6 +998,81 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     const veggieItems = sortBestItemsByQuantity(analysisVeggies).slice(0, 40);
     const fruitItems = sortBestItemsByQuantity(analysisFruits).slice(0, 30);
+    useEffect(() => {
+        console.log('[best table] shared config', {
+            component: 'renderBestTable',
+            className: 'best-table',
+            columns: BEST_TABLE_COLUMNS
+        });
+        console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
+            const rawCode = item.code || '';
+            const normalizedCode = normalizeJanCode(rawCode).code || '-';
+            const renderedCode = formatBestItemCode(rawCode);
+            return {
+                rawCode,
+                normalizedCode,
+                renderedCode,
+                className: 'best-table > .col-code/.col-name/.col-num',
+                columnSettings: BEST_TABLE_COLUMNS
+            };
+        }));
+        console.log('[fruit best] first3 rows', fruitItems.slice(0, 3).map((item) => {
+            const rawCode = item.code || '';
+            const normalizedCode = normalizeJanCode(rawCode).code || '-';
+            const renderedCode = formatBestItemCode(rawCode);
+            return {
+                rawCode,
+                normalizedCode,
+                renderedCode,
+                className: 'best-table > .col-code/.col-name/.col-num',
+                columnSettings: BEST_TABLE_COLUMNS
+            };
+        }));
+    }, [veggieItems, fruitItems]);
+    const renderBestTable = (items: BestItem[], title: string, icon: string) => (
+        <div className="best-table-block">
+            <h5>{icon} {title}</h5>
+            <div className="best-table-scroll">
+                <table className="best-table">
+                    <colgroup>
+                        {BEST_TABLE_COLUMNS.map((column) => (
+                            <col key={`${title}-${column.key}`} style={{ width: column.width }} />
+                        ))}
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>コード</th>
+                            <th>品名</th>
+                            <th>売上数</th>
+                            <th>売上数昨比</th>
+                            <th>売上高</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map((item, idx) => {
+                            const yoy = item.salesYoY;
+                            const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
+                            const rawCode = item.code || '';
+                            const normalizedCode = normalizeJanCode(rawCode).code || '-';
+                            const displayCode = formatBestItemCode(item.code);
+                            if (title.includes('野菜') && idx < 3) {
+                                console.log('[veg best] raw/normalized/rendered', rawCode, normalizedCode, displayCode);
+                            }
+                            return (
+                                <tr key={`${title}-${displayCode}-${idx}`} className={rowClass}>
+                                    <td className="col-code" title={displayCode}>{displayCode}</td>
+                                    <td className="col-name" title={item.name}>{item.name}</td>
+                                    <td className="col-num">{formatNum(item.salesQty)}</td>
+                                    <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
+                                    <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
 
     // 商品マスター自動登録結果ステート
     const [masterResult, setMasterResult] = useState<{ type: string; added: number; skipped: number; excluded: number } | null>(null);
@@ -1810,72 +1900,12 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                             {/* 野菜ベスト40 */}
                             {veggieItems.length > 0 && (
-                                <div className="best-table-block">
-                                    <h5>🥬 野菜ベスト40</h5>
-                                    <div className="best-table-scroll">
-                                        <table className="best-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>コード</th>
-                                                    <th>品名</th>
-                                                    <th>売上数</th>
-                                                    <th>売上数昨比</th>
-                                                    <th>売上高</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {veggieItems.map((item, idx) => {
-                                                    const yoy = item.salesYoY;
-                                                    const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                                                    return (
-                                                        <tr key={idx} className={rowClass}>
-                                                            <td className="col-code" title={item.code || '-'}>{item.code || '-'}</td>
-                                                            <td className="col-name">{item.name}</td>
-                                                            <td className="col-num">{formatNum(item.salesQty)}</td>
-                                                            <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
-                                                            <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                renderBestTable(veggieItems, '野菜ベスト40', '🥬')
                             )}
 
                             {/* 果物ベスト30 */}
                             {fruitItems.length > 0 && (
-                                <div className="best-table-block">
-                                    <h5>🍎 果物ベスト30</h5>
-                                    <div className="best-table-scroll">
-                                        <table className="best-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>コード</th>
-                                                    <th>品名</th>
-                                                    <th>売上数</th>
-                                                    <th>売上数昨比</th>
-                                                    <th>売上高</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {fruitItems.map((item, idx) => {
-                                                    const yoy = item.salesYoY;
-                                                    const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                                                    return (
-                                                        <tr key={idx} className={rowClass}>
-                                                            <td className="col-code" title={item.code || '-'}>{item.code || '-'}</td>
-                                                            <td className="col-name">{item.name}</td>
-                                                            <td className="col-num">{formatNum(item.salesQty)}</td>
-                                                            <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
-                                                            <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                renderBestTable(fruitItems, '果物ベスト30', '🍎')
                             )}
                         </div>
                     </div>
@@ -2117,9 +2147,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         /* 安定版をベースに、コード列だけ13桁を見せる幅を優先 */
         .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 132px; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 128px; }
-        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 106px; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 116px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 196px; }
+        .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 92px; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 102px; }
         .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 108px; }
         .best-table th {
             background: #f1f5f9;
@@ -2144,9 +2174,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             word-break: normal;
             overflow: visible;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 0.7rem;
-            letter-spacing: 0.01em;
+            font-size: 0.74rem;
+            letter-spacing: 0;
             font-variant-numeric: tabular-nums;
+            min-width: 112px;
         }
         .best-table .col-name {
             text-align: left;
@@ -2154,17 +2185,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            display: block;
-            width: 100%;
+            display: table-cell;
+            min-width: 196px;
+            max-width: 196px;
         }
         .best-table .col-num {
             text-align: right;
             white-space: nowrap;
+            font-variant-numeric: tabular-nums;
         }
         .best-table th:nth-child(3),
         .best-table th:nth-child(4),
         .best-table th:nth-child(5) {
-            text-align: center;
+            text-align: right;
         }
         /* 色分け: 行背景 */
         .best-table .row-warn td { background-color: #fef2f2; }
@@ -2177,19 +2210,21 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         @media (max-width: 768px) {
             .best-table {
-                width: 600px;
-                font-size: 0.74rem;
+                width: 634px;
+                font-size: 0.76rem;
             }
-            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 112px; }
-            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 118px; }
-            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 82px; }
-            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 94px; }
-            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 88px; }
+            .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 118px; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 186px; }
+            .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 86px; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 102px; }
+            .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 100px; }
             .best-table .col-code {
-                font-size: 0.64rem;
+                font-size: 0.68rem;
             }
             .best-table .col-name {
-                font-size: 0.7rem;
+                font-size: 0.72rem;
+                min-width: 186px;
+                max-width: 186px;
             }
             .best-table th,
             .best-table td {
