@@ -1052,11 +1052,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         {items.map((item, idx) => {
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                            const rawCode = item.code || '';
-                            const normalizedCode = normalizeJanCode(rawCode).code || '-';
                             const renderedCode = formatBestItemCode(item.code);
+                            const normalizedCode = renderedCode;
                             if (title.includes('野菜') && idx < 3) {
-                                console.log('[veg best] raw/normalized/rendered', rawCode, normalizedCode, renderedCode);
+                                console.log('[veg best] raw/normalized/rendered', item.code || '', normalizedCode, renderedCode);
                             }
                             return (
                                 <tr key={`${title}-${renderedCode}-${idx}`} className={rowClass}>
