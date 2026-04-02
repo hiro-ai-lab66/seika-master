@@ -85,9 +85,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
     const BEST_TABLE_COLUMNS = [
         { key: 'code', className: 'col-code', width: '118px' },
-        { key: 'name', className: 'col-name', width: '196px' },
+        { key: 'name', className: 'col-name', width: '184px' },
         { key: 'qty', className: 'col-num', width: '92px' },
-        { key: 'yoy', className: 'col-num', width: '102px' },
+        { key: 'yoy', className: 'col-num', width: '106px' },
         { key: 'amount', className: 'col-num', width: '108px' },
     ] as const;
     const formatBestItemCode = (rawCode?: string) => {
@@ -1054,13 +1054,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                             const rawCode = item.code || '';
                             const normalizedCode = normalizeJanCode(rawCode).code || '-';
-                            const displayCode = formatBestItemCode(item.code);
+                            const renderedCode = formatBestItemCode(item.code);
                             if (title.includes('野菜') && idx < 3) {
-                                console.log('[veg best] raw/normalized/rendered', rawCode, normalizedCode, displayCode);
+                                console.log('[veg best] raw/normalized/rendered', rawCode, normalizedCode, renderedCode);
                             }
                             return (
-                                <tr key={`${title}-${displayCode}-${idx}`} className={rowClass}>
-                                    <td className="col-code" title={displayCode}>{displayCode}</td>
+                                <tr key={`${title}-${renderedCode}-${idx}`} className={rowClass}>
+                                    <td className="col-code" title={renderedCode}>{renderedCode}</td>
                                     <td className="col-name" title={item.name}>{item.name}</td>
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
                                     <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
@@ -2147,9 +2147,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
         /* 安定版をベースに、コード列だけ13桁を見せる幅を優先 */
         .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 132px; }
-        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 196px; }
+        .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 184px; }
         .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 92px; }
-        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 102px; }
+        .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 106px; }
         .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 108px; }
         .best-table th {
             background: #f1f5f9;
@@ -2186,8 +2186,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             text-overflow: ellipsis;
             white-space: nowrap;
             display: table-cell;
-            min-width: 196px;
-            max-width: 196px;
+            min-width: 184px;
+            max-width: 184px;
         }
         .best-table .col-num {
             text-align: right;
@@ -2214,17 +2214,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 font-size: 0.76rem;
             }
             .best-table th:nth-child(1), .best-table td:nth-child(1) { width: 118px; }
-            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 186px; }
+            .best-table th:nth-child(2), .best-table td:nth-child(2) { width: 176px; }
             .best-table th:nth-child(3), .best-table td:nth-child(3) { width: 86px; }
-            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 102px; }
+            .best-table th:nth-child(4), .best-table td:nth-child(4) { width: 106px; }
             .best-table th:nth-child(5), .best-table td:nth-child(5) { width: 100px; }
             .best-table .col-code {
                 font-size: 0.68rem;
             }
             .best-table .col-name {
                 font-size: 0.72rem;
-                min-width: 186px;
-                max-width: 186px;
+                min-width: 176px;
+                max-width: 176px;
             }
             .best-table th,
             .best-table td {
