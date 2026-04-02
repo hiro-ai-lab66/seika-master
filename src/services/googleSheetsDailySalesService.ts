@@ -27,28 +27,18 @@ const normalizeDailySalesDate = (value: string) => {
 
 export const getSharedDailySalesSheetName = () => SHARED_DAILY_SALES_SHEET_NAME;
 
-export const fetchSharedDailySales = async (): Promise<DailySalesRecord[]> => {
-    const records = await fetchSharedReadResource<DailySalesRecord>('dailySales');
-    console.log('[DailySalesSheets] fetched records', {
-        rowCount: records.length,
-        sampleRows: records.slice(0, 10)
-    });
+export const fetchSharedDailySales = async (options?: { force?: boolean; ttlMs?: number }): Promise<DailySalesRecord[]> => {
+    const records = await fetchSharedReadResource<DailySalesRecord>('dailySales', options);
     return records.map((record) => ({
         ...record,
         date: normalizeDailySalesDate(record.date)
     }));
 };
 
-export const fetchSharedDailySalesByDate = async (date: string): Promise<DailySalesRecord[]> => {
+export const fetchSharedDailySalesByDate = async (date: string, options?: { force?: boolean; ttlMs?: number }): Promise<DailySalesRecord[]> => {
     const normalizedDate = normalizeDailySalesDate(date);
-    const records = await fetchSharedDailySales();
+    const records = await fetchSharedDailySales(options);
     const filtered = records.filter((record) => normalizeDailySalesDate(record.date) === normalizedDate);
-    console.log('[DailySalesSheets] records for date', {
-        date,
-        normalizedDate,
-        rowCount: filtered.length,
-        sampleRows: filtered.slice(0, 10)
-    });
     return filtered;
 };
 
@@ -74,7 +64,6 @@ export const upsertSharedDailySalesForDateDepartment = async (payload: SharedDai
 };
 
 export const enrichSharedDailySalesByDate = async (payload: SharedDailySalesEnrichPayload) => {
-    console.log('[DailySalesSheets] enrich payload', payload);
     return postSharedWriteAction<{ ok: boolean }>('dailySales', 'enrichByDate', {
         ...payload,
         date: normalizeDailySalesDate(payload.date)

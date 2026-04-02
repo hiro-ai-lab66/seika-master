@@ -40,10 +40,6 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
         setDailySalesError('');
         try {
             const records = await fetchSharedDailySales();
-            console.log('[DailySalesView] daily_sales before render', {
-                rowCount: records.length,
-                sampleRows: records.slice(0, 10)
-            });
             setAllRecords(records);
         } catch (error) {
             console.error('[DailySalesView] failed to load shared daily sales', error);
@@ -111,24 +107,15 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
 
     useEffect(() => {
         const timer = window.setInterval(() => {
-            void reloadDailySales();
-        }, 30000);
-        return () => window.clearInterval(timer);
-    }, []);
-
-    useEffect(() => {
-        const timer = window.setInterval(() => {
-            void loadSharedSales();
-        }, 30000);
-        return () => window.clearInterval(timer);
-    }, []);
-
-    useEffect(() => {
-        const timer = window.setInterval(() => {
-            void fetchSharedCheckRows().then(setSharedCheckRows).catch((error) => {
-                console.error('[DailySalesView] failed to refresh shared check rows', error);
-            });
-        }, 30000);
+            if (document.visibilityState !== 'visible') return;
+            void Promise.all([
+                reloadDailySales(),
+                loadSharedSales(),
+                fetchSharedCheckRows().then(setSharedCheckRows).catch((error) => {
+                    console.error('[DailySalesView] failed to refresh shared check rows', error);
+                })
+            ]);
+        }, 60000);
         return () => window.clearInterval(timer);
     }, []);
 

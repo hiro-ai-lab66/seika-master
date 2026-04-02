@@ -861,8 +861,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 });
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
-                                const sharedRows = await fetchSharedCheckRows();
-                                applySharedCsvRows(sharedRows);
                                 setSharedStatus(`取込完了（${items.length}件）`);
                                 setSharedError(null);
                             } catch (error) {
@@ -986,10 +984,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         try {
             const rows = buildSharedCheckRows();
             await upsertSharedCheckRowsForDateTimes(currentDate, [period], rows);
-            const sharedRows = await fetchSharedCheckRows();
-            applySharedRowsToForm(sharedRows);
-            applySharedCsvRows(sharedRows);
-
             if (period === 'final' && form.actualFinal !== null && form.actualFinal !== undefined && form.actualFinal > 0) {
                 try {
                     const salesSyncResult = await upsertFinalInspectionSharedSales({
@@ -1298,7 +1292,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 console.warn('[InspectionForm] failed to prefill previous day values', error);
             }
         })();
-    }, [currentDate, aiAvgPrice, aiWeather12, aiWeather17, aiTempBand]);
+    }, [currentDate]);
 
     // 画面表示時に shared_budget から当日の売上目標を取得して自動反映
     useEffect(() => {
@@ -1350,7 +1344,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         setSharedStatus(null);
         setIsSharedReloading(true);
         try {
-            const rows = await fetchSharedCheckRows();
+            const rows = await fetchSharedCheckRows({ force: true });
             applySharedRowsToForm(rows);
             applySharedCsvRows(rows);
             // shared_budget も再取得して予算欄を同期

@@ -609,7 +609,7 @@ function App() {
   useEffect(() => {
     if (activeTab !== 'history') return;
     void loadInspectionHistoryFromSheets('tab');
-  }, [activeTab, currentDate]);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

@@ -8,6 +8,52 @@ type SharedReadResponse<T> = {
 
 const API_PATH = '/api/shared-read';
 const WRITE_API_PATH = '/api/shared-write';
+const DEFAULT_READ_TTL_MS = 30_000;
+
+type SharedReadOptions = {
+  force?: boolean;
+  ttlMs?: number;
+};
+
+type SharedReadCacheEntry = {
+  fetchedAt: number;
+  items: unknown[];
+};
+
+const sharedReadCache = new Map<SharedReadResource, SharedReadCacheEntry>();
+const sharedReadInflight = new Map<SharedReadResource, Promise<unknown[]>>();
+
+const getInvalidatedReadResources = (resource: SharedWriteResource): SharedReadResource[] => {
+  switch (resource) {
+    case 'check':
+      return ['check'];
+    case 'notice':
+      return ['notice'];
+    case 'popibrary':
+      return ['popibrary'];
+    case 'sellfloor':
+      return ['sellfloor'];
+    case 'budget':
+      return ['budget'];
+    case 'dailyNotes':
+      return ['dailyNotes'];
+    case 'dailySales':
+      return ['dailySales'];
+    default:
+      return [];
+  }
+};
+
+export const invalidateSharedReadResource = (resource?: SharedReadResource) => {
+  if (resource) {
+    sharedReadCache.delete(resource);
+    sharedReadInflight.delete(resource);
+    return;
+  }
+
+  sharedReadCache.clear();
+  sharedReadInflight.clear();
+};
 
 const buildReadableError = async (response: Response, fallback: string) => {
   const status = response.status;
@@ -44,36 +90,60 @@ const buildReadableError = async (response: Response, fallback: string) => {
   return rawBody || fallback;
 };
 
-export const fetchSharedReadResource = async <T>(resource: SharedReadResource): Promise<T[]> => {
-  const requestUrl = `${API_PATH}?resource=${encodeURIComponent(resource)}&_ts=${Date.now()}`;
-  const response = await fetch(requestUrl, {
-    cache: 'no-store',
-    headers: {
-      Accept: 'application/json',
-      'Cache-Control': 'no-cache'
+export const fetchSharedReadResource = async <T>(
+  resource: SharedReadResource,
+  options: SharedReadOptions = {}
+): Promise<T[]> => {
+  const force = options.force === true;
+  const ttlMs = options.ttlMs ?? DEFAULT_READ_TTL_MS;
+  const cached = sharedReadCache.get(resource);
+
+  if (!force && cached && Date.now() - cached.fetchedAt < ttlMs) {
+    return cached.items as T[];
+  }
+
+  if (!force) {
+    const inflight = sharedReadInflight.get(resource);
+    if (inflight) {
+      return inflight as Promise<T[]>;
     }
-  });
+  }
 
-  console.log('[sharedDataApi] read response', {
-    resource,
-    requestUrl,
-    status: response.status,
-    statusText: response.statusText
-  });
+  const requestUrl = `${API_PATH}?resource=${encodeURIComponent(resource)}`;
+  const request = (async () => {
+    const response = await fetch(requestUrl, {
+      headers: {
+        Accept: 'application/json'
+      }
+    });
 
-  let payload: SharedReadResponse<T> | { error?: string } | null = null;
+    let payload: SharedReadResponse<T> | { error?: string } | null = null;
+    try {
+      payload = await response.clone().json();
+    } catch (error) {
+      console.error('[sharedDataApi] failed to parse response', { resource, error });
+    }
+
+    if (!response.ok) {
+      const errorMessage = await buildReadableError(response, '共有データAPIの呼び出しに失敗しました。サーバー設定を確認してください');
+      throw new Error(errorMessage);
+    }
+
+    const items = (payload as SharedReadResponse<T>).items || [];
+    sharedReadCache.set(resource, {
+      fetchedAt: Date.now(),
+      items
+    });
+    return items;
+  })();
+
+  sharedReadInflight.set(resource, request as Promise<unknown[]>);
+
   try {
-    payload = await response.clone().json();
-  } catch (error) {
-    console.error('[sharedDataApi] failed to parse response', { resource, error });
+    return await request;
+  } finally {
+    sharedReadInflight.delete(resource);
   }
-
-  if (!response.ok) {
-    const errorMessage = await buildReadableError(response, '共有データAPIの呼び出しに失敗しました。サーバー設定を確認してください');
-    throw new Error(errorMessage);
-  }
-
-  return (payload as SharedReadResponse<T>).items || [];
 };
 
 export const postSharedWriteAction = async <T>(
@@ -94,13 +164,6 @@ export const postSharedWriteAction = async <T>(
     })
   });
 
-  console.log('[sharedDataApi] write response', {
-    resource,
-    action,
-    status: response.status,
-    statusText: response.statusText
-  });
-
   let json: { result?: T; error?: string } | null = null;
   try {
     json = await response.clone().json();
@@ -112,6 +175,10 @@ export const postSharedWriteAction = async <T>(
     const errorMessage = await buildReadableError(response, '共有データAPIの書き込みに失敗しました。サーバー設定を確認してください');
     throw new Error(errorMessage);
   }
+
+  getInvalidatedReadResources(resource).forEach((readResource) => {
+    invalidateSharedReadResource(readResource);
+  });
 
   return json?.result as T;
 };

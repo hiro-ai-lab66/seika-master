@@ -3,11 +3,7 @@ import { fetchSharedReadResource } from './sharedDataApi';
 
 export const fetchSharedAdvertisements = async (): Promise<SharedAdvertisementEntry[]> => {
     try {
-        console.log('advertisement service called');
-        console.log('before sheets fetch');
-        const records = await fetchSharedReadResource<SharedAdvertisementEntry>('advertisement');
-        console.log('advertisement raw records:', records);
-        return records;
+        return await fetchSharedReadResource<SharedAdvertisementEntry>('advertisement');
     } catch (e) {
         console.error('advertisement fetch error:', e);
         throw e;

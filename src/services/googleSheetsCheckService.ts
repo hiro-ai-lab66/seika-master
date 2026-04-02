@@ -65,8 +65,8 @@ const ensureCheckHeader = async () => {
 
 export const getSharedCheckSheetName = () => resolvedCheckSheetNameCache || CHECK_SHEET_NAME;
 
-export const fetchSharedCheckRows = async (): Promise<SharedCheckRow[]> => {
-    return fetchSharedReadResource<SharedCheckRow>('check');
+export const fetchSharedCheckRows = async (options?: { force?: boolean; ttlMs?: number }): Promise<SharedCheckRow[]> => {
+    return fetchSharedReadResource<SharedCheckRow>('check', options);
 };
 
 export const appendSharedCheckRows = async (rows: SharedCheckRow[]) => {
