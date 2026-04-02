@@ -90,10 +90,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         { key: 'yoy', className: 'col-num', width: '106px' },
         { key: 'amount', className: 'col-num', width: '108px' },
     ] as const;
+    const isLikelyJanCode = (rawCode?: string) => {
+        const digits = (rawCode || '').replace(/\D/g, '');
+        return digits.length >= 12;
+    };
     const formatBestItemCode = (rawCode?: string) => {
         if (!rawCode) return '-';
+        const trimmed = rawCode.trim();
+        if (!isLikelyJanCode(trimmed)) {
+            return trimmed || '-';
+        }
         const normalized = normalizeJanCode(rawCode);
-        return normalized.code || rawCode.trim() || '-';
+        return normalized.code || trimmed || '-';
     };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
