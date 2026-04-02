@@ -90,6 +90,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         { key: 'yoy', className: 'col-num', width: '106px' },
         { key: 'amount', className: 'col-num', width: '108px' },
     ] as const;
+    const normalizeDisplayCode = (rawCode?: string) => {
+        if (!rawCode) return undefined;
+        const normalized = rawCode.trim().replace(/^="/, '').replace(/"$/, '');
+        if (!normalized) return undefined;
+
+        const scientificMatch = normalized.match(/^(\d+(?:\.\d+)?)E\+?(\d+)$/i);
+        if (scientificMatch) {
+            const mantissa = scientificMatch[1].replace('.', '');
+            const decimals = (scientificMatch[1].split('.')[1] || '').length;
+            const exponent = Number(scientificMatch[2]);
+            const zeroCount = Math.max(exponent - decimals, 0);
+            const expanded = `${mantissa}${'0'.repeat(zeroCount)}`;
+            const digits = expanded.replace(/\D/g, '');
+            return digits || normalized;
+        }
+
+        const decimalLike = normalized.match(/^\d+\.0+$/);
+        const digits = (decimalLike ? normalized.split('.')[0] : normalized).replace(/\D/g, '');
+        return digits || normalized;
+    };
     const isLikelyJanCode = (rawCode?: string) => {
         const digits = (rawCode || '').replace(/\D/g, '');
         return digits.length >= 12;
@@ -569,6 +589,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         const sharedVeggies = sortBestItemsByQuantity(parseRows('veggie'));
         const sharedFruits = sortBestItemsByQuantity(parseRows('fruit'));
+        console.log('[InspectionForm] shared csv raw codes', {
+            currentDate,
+            sharedVeggies: sharedVeggies.slice(0, 10).map((item) => ({ code: item.code, name: item.name })),
+            sharedFruits: sharedFruits.slice(0, 10).map((item) => ({ code: item.code, name: item.name }))
+        });
 
         if (sharedVeggies.length > 0) {
             setAnalysisVeggies(sharedVeggies);
@@ -754,12 +779,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                         if (!itemName || isTotalRow(itemName)) return;
 
+                        const displayCode = normalizeDisplayCode(rawCode);
                         const janResult = normalizeJanCode(rawCode);
                         if (janResult.warning) {
                             janWarnings.push(`${itemName}: ${janResult.warning}`);
                             console.warn('[InspectionForm] JAN warning', { itemName, rawCode, ...janResult });
                         }
-                        if (!janResult.code) return;
+                        if (!displayCode) return;
+                        console.log('[InspectionForm] csv code after import', {
+                            itemName,
+                            rawCode,
+                            displayCode,
+                            janCode: janResult.code || null
+                        });
 
                         const parseNumeric = (val: string | undefined) => {
                             if (!val) return undefined;
@@ -773,7 +805,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                         items.push({
                             name: itemName,
-                            code: janResult.code,
+                            code: displayCode,
                             salesQty: qty,
                             salesYoY: yoy,
                             salesAmt: amt,
@@ -800,7 +832,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             .filter(it => it.code && (it.salesQty ?? 0) > 0)
                             .map(it => ({
                                 date: currentDate,
-                                code: it.code!,
+                                code: isLikelyJanCode(it.code) ? (normalizeJanCode(it.code).code || it.code!) : it.code!,
                                 name: it.name,
                                 salesQty: it.salesQty ?? 0,
                                 salesYoY: it.salesYoY,
@@ -813,7 +845,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             currentDate,
                             parsedItemCount: items.length,
                             salesRecordCount: salesRecords.length,
-                            salesRecords: salesRecords.slice(0, 10)
+                            salesRecords: salesRecords.slice(0, 10),
+                            bestItemsPreview: sortedItems.slice(0, 10).map((item) => ({
+                                code: item.code,
+                                name: item.name
+                            }))
                         });
 
                         void (async () => {
@@ -1011,6 +1047,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             component: 'renderBestTable',
             className: 'best-table',
             columns: BEST_TABLE_COLUMNS
+        });
+        console.log('[InspectionForm] item.code before render', {
+            veggieItems: veggieItems.slice(0, 10).map((item) => ({ code: item.code, name: item.name })),
+            fruitItems: fruitItems.slice(0, 10).map((item) => ({ code: item.code, name: item.name }))
         });
         console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
