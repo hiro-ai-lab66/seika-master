@@ -143,6 +143,15 @@ export const extractGoogleDriveFileId = (value: string): string => {
   return '';
 };
 
+export const buildGoogleDriveGoogleusercontentUrl = (value: string, width: number): string => {
+  const normalizedValue = normalizeDriveImageUrl(value);
+  const fileId = extractGoogleDriveFileId(normalizedValue);
+  if (fileId) {
+    return `https://lh3.googleusercontent.com/d/${fileId}=w${width}`;
+  }
+  return normalizedValue;
+};
+
 export const buildGoogleDriveImageDisplayUrl = (value: string, width: number): string => {
   const normalizedValue = normalizeDriveImageUrl(value);
   const fileId = extractGoogleDriveFileId(normalizedValue);
@@ -150,6 +159,27 @@ export const buildGoogleDriveImageDisplayUrl = (value: string, width: number): s
     return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${width}`;
   }
   return normalizedValue;
+};
+
+export const buildGoogleDriveImageFallbackUrl = (value: string): string => {
+  const normalizedValue = normalizeDriveImageUrl(value);
+  const fileId = extractGoogleDriveFileId(normalizedValue);
+  if (fileId) {
+    return `https://drive.usercontent.google.com/download?id=${fileId}&export=view&authuser=0`;
+  }
+  return normalizedValue;
+};
+
+export const buildGoogleDriveImageCandidates = (value: string, width: number): string[] => {
+  const normalizedValue = normalizeDriveImageUrl(value);
+  const candidates = [
+    buildGoogleDriveImageDisplayUrl(value, width),
+    buildGoogleDriveGoogleusercontentUrl(value, width),
+    buildGoogleDriveImageFallbackUrl(value),
+    normalizedValue
+  ].filter(Boolean);
+
+  return Array.from(new Set(candidates));
 };
 
 export const buildGoogleDriveImageOpenUrl = (value: string): string => {
