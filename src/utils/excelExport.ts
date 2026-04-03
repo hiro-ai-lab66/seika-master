@@ -32,6 +32,12 @@ const COLUMN_MAP = {
     costAmount: 'F',
     salesAmount: 'G'
 } as const;
+const THIN_BORDER_STYLE = {
+    top: { style: 'thin' },
+    bottom: { style: 'thin' },
+    left: { style: 'thin' },
+    right: { style: 'thin' }
+} as const;
 
 const buildWritableRows = () => {
     const rows: number[] = [];
@@ -122,6 +128,21 @@ const clearWritableCells = (sheet: XLSX.WorkSheet) => {
     });
 };
 
+const applyBorder = (sheet: XLSX.WorkSheet, range: XLSX.Range) => {
+    for (let row = range.s.r; row <= range.e.r; row += 1) {
+        for (let col = range.s.c; col <= range.e.c; col += 1) {
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+            if (!sheet[cellAddress]) continue;
+
+            const currentStyle = (sheet[cellAddress].s || {}) as Record<string, unknown>;
+            sheet[cellAddress].s = {
+                ...currentStyle,
+                border: THIN_BORDER_STYLE
+            } as any;
+        }
+    }
+};
+
 const getFilteredItems = (
     items: InventoryItem[],
     options: Pick<ExportOptions, 'department' | 'type'>
@@ -204,6 +225,9 @@ export const exportInventoryToExcel = async (
         });
 
         writeInventoryRows(targetSheet, filteredItems);
+        if (targetSheet['!ref']) {
+            applyBorder(targetSheet, XLSX.utils.decode_range(targetSheet['!ref']));
+        }
 
         console.log('[Inventory] workbook verification', {
             templatePath,
