@@ -1265,13 +1265,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         {items.map((item, idx) => {
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                            const renderedCode = formatDisplayCodeWithCheckDigit(item.code);
+                            const displayCode = formatDisplayCodeWithCheckDigit(item.code);
                             if (title.includes('野菜') && idx < 3) {
-                                console.log('[veg best] raw/rendered', item.code || '', renderedCode);
+                                console.log('[veg best] raw/rendered', item.code || '', displayCode);
                             }
                             return (
-                                <tr key={`${title}-${renderedCode}-${idx}`} className={rowClass}>
-                                    <td className="col-code">{renderedCode}</td>
+                                <tr key={`${title}-${displayCode}-${idx}`} className={rowClass}>
+                                    <td className="col-code" title={displayCode}>{displayCode}</td>
                                     <td className="col-name" title={item.name}>{item.name}</td>
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
                                     <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
