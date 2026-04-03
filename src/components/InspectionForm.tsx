@@ -1242,14 +1242,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             };
         }));
     }, [veggieItems, fruitItems]);
-    const renderBestTable = (items: BestItem[], title: string, icon: string) => (
+    const renderBestTable = (items: BestItem[], title: string, icon: string) => {
+        const debugTitle = title === '野菜ベスト40' ? '野菜ベスト40 [INSPECTION-DEBUG]' : title;
+        const isInspectionDebugTable = title === '野菜ベスト40';
+        return (
         <div className="best-table-block">
-            <h5>{icon} {title}</h5>
+            <h5>{icon} {debugTitle}</h5>
             <div className="best-table-scroll">
                 <table className="best-table">
                     <colgroup>
                         {BEST_TABLE_COLUMNS.map((column) => (
-                            <col key={`${title}-${column.key}`} style={{ width: column.width }} />
+                            <col key={`${debugTitle}-${column.key}`} style={{ width: column.width }} />
                         ))}
                     </colgroup>
                     <thead>
@@ -1270,8 +1273,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 console.log('[veg best] raw/rendered', item.code || '', displayCode);
                             }
                             return (
-                                <tr key={`${title}-${displayCode}-${idx}`} className={rowClass}>
-                                    <td className="col-code" title={displayCode}>{displayCode}</td>
+                                <tr key={`${debugTitle}-${displayCode}-${idx}`} className={rowClass}>
+                                    <td className="col-code" title={isInspectionDebugTable ? `DEBUG:${displayCode}` : displayCode}>
+                                        {isInspectionDebugTable ? `DEBUG:${displayCode}` : displayCode}
+                                    </td>
                                     <td className="col-name" title={item.name}>{item.name}</td>
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
                                     <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
@@ -1284,6 +1289,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             </div>
         </div>
     );
+    };
 
     // 商品マスター自動登録結果ステート
     const [masterResult, setMasterResult] = useState<{ type: string; added: number; skipped: number; excluded: number } | null>(null);
