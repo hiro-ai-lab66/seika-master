@@ -151,11 +151,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         };
     };
     const normalizeCode = (code?: string) => {
-        if (!code) return '';
         const digits = String(code).replace(/\D/g, '');
-        if (!digits) return String(code).trim();
-        const parsed = Number.parseInt(digits, 10);
-        return Number.isNaN(parsed) ? String(code).trim() : String(parsed);
+        return String(parseInt(digits, 10));
     };
     const isLikelyJanCode = (rawCode?: string) => {
         const digits = (rawCode || '').replace(/\D/g, '');
