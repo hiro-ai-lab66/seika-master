@@ -259,6 +259,14 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
         if (items.length === 0) return null;
         const totalQty = items.reduce((s, r) => s + r.salesQty, 0);
         const totalAmt = items.reduce((s, r) => s + r.salesAmt, 0);
+        console.log('[DailySalesView] render table input rows', {
+            label,
+            rows: items.slice(0, 10).map((item) => ({
+                rawCode: item.code,
+                displayCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            }))
+        });
         return (
             <div className="ds-block">
                 <h4>{emoji} {label}（{items.length}件）</h4>

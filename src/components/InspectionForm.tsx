@@ -632,6 +632,21 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             sharedVeggies: sharedVeggies.slice(0, 10).map((item) => ({ code: item.code, name: item.name })),
             sharedFruits: sharedFruits.slice(0, 10).map((item) => ({ code: item.code, name: item.name }))
         });
+        console.log('[InspectionForm] bestItems after shared restore', {
+            currentDate,
+            veggieRows: sharedVeggies.slice(0, 10).map((item) => ({
+                rawCode: item.code,
+                normalizedCode: normalizeBestItemCode(item.code),
+                displayCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            })),
+            fruitRows: sharedFruits.slice(0, 10).map((item) => ({
+                rawCode: item.code,
+                normalizedCode: normalizeBestItemCode(item.code),
+                displayCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            }))
+        });
 
         if (sharedVeggies.length > 0) {
             setAnalysisVeggies(sharedVeggies);
@@ -884,6 +899,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                     if (items.length > 0) {
                         const sortedItems = sortBestItemsByQuantity(items);
+                        console.log('[InspectionForm] bestItems after csv import', {
+                            type,
+                            rows: sortedItems.slice(0, 10).map((item) => ({
+                                rawCode: item.code,
+                                normalizedCode: normalizeBestItemCode(item.code),
+                                displayCode: formatDisplayCodeWithCheckDigit(item.code),
+                                name: item.name
+                            }))
+                        });
                         // 解析データを独立stateに格納（マスター登録はしない）
                         if (type === 'veggie') {
                             setAnalysisVeggies(sortedItems);
@@ -1109,21 +1133,39 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         });
         console.log('[InspectionForm] item.code before render', {
             veggieItems: veggieItems.slice(0, 10).map((item) => ({
-                code: item.code,
+                rawCode: item.code,
+                normalizedCode: normalizeBestItemCode(item.code),
                 renderedCode: formatDisplayCodeWithCheckDigit(item.code),
                 name: item.name
             })),
             fruitItems: fruitItems.slice(0, 10).map((item) => ({
-                code: item.code,
+                rawCode: item.code,
+                normalizedCode: normalizeBestItemCode(item.code),
                 renderedCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            }))
+        });
+        console.log('[InspectionForm] renderBestTable input rows', {
+            veggieRows: veggieItems.slice(0, 10).map((item) => ({
+                rawCode: item.code,
+                normalizedCode: normalizeBestItemCode(item.code),
+                displayCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            })),
+            fruitRows: fruitItems.slice(0, 10).map((item) => ({
+                rawCode: item.code,
+                normalizedCode: normalizeBestItemCode(item.code),
+                displayCode: formatDisplayCodeWithCheckDigit(item.code),
                 name: item.name
             }))
         });
         console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
+            const normalizedCode = normalizeBestItemCode(rawCode);
             const renderedCode = formatDisplayCodeWithCheckDigit(rawCode);
             return {
                 rawCode,
+                normalizedCode,
                 renderedCode,
                 className: 'best-table > .col-code/.col-name/.col-num',
                 columnSettings: BEST_TABLE_COLUMNS
@@ -1131,9 +1173,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }));
         console.log('[fruit best] first3 rows', fruitItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
+            const normalizedCode = normalizeBestItemCode(rawCode);
             const renderedCode = formatDisplayCodeWithCheckDigit(rawCode);
             return {
                 rawCode,
+                normalizedCode,
                 renderedCode,
                 className: 'best-table > .col-code/.col-name/.col-num',
                 columnSettings: BEST_TABLE_COLUMNS
