@@ -137,6 +137,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         return normalized;
     };
+    const normalizeBestItem = (item: BestItem, source: 'existing' | 'shared' | 'csv') => {
+        const normalizedCode = normalizeBestItemCode(item.code);
+        console.log('[InspectionForm] normalized best item code', {
+            source,
+            name: item.name,
+            originalCode: item.code,
+            normalizedCode
+        });
+        return {
+            ...item,
+            code: normalizedCode
+        };
+    };
     const isLikelyJanCode = (rawCode?: string) => {
         const digits = (rawCode || '').replace(/\D/g, '');
         return digits.length >= 12;
@@ -590,19 +603,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const applySharedCsvRows = (rows: SharedCheckRow[]) => {
-        const parseRows = (type: 'veggie' | 'fruit') => {
+        const parseRows = (type: 'veggie' | 'fruit'): BestItem[] => {
             const time = `csv-${type}`;
             return rows
                 .filter((row) => row.date === currentDate && row.time === time && row.content)
-                .map((row) => {
+                .map((row): BestItem | null => {
                     try {
-                        return JSON.parse(row.content) as BestItem;
+                        const parsed = JSON.parse(row.content) as BestItem;
+                        console.log('[InspectionForm] shared csv parsed code', {
+                            type,
+                            itemName: parsed.name,
+                            rawCode: parsed.code,
+                            rowItem: row.item
+                        });
+                        return normalizeBestItem(parsed, 'shared');
                     } catch (error) {
                         console.error('[InspectionForm] failed to parse shared csv row', { row, error });
                         return null;
                     }
                 })
-                .filter((item): item is BestItem => Boolean(item));
+                .filter((item): item is BestItem => item !== null);
         };
 
         const sharedVeggies = sortBestItemsByQuantity(parseRows('veggie'));
@@ -842,14 +862,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         const yoy = yoyKey ? parseNumeric(cleanRow[yoyKey]) : undefined;
                         const amt = amtKey ? parseNumeric(cleanRow[amtKey]) : undefined;
 
-                        items.push({
+                        const nextItem = normalizeBestItem({
                             name: itemName,
                             code: displayCode,
                             salesQty: qty,
                             salesYoY: yoy,
                             salesAmt: amt,
                             sales: amt || 0
+                        }, 'csv');
+                        console.log('[InspectionForm] csv best generated code', {
+                            itemName,
+                            rawCode,
+                            savedCode: nextItem.code
                         });
+                        items.push(nextItem);
                     });
 
                     if (janWarnings.length > 0) {
@@ -1067,10 +1093,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     // 解析データ独立state
     const [analysisVeggies, setAnalysisVeggies] = useState<BestItem[]>(() => {
-        return existingEntry?.bestVegetables || [];
+        return (existingEntry?.bestVegetables || []).map((item) => normalizeBestItem(item, 'existing'));
     });
     const [analysisFruits, setAnalysisFruits] = useState<BestItem[]>(() => {
-        return existingEntry?.bestFruits || [];
+        return (existingEntry?.bestFruits || []).map((item) => normalizeBestItem(item, 'existing'));
     });
 
     const veggieItems = sortBestItemsByQuantity(analysisVeggies).slice(0, 40);
@@ -1082,8 +1108,16 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             columns: BEST_TABLE_COLUMNS
         });
         console.log('[InspectionForm] item.code before render', {
-            veggieItems: veggieItems.slice(0, 10).map((item) => ({ code: item.code, name: item.name })),
-            fruitItems: fruitItems.slice(0, 10).map((item) => ({ code: item.code, name: item.name }))
+            veggieItems: veggieItems.slice(0, 10).map((item) => ({
+                code: item.code,
+                renderedCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            })),
+            fruitItems: fruitItems.slice(0, 10).map((item) => ({
+                code: item.code,
+                renderedCode: formatDisplayCodeWithCheckDigit(item.code),
+                name: item.name
+            }))
         });
         console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
