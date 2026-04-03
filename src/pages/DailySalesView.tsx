@@ -5,6 +5,7 @@ import { appendSharedSales, fetchSharedSales, getSharedSalesSheetName } from '..
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
 import { fetchSharedDailySales, getSharedDailySalesSheetName } from '../services/googleSheetsDailySalesService';
 import { deriveTempBandFromHigh } from '../services/weatherService';
+import { formatDisplayCodeWithCheckDigit } from '../utils/codeDisplay';
 
 const normalizeSalesDate = (value: string) => {
     const trimmed = value.trim().replace(/\//g, '-');
@@ -267,9 +268,10 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                         <tbody>
                             {items.map((r, i) => {
                                 const yc = r.salesYoY !== undefined ? (r.salesYoY >= 110 ? 'ds-good' : r.salesYoY < 80 ? 'ds-warn' : '') : '';
+                                const renderedCode = formatDisplayCodeWithCheckDigit(r.code);
                                 return (
                                     <tr key={i}>
-                                        <td className="ds-code">{r.code}</td>
+                                        <td className="ds-code">{renderedCode}</td>
                                         <td className="ds-name">{r.name}</td>
                                         <td className="ds-num">{r.salesQty.toLocaleString()}</td>
                                         <td className={`ds-num ${yc}`}>{r.salesYoY !== undefined ? `${r.salesYoY.toFixed(1)}%` : '-'}</td>

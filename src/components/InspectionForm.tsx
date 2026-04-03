@@ -9,6 +9,7 @@ import { enrichSharedDailySalesByDate, fetchSharedDailySalesByDate, upsertShared
 import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesService';
 import { fetchSharedBudgetForDate } from '../services/googleSheetsBudgetService';
 import { deriveOverallWeather, deriveTempBandFromHigh, fetchDailyWeatherSnapshot } from '../services/weatherService';
+import { formatDisplayCodeWithCheckDigit } from '../utils/codeDisplay';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -140,27 +141,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const digits = (rawCode || '').replace(/\D/g, '');
         return digits.length >= 12;
     };
-    const addCheckDigit = (rawCode?: string) => {
-        if (!rawCode) return '-';
-        const trimmed = rawCode.trim();
-        const digits = trimmed.replace(/\D/g, '');
-        if (!digits) {
-            return trimmed || '-';
-        }
-
-        if (digits.length === 13) {
-            return digits;
-        }
-
-        if (digits.length === 12) {
-            const normalized = normalizeJanCode(digits);
-            return normalized.code || digits;
-        }
-
-        const stripped = digits.replace(/^0+/, '') || '0';
-        return calcJAN13(stripped).replace(/^0+/, '') || stripped;
-    };
-
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
     const [sharedError, setSharedError] = useState<string | null>(null);
@@ -1107,7 +1087,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         });
         console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
-            const renderedCode = addCheckDigit(rawCode);
+            const renderedCode = formatDisplayCodeWithCheckDigit(rawCode);
             return {
                 rawCode,
                 renderedCode,
@@ -1117,7 +1097,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }));
         console.log('[fruit best] first3 rows', fruitItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
-            const renderedCode = addCheckDigit(rawCode);
+            const renderedCode = formatDisplayCodeWithCheckDigit(rawCode);
             return {
                 rawCode,
                 renderedCode,
@@ -1149,7 +1129,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         {items.map((item, idx) => {
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                            const renderedCode = addCheckDigit(item.code);
+                            const renderedCode = formatDisplayCodeWithCheckDigit(item.code);
                             if (title.includes('野菜') && idx < 3) {
                                 console.log('[veg best] raw/rendered', item.code || '', renderedCode);
                             }
