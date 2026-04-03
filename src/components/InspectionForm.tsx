@@ -1266,16 +1266,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     </thead>
                     <tbody>
                         {items.map((item, idx) => {
+                            const rawCode = item.code;
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                            const displayCode = formatDisplayCodeWithCheckDigit(item.code);
+                            const displayCode = formatDisplayCodeWithCheckDigit(rawCode);
+                            const codeCellText = isInspectionDebugTable ? `デバッグ:${displayCode}` : displayCode;
                             if (title.includes('野菜') && idx < 3) {
-                                console.log('[veg best] raw/rendered', item.code || '', displayCode);
+                                console.log('[veg best] raw/rendered', rawCode || '', displayCode);
                             }
                             return (
                                 <tr key={`${debugTitle}-${displayCode}-${idx}`} className={rowClass}>
-                                    <td className="col-code" title={isInspectionDebugTable ? `DEBUG:${displayCode}` : displayCode}>
-                                        {isInspectionDebugTable ? `DEBUG:${displayCode}` : displayCode}
+                                    <td className="col-code" title={codeCellText}>
+                                        {codeCellText}
                                     </td>
                                     <td className="col-name" title={item.name}>{item.name}</td>
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
