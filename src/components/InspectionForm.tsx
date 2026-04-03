@@ -161,6 +161,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [isSharedSaving, setIsSharedSaving] = useState(false);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
     const [csvUiResetKey, setCsvUiResetKey] = useState(0);
+    const bestItemSourceRef = useRef<{
+        date: string;
+        veggie: 'csv' | 'shared' | 'existing' | null;
+        fruit: 'csv' | 'shared' | 'existing' | null;
+    }>({
+        date: currentDate,
+        veggie: null,
+        fruit: null
+    });
     // shared_budget から取得した売上目標（0 = 未取得）
     const [sharedBudgetTarget, setSharedBudgetTarget] = useState<number>(0);
 
@@ -648,11 +657,25 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             }))
         });
 
-        if (sharedVeggies.length > 0) {
+        if (sharedVeggies.length > 0 && bestItemSourceRef.current.veggie !== 'csv') {
             setAnalysisVeggies(sharedVeggies);
+            bestItemSourceRef.current.veggie = 'shared';
+        } else if (sharedVeggies.length > 0) {
+            console.log('[InspectionForm] skipped shared veggie overwrite because csv is prioritized', {
+                currentDate,
+                sourceBefore: bestItemSourceRef.current.veggie,
+                rowCount: sharedVeggies.length
+            });
         }
-        if (sharedFruits.length > 0) {
+        if (sharedFruits.length > 0 && bestItemSourceRef.current.fruit !== 'csv') {
             setAnalysisFruits(sharedFruits);
+            bestItemSourceRef.current.fruit = 'shared';
+        } else if (sharedFruits.length > 0) {
+            console.log('[InspectionForm] skipped shared fruit overwrite because csv is prioritized', {
+                currentDate,
+                sourceBefore: bestItemSourceRef.current.fruit,
+                rowCount: sharedFruits.length
+            });
         }
     };
 
@@ -670,11 +693,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             if (veggieCsvInputRef.current) {
                 veggieCsvInputRef.current.value = '';
             }
+            bestItemSourceRef.current.veggie = null;
         } else {
             setAnalysisFruits([]);
             if (fruitCsvInputRef.current) {
                 fruitCsvInputRef.current.value = '';
             }
+            bestItemSourceRef.current.fruit = null;
         }
 
         setMasterResult(null);
@@ -780,8 +805,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         // CSV再取込時は旧データを完全初期化
         if (type === 'veggie') {
             setAnalysisVeggies([]);
+            bestItemSourceRef.current.veggie = 'csv';
         } else {
             setAnalysisFruits([]);
+            bestItemSourceRef.current.fruit = 'csv';
         }
         setMasterResult(null);
         setCsvWarning(null);
@@ -911,8 +938,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         // 解析データを独立stateに格納（マスター登録はしない）
                         if (type === 'veggie') {
                             setAnalysisVeggies(sortedItems);
+                            bestItemSourceRef.current.veggie = 'csv';
                         } else {
                             setAnalysisFruits(sortedItems);
+                            bestItemSourceRef.current.fruit = 'csv';
                         }
 
                         // daily_salesへ蓄積保存
@@ -1117,11 +1146,28 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
     // 解析データ独立state
     const [analysisVeggies, setAnalysisVeggies] = useState<BestItem[]>(() => {
-        return (existingEntry?.bestVegetables || []).map((item) => normalizeBestItem(item, 'existing'));
+        const next = (existingEntry?.bestVegetables || []).map((item) => normalizeBestItem(item, 'existing'));
+        if (next.length > 0) {
+            bestItemSourceRef.current.veggie = 'existing';
+        }
+        return next;
     });
     const [analysisFruits, setAnalysisFruits] = useState<BestItem[]>(() => {
-        return (existingEntry?.bestFruits || []).map((item) => normalizeBestItem(item, 'existing'));
+        const next = (existingEntry?.bestFruits || []).map((item) => normalizeBestItem(item, 'existing'));
+        if (next.length > 0) {
+            bestItemSourceRef.current.fruit = 'existing';
+        }
+        return next;
     });
+
+    useEffect(() => {
+        if (bestItemSourceRef.current.date === currentDate) return;
+        bestItemSourceRef.current = {
+            date: currentDate,
+            veggie: existingEntry?.bestVegetables?.length ? 'existing' : null,
+            fruit: existingEntry?.bestFruits?.length ? 'existing' : null
+        };
+    }, [currentDate, existingEntry?.id]);
 
     const veggieItems = sortBestItemsByQuantity(analysisVeggies).slice(0, 40);
     const fruitItems = sortBestItemsByQuantity(analysisFruits).slice(0, 30);
