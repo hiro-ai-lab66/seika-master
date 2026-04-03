@@ -110,21 +110,42 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const digits = (decimalLike ? normalized.split('.')[0] : normalized).replace(/\D/g, '');
         return digits || normalized;
     };
+    const normalizeBestItemCode = (rawCode?: string, codeHeader?: string) => {
+        const normalized = normalizeDisplayCode(rawCode);
+        if (!normalized) return undefined;
+
+        const digits = normalized.replace(/\D/g, '');
+        if (!digits) {
+            return normalized;
+        }
+
+        const stripped = digits.replace(/^0+/, '') || '0';
+        const isJanColumn = Boolean(codeHeader && /jan/i.test(codeHeader));
+
+        if (digits.length === 13) {
+            return digits;
+        }
+
+        if (digits.length === 12 && (isJanColumn || stripped.length === 12)) {
+            return digits;
+        }
+
+        if (stripped.length < 12) {
+            return stripped;
+        }
+
+        return normalized;
+    };
     const isLikelyJanCode = (rawCode?: string) => {
         const digits = (rawCode || '').replace(/\D/g, '');
         return digits.length >= 12;
     };
-    const formatBestItemCode = (rawCode?: string) => {
+    const addCheckDigit = (rawCode?: string) => {
         if (!rawCode) return '-';
         const trimmed = rawCode.trim();
         const digits = trimmed.replace(/\D/g, '');
         if (!digits) {
             return trimmed || '-';
-        }
-
-        const stripped = digits.replace(/^0+/, '') || '0';
-        if (stripped.length < 12) {
-            return stripped;
         }
 
         if (digits.length === 13) {
@@ -136,7 +157,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             return normalized.code || digits;
         }
 
-        return stripped;
+        const stripped = digits.replace(/^0+/, '') || '0';
+        return calcJAN13(stripped).replace(/^0+/, '') || stripped;
     };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
@@ -794,7 +816,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                         if (!itemName || isTotalRow(itemName)) return;
 
-                        const displayCode = normalizeDisplayCode(rawCode);
+                        const displayCode = normalizeBestItemCode(rawCode, codeKey);
                         const janResult = normalizeJanCode(rawCode);
                         if (janResult.warning) {
                             janWarnings.push(`${itemName}: ${janResult.warning}`);
@@ -1063,7 +1085,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         });
         console.log('[veg best] first3 rows', veggieItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
-            const renderedCode = formatBestItemCode(rawCode);
+            const renderedCode = addCheckDigit(rawCode);
             return {
                 rawCode,
                 renderedCode,
@@ -1073,7 +1095,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }));
         console.log('[fruit best] first3 rows', fruitItems.slice(0, 3).map((item) => {
             const rawCode = item.code || '';
-            const renderedCode = formatBestItemCode(rawCode);
+            const renderedCode = addCheckDigit(rawCode);
             return {
                 rawCode,
                 renderedCode,
@@ -1105,7 +1127,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         {items.map((item, idx) => {
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
-                            const renderedCode = formatBestItemCode(item.code);
+                            const renderedCode = addCheckDigit(item.code);
                             if (title.includes('野菜') && idx < 3) {
                                 console.log('[veg best] raw/rendered', item.code || '', renderedCode);
                             }
