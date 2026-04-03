@@ -1247,16 +1247,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }));
     }, [veggieItems, fruitItems]);
     const renderBestTable = (items: BestItem[], title: string, icon: string) => {
-        const debugTitle = title === '野菜ベスト40' ? '野菜ベスト40 [INSPECTION-DEBUG]' : title;
-        const isInspectionDebugTable = title === '野菜ベスト40';
+        const displayTitle = title;
         return (
         <div className="best-table-block">
-            <h5>{icon} {debugTitle}</h5>
+            <h5>{icon} {displayTitle}</h5>
             <div className="best-table-scroll">
                 <table className="best-table">
                     <colgroup>
                         {BEST_TABLE_COLUMNS.map((column) => (
-                            <col key={`${debugTitle}-${column.key}`} style={{ width: column.width }} />
+                            <col key={`${displayTitle}-${column.key}`} style={{ width: column.width }} />
                         ))}
                     </colgroup>
                     <thead>
@@ -1274,14 +1273,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                             const displayCode = formatDisplayCodeWithCheckDigit(rawCode);
-                            const codeCellText = isInspectionDebugTable ? `デバッグ:${displayCode}` : displayCode;
                             if (title.includes('野菜') && idx < 3) {
                                 console.log('[veg best] raw/rendered', rawCode || '', displayCode);
                             }
                             return (
-                                <tr key={`${debugTitle}-${displayCode}-${idx}`} className={rowClass}>
-                                    <td className="col-code" title={codeCellText}>
-                                        {codeCellText}
+                                <tr key={`${displayTitle}-${displayCode}-${idx}`} className={rowClass}>
+                                    <td className="col-code" title={displayCode}>
+                                        {displayCode}
                                     </td>
                                     <td className="col-name" title={item.name}>{item.name}</td>
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
