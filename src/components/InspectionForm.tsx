@@ -117,11 +117,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const formatBestItemCode = (rawCode?: string) => {
         if (!rawCode) return '-';
         const trimmed = rawCode.trim();
-        if (!isLikelyJanCode(trimmed)) {
+        const digits = trimmed.replace(/\D/g, '');
+        if (!digits) {
             return trimmed || '-';
         }
-        const normalized = normalizeJanCode(rawCode);
-        return normalized.code || trimmed || '-';
+
+        const stripped = digits.replace(/^0+/, '') || '0';
+        if (stripped.length < 12) {
+            return stripped;
+        }
+
+        if (digits.length === 13) {
+            return digits;
+        }
+
+        if (digits.length === 12) {
+            const normalized = normalizeJanCode(digits);
+            return normalized.code || digits;
+        }
+
+        return stripped;
     };
 
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
