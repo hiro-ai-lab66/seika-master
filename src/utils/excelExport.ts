@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import type { Borders, Worksheet } from 'exceljs';
 import type { InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 
 type ExportOptions = {
@@ -24,20 +25,20 @@ const WRITE_BLOCKS = [
 ] as const;
 const MAX_EXPORT_ROWS = WRITE_BLOCKS.reduce((sum, block) => sum + (block.end - block.start + 1), 0);
 const COLUMN_MAP = {
-    name: 'A',
-    qty: 'B',
-    unit: 'C',
-    cost: 'D',
-    price: 'E',
-    costAmount: 'F',
-    salesAmount: 'G'
+    name: 1,
+    qty: 2,
+    unit: 3,
+    cost: 4,
+    price: 5,
+    costAmount: 6,
+    salesAmount: 7
 } as const;
-const THIN_BORDER_STYLE = {
+const THIN_BORDER_STYLE: Partial<Borders> = {
     top: { style: 'thin' },
     bottom: { style: 'thin' },
     left: { style: 'thin' },
     right: { style: 'thin' }
-} as const;
+};
 
 const buildWritableRows = () => {
     const rows: number[] = [];
@@ -63,21 +64,13 @@ const loadTemplateWorkbook = async () => {
             continue;
         }
 
-        const workbook = XLSX.read(await response.arrayBuffer(), {
-            type: 'array',
-            cellFormula: true,
-            cellStyles: true,
-            cellNF: true
-        });
-
-        if (!templatePath) {
-            throw new Error('templatePath が未設定です');
-        }
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(await response.arrayBuffer());
 
         console.log('[Inventory] using template path', templatePath);
         console.log('[excelExport] loaded template workbook', {
             templatePath,
-            sheetNames: workbook.SheetNames
+            sheetNames: workbook.worksheets.map((sheet) => sheet.name)
         });
 
         return { workbook, templatePath };
@@ -86,59 +79,23 @@ const loadTemplateWorkbook = async () => {
     throw new Error(`テンプレートファイルの読み込みに失敗しました: ${lastStatus}`);
 };
 
-const cloneCellWithoutValue = (cell?: XLSX.CellObject): XLSX.CellObject => {
-    if (!cell) {
-        return { t: 'z' };
-    }
-
-    const nextCell = { ...cell };
-    delete nextCell.v;
-    delete nextCell.w;
-    delete nextCell.r;
-    delete nextCell.h;
-    return nextCell;
-};
-
-const setCellValuePreservingTemplate = (
-    sheet: XLSX.WorkSheet,
-    address: string,
-    value: string | number | null | undefined
-) => {
-    const baseCell = cloneCellWithoutValue(sheet[address]);
-
-    if (value === null || value === undefined || value === '') {
-        delete baseCell.f;
-        baseCell.t = 'z';
-        sheet[address] = baseCell;
-        return;
-    }
-
-    delete baseCell.f;
-    baseCell.t = typeof value === 'number' ? 'n' : 's';
-    baseCell.v = value;
-    sheet[address] = baseCell;
-};
-
-const clearWritableCells = (sheet: XLSX.WorkSheet) => {
-    WRITABLE_ROWS.forEach((row) => {
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.name}${row}`, null);
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.qty}${row}`, null);
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.cost}${row}`, null);
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.price}${row}`, null);
+const clearWritableCells = (sheet: Worksheet) => {
+    WRITABLE_ROWS.forEach((rowNumber) => {
+        sheet.getCell(rowNumber, COLUMN_MAP.name).value = null;
+        sheet.getCell(rowNumber, COLUMN_MAP.qty).value = null;
+        sheet.getCell(rowNumber, COLUMN_MAP.cost).value = null;
+        sheet.getCell(rowNumber, COLUMN_MAP.price).value = null;
     });
 };
 
-const applyBorder = (sheet: XLSX.WorkSheet, range: XLSX.Range) => {
-    for (let row = range.s.r; row <= range.e.r; row += 1) {
-        for (let col = range.s.c; col <= range.e.c; col += 1) {
-            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-            if (!sheet[cellAddress]) continue;
+const applyBorder = (sheet: Worksheet) => {
+    const rowCount = sheet.rowCount;
+    const columnCount = Math.max(sheet.columnCount, COLUMN_MAP.salesAmount);
 
-            const currentStyle = (sheet[cellAddress].s || {}) as Record<string, unknown>;
-            sheet[cellAddress].s = {
-                ...currentStyle,
-                border: THIN_BORDER_STYLE
-            } as any;
+    for (let row = 1; row <= rowCount; row += 1) {
+        for (let col = 1; col <= columnCount; col += 1) {
+            const cell = sheet.getCell(row, col);
+            cell.border = THIN_BORDER_STYLE;
         }
     }
 };
@@ -156,24 +113,38 @@ const getFilteredItems = (
         .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 };
 
-const writeInventoryRows = (sheet: XLSX.WorkSheet, items: InventoryItem[]) => {
+const writeInventoryRows = (sheet: Worksheet, items: InventoryItem[]) => {
     clearWritableCells(sheet);
 
     items.forEach((item, index) => {
-        const row = WRITABLE_ROWS[index];
+        const rowNumber = WRITABLE_ROWS[index];
         console.log('[Inventory] write start', {
-            row,
+            row: rowNumber,
             col: 'A,B,D,E',
             name: item.name,
             qty: item.qty || 0,
             cost: item.cost || 0,
             price: item.price || 0
         });
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.name}${row}`, item.name);
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.qty}${row}`, item.qty || 0);
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.cost}${row}`, item.cost || 0);
-        setCellValuePreservingTemplate(sheet, `${COLUMN_MAP.price}${row}`, item.price || 0);
+
+        sheet.getCell(rowNumber, COLUMN_MAP.name).value = item.name;
+        sheet.getCell(rowNumber, COLUMN_MAP.qty).value = item.qty || 0;
+        sheet.getCell(rowNumber, COLUMN_MAP.cost).value = item.cost || 0;
+        sheet.getCell(rowNumber, COLUMN_MAP.price).value = item.price || 0;
     });
+};
+
+const downloadWorkbook = async (workbook: ExcelJS.Workbook, filename: string) => {
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 export const exportInventoryToExcel = async (
@@ -190,7 +161,7 @@ export const exportInventoryToExcel = async (
         const { workbook, templatePath } = await loadTemplateWorkbook();
         console.log('[Inventory] resolved template path on export', templatePath);
         const targetSheetName = TARGET_SHEETS[options.department];
-        const targetSheet = workbook.Sheets[targetSheetName];
+        const targetSheet = workbook.getWorksheet(targetSheetName);
 
         if (!targetSheet) {
             throw new Error(`テンプレートに「${targetSheetName}」シートがありません`);
@@ -200,13 +171,13 @@ export const exportInventoryToExcel = async (
         console.log('[Inventory] resolved inventory column map', {
             sheetName: targetSheetName,
             inputStartRow: WRITE_BLOCKS[0].start,
-            itemNameCol: COLUMN_MAP.name,
-            quantityCol: COLUMN_MAP.qty,
-            unitCol: COLUMN_MAP.unit,
-            costCol: COLUMN_MAP.cost,
-            priceCol: COLUMN_MAP.price,
-            costAmountCol: COLUMN_MAP.costAmount,
-            salesAmountCol: COLUMN_MAP.salesAmount,
+            itemNameCol: 'A',
+            quantityCol: 'B',
+            unitCol: 'C',
+            costCol: 'D',
+            priceCol: 'E',
+            costAmountCol: 'F',
+            salesAmountCol: 'G'
         });
         console.log('[excelExport] writing inventory rows', {
             templatePath,
@@ -225,40 +196,37 @@ export const exportInventoryToExcel = async (
         });
 
         writeInventoryRows(targetSheet, filteredItems);
-        if (targetSheet['!ref']) {
-            applyBorder(targetSheet, XLSX.utils.decode_range(targetSheet['!ref']));
-        }
+        applyBorder(targetSheet);
 
         console.log('[Inventory] workbook verification', {
             templatePath,
             targetSheetName,
             firstWrittenCell: {
-                A12: targetSheet['A12']?.v,
-                B12: targetSheet['B12']?.v,
-                C12: targetSheet['C12']?.v,
-                D12: targetSheet['D12']?.v,
-                E12: targetSheet['E12']?.v,
+                A12: targetSheet.getCell('A12').value,
+                B12: targetSheet.getCell('B12').value,
+                C12: targetSheet.getCell('C12').value,
+                D12: targetSheet.getCell('D12').value,
+                E12: targetSheet.getCell('E12').value
             },
             preservedCells: {
-                G12: targetSheet['G12']?.v,
-                C12: targetSheet['C12']?.v,
+                G12: targetSheet.getCell('G12').value,
+                C12: targetSheet.getCell('C12').value
             },
             formulas: {
-                F12: targetSheet['F12']?.f || null,
-                G12: targetSheet['G12']?.f || null,
-                F37: targetSheet['F37']?.f || null,
-                G37: targetSheet['G37']?.f || null,
-                F74: targetSheet['F74']?.f || null,
-                G74: targetSheet['G74']?.f || null,
-                F111: targetSheet['F111']?.f || null,
-                G111: targetSheet['G111']?.f || null
+                F12: targetSheet.getCell('F12').formula || null,
+                G12: targetSheet.getCell('G12').formula || null,
+                F37: targetSheet.getCell('F37').formula || null,
+                G37: targetSheet.getCell('G37').formula || null,
+                F74: targetSheet.getCell('F74').formula || null,
+                G74: targetSheet.getCell('G74').formula || null,
+                F111: targetSheet.getCell('F111').formula || null,
+                G111: targetSheet.getCell('G111').formula || null
             }
         });
 
-        XLSX.writeFile(
+        await downloadWorkbook(
             workbook,
-            `inventory_${dateStr}_${options.department}_${options.type}_${options.valueType}.xlsx`,
-            { cellStyles: true }
+            `inventory_${dateStr}_${options.department}_${options.type}_${options.valueType}.xlsx`
         );
     } catch (error) {
         console.error('Excel出力エラー:', error);
