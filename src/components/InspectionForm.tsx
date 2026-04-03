@@ -167,6 +167,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [csvWarning, setCsvWarning] = useState<string | null>(null);
     const [isSharedSaving, setIsSharedSaving] = useState(false);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
+    const [csvUiResetKey, setCsvUiResetKey] = useState(0);
     // shared_budget から取得した売上目標（0 = 未取得）
     const [sharedBudgetTarget, setSharedBudgetTarget] = useState<number>(0);
 
@@ -646,6 +647,27 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             return;
         }
         fruitCsvInputRef.current?.click();
+    };
+
+    const clearCsvAnalysis = (type: 'veggie' | 'fruit') => {
+        if (type === 'veggie') {
+            setAnalysisVeggies([]);
+            if (veggieCsvInputRef.current) {
+                veggieCsvInputRef.current.value = '';
+            }
+        } else {
+            setAnalysisFruits([]);
+            if (fruitCsvInputRef.current) {
+                fruitCsvInputRef.current.value = '';
+            }
+        }
+
+        setMasterResult(null);
+        setCsvWarning(null);
+        setSharedStatus(null);
+
+        // hidden file input と preview を作り直して、DOM/state のズレを解消する
+        setCsvUiResetKey((prev) => prev + 1);
     };
 
     const preprocessCsvText = (rawText: string) => {
@@ -1922,7 +1944,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                         <div className="best-items-section">
                             <h4>単品ベスト設定 (CSVアップロード)</h4>
-                            <div className="csv-upload-grid">
+                            <div className="csv-upload-grid" key={csvUiResetKey}>
                                 <div className="csv-upload-box">
                                     <button type="button" className="csv-label" onClick={() => openCsvImportPicker('veggie')}>
                                         <Upload size={16} />
@@ -1933,7 +1955,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         {analysisVeggies.length > 0 ? (
                                             <>
                                                 <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {analysisVeggies.length}件</span>
-                                                <button type="button" className="clear-btn" onClick={() => { setAnalysisVeggies([]); setMasterResult(null); }}>クリア</button>
+                                                <button type="button" className="clear-btn" onClick={() => clearCsvAnalysis('veggie')}>クリア</button>
                                             </>
                                         ) : <span className="empty-text">データ未選択</span>}
                                     </div>
@@ -1948,7 +1970,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         {analysisFruits.length > 0 ? (
                                             <>
                                                 <span className="text-success" style={{ fontWeight: 'bold' }}>✓ 読込完了: {analysisFruits.length}件</span>
-                                                <button type="button" className="clear-btn" onClick={() => { setAnalysisFruits([]); setMasterResult(null); }}>クリア</button>
+                                                <button type="button" className="clear-btn" onClick={() => clearCsvAnalysis('fruit')}>クリア</button>
                                             </>
                                         ) : <span className="empty-text">データ未選択</span>}
                                     </div>
