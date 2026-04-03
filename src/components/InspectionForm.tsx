@@ -612,6 +612,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const applySharedCsvRows = (rows: SharedCheckRow[]) => {
+        const shouldSkipSharedRestore =
+            bestItemSourceRef.current.veggie === 'csv' ||
+            bestItemSourceRef.current.fruit === 'csv';
+
+        if (shouldSkipSharedRestore) {
+            console.log('[InspectionForm] skipped shared csv restore because csv is already active', {
+                currentDate,
+                source: bestItemSourceRef.current
+            });
+            return;
+        }
+
         const parseRows = (type: 'veggie' | 'fruit'): BestItem[] => {
             const time = `csv-${type}`;
             return rows
@@ -1509,7 +1521,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         try {
             const rows = await fetchSharedCheckRows({ force: true });
             applySharedRowsToForm(rows);
-            applySharedCsvRows(rows);
+            if (bestItemSourceRef.current.veggie === 'csv' || bestItemSourceRef.current.fruit === 'csv') {
+                console.log('[InspectionForm] skipped applySharedCsvRows during reload because csv data is prioritized', {
+                    currentDate,
+                    source: bestItemSourceRef.current
+                });
+            } else {
+                applySharedCsvRows(rows);
+            }
             // shared_budget も再取得して予算欄を同期
             try {
                 const budgetEntry = await fetchSharedBudgetForDate(currentDate);
