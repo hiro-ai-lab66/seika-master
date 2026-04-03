@@ -150,6 +150,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             code: normalizedCode
         };
     };
+    const normalizeCode = (code?: string) => {
+        if (!code) return '';
+        const digits = String(code).replace(/\D/g, '');
+        if (!digits) return String(code).trim();
+        const parsed = Number.parseInt(digits, 10);
+        return Number.isNaN(parsed) ? String(code).trim() : String(parsed);
+    };
     const isLikelyJanCode = (rawCode?: string) => {
         const digits = (rawCode || '').replace(/\D/g, '');
         return digits.length >= 12;
@@ -1266,7 +1273,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     </thead>
                     <tbody>
                         {items.map((item, idx) => {
-                            const rawCode = item.code;
+                            const rawCode = normalizeCode(item.code);
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                             const displayCode = formatDisplayCodeWithCheckDigit(rawCode);
