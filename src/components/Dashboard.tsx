@@ -447,17 +447,19 @@ const AdvertisementCard: React.FC<{
   avgSpend: number | null;
   lossAmount: number | null | undefined;
 }> = ({ group, onOpenImage, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount }) => {
-  const hasUra = Boolean(group.ura);
-  const [activeFace, setActiveFace] = useState<'omote' | 'ura'>(() => (group.omote ? 'omote' : 'ura'));
+  const hasSideToggle = Boolean(group.omote && group.ura);
+  const [activeSide, setActiveSide] = useState<'表' | '裏'>(() => (group.omote ? '表' : '裏'));
   const [copyMessage, setCopyMessage] = useState('');
   const [imageSrc, setImageSrc] = useState('');
   const [imageCandidates, setImageCandidates] = useState<string[]>([]);
   const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
   const [imageAccessError, setImageAccessError] = useState(false);
-  const activeItem = activeFace === 'ura' && group.ura ? group.ura : (group.omote || group.ura);
+  const displayData = activeSide === '表'
+    ? (group.omote || group.ura)
+    : (group.ura || group.omote);
   const tasks = useMemo(() => {
-    if (!activeItem) return [] as AdvertisementTask[];
-    const sourceText = `${group.title} ${activeItem.memo || ''}`;
+    if (!displayData) return [] as AdvertisementTask[];
+    const sourceText = `${group.title} ${displayData.memo || ''}`;
     const suggestions: AdvertisementTask[] = [];
 
     if (sourceText.includes('野菜')) {
@@ -507,7 +509,7 @@ const AdvertisementCard: React.FC<{
     return suggestions
       .sort((a, b) => b.priority - a.priority)
       .slice(0, 3);
-  }, [activeItem, group.title, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount]);
+  }, [displayData, group.title, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount]);
   const briefingLines = useMemo(
     () => tasks.map((task) => `・${task.text.split('→')[1]?.trim() || task.text}`).slice(0, 3),
     [tasks]
@@ -515,23 +517,23 @@ const AdvertisementCard: React.FC<{
   const briefingText = useMemo(() => briefingLines.join('\n'), [briefingLines]);
 
   useEffect(() => {
-    setActiveFace(group.omote ? 'omote' : 'ura');
+    setActiveSide(group.omote ? '表' : '裏');
   }, [group.omote, group.ura, group.key]);
 
   useEffect(() => {
-    if (!activeItem?.imageUrl) {
+    if (!displayData?.imageUrl) {
       setImageSrc('');
       setImageCandidates([]);
       setImageCandidateIndex(0);
       setImageAccessError(false);
       return;
     }
-    const nextDisplayUrl = buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 800);
-    const nextFallbackUrl = buildGoogleDriveImageFallbackUrl(activeItem.imageUrl);
-    const nextCandidates = buildGoogleDriveImageCandidates(activeItem.imageUrl, 800);
+    const nextDisplayUrl = buildGoogleDriveImageDisplayUrl(displayData.imageUrl, 800);
+    const nextFallbackUrl = buildGoogleDriveImageFallbackUrl(displayData.imageUrl);
+    const nextCandidates = buildGoogleDriveImageCandidates(displayData.imageUrl, 800);
     console.log('[Dashboard] advertisement image urls', {
-      title: activeItem.title,
-      sourceUrl: activeItem.imageUrl,
+      title: displayData.title,
+      sourceUrl: displayData.imageUrl,
       displayUrl: nextDisplayUrl,
       fallbackUrl: nextFallbackUrl,
       candidates: nextCandidates
@@ -540,7 +542,7 @@ const AdvertisementCard: React.FC<{
     setImageCandidates(nextCandidates);
     setImageCandidateIndex(0);
     setImageAccessError(false);
-  }, [activeItem]);
+  }, [displayData]);
 
   const handleCopyBriefing = async () => {
     if (!briefingText) return;
@@ -576,7 +578,7 @@ const AdvertisementCard: React.FC<{
     }
   };
 
-  if (!activeItem) return null;
+  if (!displayData) return null;
 
   return (
     <div
@@ -591,7 +593,7 @@ const AdvertisementCard: React.FC<{
     >
       <button
         type="button"
-        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 1600), `${group.title} ${activeFace === 'omote' ? '表' : '裏'}`)}
+        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(displayData.imageUrl, 1600), `${group.title} ${activeSide}`)}
         style={{
           display: 'grid',
           gridTemplateColumns: '88px 1fr',
@@ -608,14 +610,14 @@ const AdvertisementCard: React.FC<{
           {imageSrc ? (
             <img
               src={imageSrc}
-              alt={activeItem.title || '広告画像'}
+              alt={displayData.title || '広告画像'}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               referrerPolicy="no-referrer"
               onError={(event) => {
                 const nextCandidate = imageCandidates[imageCandidateIndex + 1];
                 console.error('[Dashboard] advertisement image load failed', {
-                  title: activeItem.title,
-                  sourceUrl: activeItem.imageUrl,
+                  title: displayData.title,
+                  sourceUrl: displayData.imageUrl,
                   attemptedSrc: imageSrc,
                   currentSrc: event.currentTarget.currentSrc,
                   nextCandidate,
@@ -640,35 +642,35 @@ const AdvertisementCard: React.FC<{
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
             <div style={{ color: '#0f172a', fontWeight: 800 }}>{group.title}</div>
             <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4f46e5', background: '#e0e7ff', borderRadius: '999px', padding: '3px 8px' }}>
-              {activeFace === 'omote' ? '表' : '裏'}
+              {activeSide}
             </span>
           </div>
           <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
             {group.startDate} - {group.endDate}
           </div>
-          {activeItem.memo && (
+          {displayData.memo && (
             <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '6px', lineHeight: 1.5 }}>
-              {activeItem.memo}
+              {displayData.memo}
             </div>
           )}
         </div>
       </button>
 
-      {hasUra && (
+      {hasSideToggle && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <button
             type="button"
-            className={activeFace === 'omote' ? 'button-primary' : 'button-secondary'}
+            className={activeSide === '表' ? 'button-primary' : 'button-secondary'}
             style={{ width: 'auto', padding: '8px 12px' }}
-            onClick={() => setActiveFace('omote')}
+            onClick={() => setActiveSide('表')}
           >
             表
           </button>
           <button
             type="button"
-            className={activeFace === 'ura' ? 'button-primary' : 'button-secondary'}
+            className={activeSide === '裏' ? 'button-primary' : 'button-secondary'}
             style={{ width: 'auto', padding: '8px 12px' }}
-            onClick={() => setActiveFace('ura')}
+            onClick={() => setActiveSide('裏')}
           >
             裏
           </button>
