@@ -195,6 +195,16 @@ const normalizeShiftHeaderDate = (value: string, fallbackYear: string) => {
     return direct;
   }
 
+  const shortYearMonthDayMatch = trimmed.match(/(\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (shortYearMonthDayMatch) {
+    return `20${shortYearMonthDayMatch[1]}-${shortYearMonthDayMatch[2].padStart(2, '0')}-${shortYearMonthDayMatch[3].padStart(2, '0')}`;
+  }
+
+  const yearMonthDayMatch = trimmed.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (yearMonthDayMatch) {
+    return `${yearMonthDayMatch[1]}-${yearMonthDayMatch[2].padStart(2, '0')}-${yearMonthDayMatch[3].padStart(2, '0')}`;
+  }
+
   const monthDayMatch = trimmed.match(/(\d{1,2})[\/\-月](\d{1,2})/);
   if (monthDayMatch) {
     return `${fallbackYear}-${monthDayMatch[1].padStart(2, '0')}-${monthDayMatch[2].padStart(2, '0')}`;
@@ -246,40 +256,63 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
     return { columnInfo: null, summary };
   }
 
-  rows.forEach((row) => {
-    const label = normalizeShiftCellText(row.name);
-    const value = (row.cells[columnInfo.columnIndex] || '').trim();
-    if (!label || !value) return;
+  const normalizedRows = rows.map((row) => ({
+    row,
+    label: normalizeShiftCellText(row.name),
+    value: (row.cells[columnInfo.columnIndex] || '').trim()
+  }));
 
-    if (label.includes('全体朝礼当番')) {
-      summary.morningLeader = value;
+  const morningRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('全体朝礼当番'));
+  const produceRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('青果朝礼当番'));
+  const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
+  const timeyHoursRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('タイミー') && entry.label.includes('時間'));
+
+  const dutyBoundaryCandidates = [morningRowIndex, produceRowIndex, timeyRowIndex].filter((index) => index >= 0);
+  const dutyEndIndex = dutyBoundaryCandidates.length > 0 ? Math.min(...dutyBoundaryCandidates) : normalizedRows.length;
+  const dutyRows = normalizedRows.slice(0, dutyEndIndex);
+
+  dutyRows.forEach((entry) => {
+    if (!entry.label || !entry.value) return;
+    if (entry.value === 'B') {
+      summary.lateMembers.push(entry.row.name);
       return;
     }
-    if (label.includes('青果朝礼当番')) {
-      summary.produceLeader = value;
-      return;
+    if (entry.value === '0') {
+      summary.holidayMembers.push(entry.row.name);
     }
-    if (label === 'タイミー') {
-      const timeRow = rows.find((candidate) => normalizeShiftCellText(candidate.name).includes('タイミー') && normalizeShiftCellText(candidate.name).includes('時間'));
-      const hours = (timeRow?.cells[columnInfo.columnIndex] || '').trim();
-      const isEnabled = normalizeShiftCellText(value).includes('t');
-      summary.timey = isEnabled ? (hours ? `あり（${hours}）` : 'あり') : '';
-      return;
+  });
+
+  if (morningRowIndex >= 0) {
+    summary.morningLeader = normalizedRows[morningRowIndex]?.value || '';
+  }
+  if (produceRowIndex >= 0) {
+    summary.produceLeader = normalizedRows[produceRowIndex]?.value || '';
+  }
+  if (timeyRowIndex >= 0) {
+    const timeyValue = normalizeShiftCellText(normalizedRows[timeyRowIndex]?.value || '');
+    const timeyHours = timeyHoursRowIndex >= 0 ? normalizedRows[timeyHoursRowIndex]?.value || '' : '';
+    if (timeyValue.includes('t')) {
+      summary.timey = timeyHours ? `あり（${timeyHours}）` : 'あり';
     }
-    if (
-      label.includes('タイミー') ||
-      label.includes('朝礼当番') ||
-      label.includes('時間')
-    ) {
-      return;
-    }
-    if (value === 'B') {
-      summary.lateMembers.push(row.name);
-      return;
-    }
-    if (value === '0') {
-      summary.holidayMembers.push(row.name);
-    }
+  }
+
+  console.log('[Dashboard] shift duty rows', {
+    targetDate,
+    columnIndex: columnInfo.columnIndex,
+    dutyRowCount: dutyRows.length,
+    lateMembers: summary.lateMembers,
+    holidayMembers: summary.holidayMembers
+  });
+  console.log('[Dashboard] shift leader rows', {
+    targetDate,
+    morningLeader: summary.morningLeader,
+    produceLeader: summary.produceLeader
+  });
+  console.log('[Dashboard] shift timey rows', {
+    targetDate,
+    timeyRowIndex,
+    timeyHoursRowIndex,
+    timey: summary.timey
   });
 
   return { columnInfo, summary };
@@ -1945,11 +1978,21 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>
                   【{section.label}】 {section.date || '日付未設定'}
                 </div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>朝礼当番：{section.summary.morningLeader || 'なし'}</div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果朝礼当番：{section.summary.produceLeader || 'なし'}</div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>遅番：{section.summary.lateMembers.length > 0 ? section.summary.lateMembers.join('、') : 'なし'}</div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>公休：{section.summary.holidayMembers.length > 0 ? section.summary.holidayMembers.join('、') : 'なし'}</div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>タイミー：{section.summary.timey || 'なし'}</div>
+                {section.summary.morningLeader && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>朝礼当番：{section.summary.morningLeader}</div>
+                )}
+                {section.summary.produceLeader && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果朝礼当番：{section.summary.produceLeader}</div>
+                )}
+                {section.summary.lateMembers.length > 0 && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>遅番：{section.summary.lateMembers.join('、')}</div>
+                )}
+                {section.summary.holidayMembers.length > 0 && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>公休：{section.summary.holidayMembers.join('、')}</div>
+                )}
+                {section.summary.timey && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>タイミー：{section.summary.timey}</div>
+                )}
               </div>
             ))}
           </div>
