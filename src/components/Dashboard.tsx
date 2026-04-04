@@ -162,8 +162,20 @@ const getPreviousDate = (value: string) => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizeAdvertisementSide = (sideRaw: string): '表' | '裏' | 'web' | '' => {
+  const normalized = sideRaw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+  if (!normalized) return '';
+  if (normalized === '表' || normalized === '表面' || normalized === '表側' || normalized === 'omote') return '表';
+  if (normalized === '裏' || normalized === '裏面' || normalized === '裏側' || normalized === 'ura') return '裏';
+  if (normalized === 'web' || normalized === 'ウェブ') return 'web';
+  return '';
+};
+
 const getAdvertisementFace = (item: SharedAdvertisementEntry): 'omote' | 'ura' | 'single' => {
-  const normalizedSide = (item.side || '').trim();
+  const normalizedSide = normalizeAdvertisementSide(item.side || '');
   if (normalizedSide === '表') return 'omote';
   if (normalizedSide === '裏') return 'ura';
   const title = item.title || '';
@@ -1400,6 +1412,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     })));
     const groupedMap = new Map<string, AdvertisementCardGroup>();
     filteredRecords.forEach((item) => {
+      const sideRaw = item.side || '';
+      const normalizedSide = normalizeAdvertisementSide(sideRaw);
       const baseTitle = getAdvertisementBaseTitle(item.title || '');
       const face = getAdvertisementFace(item);
       const groupKey = getAdvertisementGroupKey(item);
@@ -1410,13 +1424,17 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         endDate: item.endDate
       };
 
+      console.log('[Dashboard] advertisement side normalization', {
+        title: item.title,
+        sideRaw,
+        normalizedSide
+      });
+
       if (face === 'ura') {
         existing.ura = item;
-      } else {
+      } else if (face === 'omote') {
         existing.omote = item;
-      }
-
-      if (face === 'single' && !existing.omote) {
+      } else if (!existing.omote) {
         existing.omote = item;
       }
 
@@ -1438,6 +1456,11 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         title: group.ura.title,
         side: group.ura.side
       } : null
+    })));
+    console.log('[Dashboard] advertisement grouped side summary', groupedAdvertisements.map((group) => ({
+      title: group.title,
+      hasOmote: Boolean(group.omote),
+      hasUra: Boolean(group.ura)
     })));
     return groupedAdvertisements;
   }, [advertisements, currentDate]);
