@@ -229,6 +229,18 @@ const resourceConfigs = {
           if (amtCompare !== 0) return amtCompare;
           return b.salesQty - a.salesQty;
         })
+  },
+  shift: {
+    sheetName: 'shift_master',
+    range: 'A1:ZZ',
+    mapRows: (rows: string[][]) =>
+      rows
+        .filter((row) => row.some((cell) => cell?.toString().trim()))
+        .map((row, index) => ({
+          rowNumber: index + 1,
+          name: row[0] || '',
+          cells: row.map((cell) => cell || '')
+        }))
   }
 } as const;
 

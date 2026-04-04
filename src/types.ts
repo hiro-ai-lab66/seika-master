@@ -317,6 +317,12 @@ export interface SharedAdvertisementEntry {
     side?: string;
 }
 
+export interface SharedShiftMasterRow {
+    rowNumber?: number;
+    name: string;
+    cells: string[];
+}
+
 export interface AppState {
     sales: SalesData[];
     todos: ToDoItem[];

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry } from '../types';
+import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
 import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
@@ -8,6 +8,7 @@ import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, build
 import { ImageZoomModal } from './ImageZoomModal';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
 import { fetchSharedNotices } from '../services/googleSheetsNoticeService';
+import { fetchSharedShiftRows } from '../services/googleSheetsShiftService';
 
 interface Props {
   state: AppState;
@@ -59,6 +60,14 @@ type NoticeSection = {
 type NoticeDisplayLine = {
   raw: string;
   normalized: string;
+};
+
+type ShiftDaySummary = {
+  morningLeader: string;
+  produceLeader: string;
+  lateMembers: string[];
+  holidayMembers: string[];
+  timey: string;
 };
 
 const ADVERTISEMENT_CACHE_KEY = 'seika_dashboard_advertisements_cache';
@@ -162,15 +171,130 @@ const getPreviousDate = (value: string) => {
   return `${year}-${month}-${day}`;
 };
 
+const getNextDate = (value: string) => {
+  if (!value) return '';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeShiftCellText = (value: string) =>
+  (value || '')
+    .replace(/[\u3000\s]+/g, '')
+    .trim();
+
+const normalizeShiftHeaderDate = (value: string, fallbackYear: string) => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  const direct = normalizeFlexibleDateKey(trimmed);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(direct)) {
+    return direct;
+  }
+
+  const monthDayMatch = trimmed.match(/(\d{1,2})[\/\-月](\d{1,2})/);
+  if (monthDayMatch) {
+    return `${fallbackYear}-${monthDayMatch[1].padStart(2, '0')}-${monthDayMatch[2].padStart(2, '0')}`;
+  }
+
+  if (/^\d{5}$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    if (serial >= 40000 && serial <= 60000) {
+      const epoch = new Date(1899, 11, 30);
+      const d = new Date(epoch.getTime() + serial * 86400000);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+  }
+
+  return '';
+};
+
+const buildEmptyShiftSummary = (): ShiftDaySummary => ({
+  morningLeader: '',
+  produceLeader: '',
+  lateMembers: [],
+  holidayMembers: [],
+  timey: ''
+});
+
+const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) => {
+  const fallbackYear = targetDate.slice(0, 4);
+  for (let rowIndex = 0; rowIndex < Math.min(rows.length, 3); rowIndex += 1) {
+    const row = rows[rowIndex];
+    for (let columnIndex = 2; columnIndex < row.cells.length; columnIndex += 1) {
+      const normalizedDate = normalizeShiftHeaderDate(row.cells[columnIndex] || '', fallbackYear);
+      if (normalizedDate === targetDate) {
+        return {
+          rowIndex,
+          columnIndex,
+          headerValue: row.cells[columnIndex] || ''
+        };
+      }
+    }
+  }
+  return null;
+};
+
+const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => {
+  const columnInfo = findShiftDateColumn(rows, targetDate);
+  const summary = buildEmptyShiftSummary();
+
+  if (!columnInfo) {
+    return { columnInfo: null, summary };
+  }
+
+  rows.forEach((row) => {
+    const label = normalizeShiftCellText(row.name);
+    const value = (row.cells[columnInfo.columnIndex] || '').trim();
+    if (!label || !value) return;
+
+    if (label.includes('全体朝礼当番')) {
+      summary.morningLeader = value;
+      return;
+    }
+    if (label.includes('青果朝礼当番')) {
+      summary.produceLeader = value;
+      return;
+    }
+    if (label === 'タイミー') {
+      const timeRow = rows.find((candidate) => normalizeShiftCellText(candidate.name).includes('タイミー') && normalizeShiftCellText(candidate.name).includes('時間'));
+      const hours = (timeRow?.cells[columnInfo.columnIndex] || '').trim();
+      const isEnabled = normalizeShiftCellText(value).includes('t');
+      summary.timey = isEnabled ? (hours ? `あり（${hours}）` : 'あり') : '';
+      return;
+    }
+    if (
+      label.includes('タイミー') ||
+      label.includes('朝礼当番') ||
+      label.includes('時間')
+    ) {
+      return;
+    }
+    if (value === 'B') {
+      summary.lateMembers.push(row.name);
+      return;
+    }
+    if (value === '0') {
+      summary.holidayMembers.push(row.name);
+    }
+  });
+
+  return { columnInfo, summary };
+};
+
 const normalizeAdvertisementSide = (sideRaw: string): '表' | '裏' | 'web' | '' => {
-  const normalized = sideRaw
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '');
+  // 全角スペース(\u3000)・NBSP(\u00a0)・制御文字等を除去してトリム
+  const normalized = (sideRaw || '')
+    .replace(/[\u00a0\u3000\s\u200b\r\n\t]+/g, '')
+    .trim();
   if (!normalized) return '';
-  if (normalized === '表' || normalized === '表面' || normalized === '表側' || normalized === 'omote') return '表';
-  if (normalized === '裏' || normalized === '裏面' || normalized === '裏側' || normalized === 'ura') return '裏';
-  if (normalized === 'web' || normalized === 'ウェブ') return 'web';
+  // includes ベースで部分一致判定（「表面」「表側」「表」すべて対応）
+  if (normalized.includes('表') || normalized.toLowerCase() === 'omote') return '表';
+  if (normalized.includes('裏') || normalized.toLowerCase() === 'ura') return '裏';
+  if (normalized.toLowerCase() === 'web' || normalized.includes('ウェブ')) return 'web';
   return '';
 };
 
@@ -753,6 +877,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [briefingStatus, setBriefingStatus] = useState('');
   const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
   const [sharedNotices, setSharedNotices] = useState<SharedNoticeEntry[]>([]);
+  const [sharedShiftRows, setSharedShiftRows] = useState<SharedShiftMasterRow[]>([]);
   const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
     weather: '',
     tempBand: '',
@@ -794,6 +919,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const allDailySales = useMemo(() => loadDailySales(), [currentDate, refreshKey, manualRefreshKey, dailySalesVersion]);
   const dailySales = useMemo(() => allDailySales.filter((row) => row.date === currentDate), [allDailySales, currentDate]);
   const previousDate = useMemo(() => getPreviousDate(currentDate), [currentDate]);
+  const nextDate = useMemo(() => getNextDate(currentDate), [currentDate]);
 
   const currentBudget = todayBudgetEntry?.totalBudget || todayInspection?.totalBudget || 0;
   const actualFinal = todayInspection?.actualFinal ?? inspectionMeta.actualFinal;
@@ -902,10 +1028,11 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const loadDashboardData = async () => {
       try {
         console.log('[Dashboard] starting advertisement fetch');
-        const [advertisementResult, inspectionResult, noticeResult] = await Promise.allSettled([
+        const [advertisementResult, inspectionResult, noticeResult, shiftResult] = await Promise.allSettled([
           fetchAdvertisementsWithRetry(),
           fetchSharedCheckRows(),
-          fetchSharedNotices()
+          fetchSharedNotices(),
+          fetchSharedShiftRows()
         ]);
         if (!isMounted) return;
 
@@ -1083,6 +1210,21 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           setSharedNotices([]);
         }
 
+        if (shiftResult.status === 'fulfilled') {
+          setSharedShiftRows(shiftResult.value);
+          console.log('[Dashboard] loaded shared shift rows', {
+            rowCount: shiftResult.value.length,
+            sampleRows: shiftResult.value.slice(0, 5).map((row) => ({
+              rowNumber: row.rowNumber,
+              name: row.name,
+              cellsPreview: row.cells.slice(0, 8)
+            }))
+          });
+        } else {
+          console.error('[Dashboard] failed to load shift data', shiftResult.reason);
+          setSharedShiftRows([]);
+        }
+
         setLastUpdatedAt(new Date().toISOString());
       } catch (error) {
         console.error('[Dashboard] failed to refresh dashboard data', error);
@@ -1109,6 +1251,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         });
         setSharedCheckRows([]);
         setSharedNotices([]);
+        setSharedShiftRows([]);
       }
     };
 
@@ -1431,19 +1574,42 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         endDate: item.endDate
       };
 
+      // ── side 正規化ログ（強化版）──
       console.log('[Dashboard] advertisement side normalization', {
         title: item.title,
         sideRaw,
-        normalizedSide
+        sideRawCharCodes: Array.from(sideRaw).map((c) => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`),
+        normalizedSide,
+        face
       });
+
+      const beforeOmote = Boolean(existing.omote);
+      const beforeUra = Boolean(existing.ura);
 
       if (face === 'ura') {
         existing.ura = item;
       } else if (face === 'omote') {
         existing.omote = item;
-      } else if (!existing.omote) {
-        existing.omote = item;
+      } else {
+        // face === 'single'：side 列が空で title 判定もできない場合
+        // 1行目を omote、2行目以降を ura として扱い、切り替えを有効にする
+        if (!existing.omote) {
+          existing.omote = item;
+        } else if (!existing.ura) {
+          existing.ura = item;
+        }
       }
+
+      console.log('[Dashboard] advertisement grouping result', {
+        title: item.title,
+        groupKey,
+        face,
+        normalizedSide,
+        beforeOmote,
+        beforeUra,
+        afterOmote: Boolean(existing.omote),
+        afterUra: Boolean(existing.ura)
+      });
 
       groupedMap.set(groupKey, existing);
     });
@@ -1472,6 +1638,33 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     return groupedAdvertisements;
   }, [advertisements, currentDate]);
   const displayedAdvertisements = todayAdvertisements;
+
+  const shiftInfo = useMemo(() => {
+    const today = buildShiftSummary(sharedShiftRows, currentDate);
+    const tomorrow = buildShiftSummary(sharedShiftRows, nextDate);
+
+    console.log('[Dashboard] shift target columns', {
+      today: {
+        date: currentDate,
+        columnIndex: today.columnInfo?.columnIndex ?? null,
+        headerValue: today.columnInfo?.headerValue ?? ''
+      },
+      tomorrow: {
+        date: nextDate,
+        columnIndex: tomorrow.columnInfo?.columnIndex ?? null,
+        headerValue: tomorrow.columnInfo?.headerValue ?? ''
+      }
+    });
+    console.log('[Dashboard] shift extracted summary', {
+      today: today.summary,
+      tomorrow: tomorrow.summary
+    });
+
+    return {
+      today: today.summary,
+      tomorrow: tomorrow.summary
+    };
+  }, [sharedShiftRows, currentDate, nextDate]);
 
   useEffect(() => {
     console.log('[Dashboard] advertisement display lengths', {
@@ -1735,6 +1928,30 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 />
               ))
             )}
+          </div>
+        </div>
+
+        <div style={{ ...cardStyle, borderColor: '#bfdbfe' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <Target size={18} color="#2563eb" />
+            <h3 style={sectionTitleStyle}>勤務情報</h3>
+          </div>
+          <div style={{ display: 'grid', gap: '12px' }}>
+            {[
+              { label: '本日', date: currentDate, summary: shiftInfo.today },
+              { label: '翌日', date: nextDate, summary: shiftInfo.tomorrow }
+            ].map((section) => (
+              <div key={section.label} style={{ background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '6px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>
+                  【{section.label}】 {section.date || '日付未設定'}
+                </div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>朝礼当番：{section.summary.morningLeader || 'なし'}</div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果朝礼当番：{section.summary.produceLeader || 'なし'}</div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>遅番：{section.summary.lateMembers.length > 0 ? section.summary.lateMembers.join('、') : 'なし'}</div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>公休：{section.summary.holidayMembers.length > 0 ? section.summary.holidayMembers.join('、') : 'なし'}</div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>タイミー：{section.summary.timey || 'なし'}</div>
+              </div>
+            ))}
           </div>
         </div>
 

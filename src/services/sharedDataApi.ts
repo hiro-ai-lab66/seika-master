@@ -1,4 +1,4 @@
-export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales';
+export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift';
 export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales';
 
 type SharedReadResponse<T> = {
@@ -130,6 +130,20 @@ export const fetchSharedReadResource = async <T>(
     }
 
     const items = (payload as SharedReadResponse<T>).items || [];
+    // advertisement の場合は side フィールドの到達確認ログを出す
+    if (resource === 'advertisement') {
+      console.log('[sharedDataApi] advertisement items received from API', {
+        count: items.length,
+        items: (items as Array<Record<string, unknown>>).map((item) => ({
+          id:        item['id'],
+          title:     item['title'],
+          startDate: item['startDate'],
+          endDate:   item['endDate'],
+          side:      item['side'],
+          sideType:  typeof item['side']
+        }))
+      });
+    }
     sharedReadCache.set(resource, {
       fetchedAt: Date.now(),
       items
