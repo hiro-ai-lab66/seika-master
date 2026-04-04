@@ -149,12 +149,20 @@ const columnLetterToNumber = (columnLetter: string) => {
     return columnLetter.split('').reduce((sum, char) => (sum * 26) + (char.charCodeAt(0) - 64), 0);
 };
 
-const applyBorderToRange = (sheet: Worksheet, startCol: string, endCol: string, rowNumber: number) => {
+const applyBorderToRect = (
+    sheet: Worksheet,
+    startCol: string,
+    endCol: string,
+    startRow: number,
+    endRow: number
+) => {
     const start = columnLetterToNumber(startCol);
     const end = columnLetterToNumber(endCol);
 
-    for (let columnNumber = start; columnNumber <= end; columnNumber += 1) {
-        sheet.getCell(rowNumber, columnNumber).border = CHECK_AREA_BORDER;
+    for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
+        for (let columnNumber = start; columnNumber <= end; columnNumber += 1) {
+            sheet.getCell(rowNumber, columnNumber).border = CHECK_AREA_BORDER;
+        }
     }
 };
 
@@ -206,8 +214,9 @@ const rebuildCheckArea = (sheet: Worksheet, block: (typeof PAGE_BLOCKS)[number])
         };
         inputCell.border = CHECK_AREA_BORDER;
 
-        applyBorderToRange(sheet, headerStartCol, headerEndCol, block.checkHeaderRow);
-        applyBorderToRange(sheet, inputStartCol, inputEndCol, block.checkInputRow);
+        applyBorderToRect(sheet, headerStartCol, headerEndCol, block.checkHeaderRow, block.checkHeaderRow);
+        applyBorderToRect(sheet, inputStartCol, inputEndCol, block.checkInputRow, block.checkInputRow);
+        applyBorderToRect(sheet, headerStartCol, inputEndCol, block.checkHeaderRow, block.checkInputRow);
     });
 };
 
