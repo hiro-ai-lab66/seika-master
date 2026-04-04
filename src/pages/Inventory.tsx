@@ -94,7 +94,10 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
 
     return (
     <>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'grid', gap: '12px', width: '100%' }}>
+            <div style={{ display: 'grid', gap: '8px' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>通常操作</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
             <button
                 className="btn-action primary"
                 style={{
@@ -181,26 +184,34 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
                     Excel出力（強制）
                 </button>
             )}
+                </div>
+            </div>
             {onMonthEndClose && (
-                <button
-                    type="button"
-                    className="btn-action"
-                    style={{
-                        padding: '10px 16px',
-                        fontSize: '0.9rem',
-                        minWidth: '150px',
-                        width: 'auto',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        color: '#991b1b',
-                        borderColor: '#991b1b'
-                    }}
-                    onClick={onMonthEndClose}
-                >
-                    <Clock size={16} />
-                    月末締め
-                </button>
+                <div style={{ display: 'grid', gap: '8px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#991b1b' }}>月末処理</div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                            type="button"
+                            className="btn-action"
+                            style={{
+                                padding: '10px 16px',
+                                fontSize: '0.9rem',
+                                minWidth: '150px',
+                                width: 'auto',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                color: '#991b1b',
+                                borderColor: '#991b1b',
+                                backgroundColor: '#fff7ed'
+                            }}
+                            onClick={onMonthEndClose}
+                        >
+                            <Clock size={16} />
+                            月末締め
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
 
@@ -390,8 +401,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
     const [executionTime, setExecutionTime] = useState('16：00　　　～　18：00');
     const [isSheetsConfiguredState] = useState(isSheetsConfigured());
     const [isSheetsAuthenticated, setIsSheetsAuthenticated] = useState(false);
-    const [isLoadingSharedInventory, setIsLoadingSharedInventory] = useState(false);
-    const [isSavingSharedInventory, setIsSavingSharedInventory] = useState(false);
+    const [, setIsLoadingSharedInventory] = useState(false);
+    const [, setIsSavingSharedInventory] = useState(false);
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
     const [sharedError, setSharedError] = useState<string | null>(null);
     const [needsSheetsLogin, setNeedsSheetsLogin] = useState(false);
@@ -1132,21 +1143,6 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                         />
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
-                        <SharedInventoryPanel
-                            isConfigured={isSheetsConfiguredState}
-                            isAuthenticated={isSheetsAuthenticated}
-                            isLoading={isLoadingSharedInventory}
-                            isSaving={isSavingSharedInventory}
-                            storeName={getSharedStoreName()}
-                            status={null}
-                            error={null}
-                            needsLogin={needsSheetsLogin}
-                            showStatusCard={false}
-                            onLogin={handleSheetsLogin}
-                            onReload={handleReloadSharedInventory}
-                            onSave={handleSaveSharedInventory}
-                            onExport={handleExcelExport}
-                        />
                         {currentDepartmentInventory.length > 0 && currentType === 'mid' && (
                             <button
                                 className="btn-action"
