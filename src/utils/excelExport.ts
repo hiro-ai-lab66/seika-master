@@ -13,7 +13,7 @@ type ExportOptions = {
 const TEMPLATE_PATH = '/templates/inventory_template.xlsx';
 const LAYOUT_REFERENCE_SHEET = '果物';
 const TARGET_SHEETS: Record<InventoryDepartment, string> = {
-    野菜: '野菜',
+    野菜: '野菜テンプレ',
     果物: '果物'
 };
 const PAGE_BLOCKS = [
