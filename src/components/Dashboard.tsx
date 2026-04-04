@@ -67,6 +67,8 @@ type ShiftDaySummary = {
   produceLeader: string;
   lateMembers: string[];
   holidayMembers: string[];
+  halfHolidayMembers: string[];
+  produceHolidayMembers: string[];
   timey: string;
 };
 
@@ -227,8 +229,19 @@ const buildEmptyShiftSummary = (): ShiftDaySummary => ({
   produceLeader: '',
   lateMembers: [],
   holidayMembers: [],
+  halfHolidayMembers: [],
+  produceHolidayMembers: [],
   timey: ''
 });
+
+const formatJapaneseWeekday = (dateValue: string) => {
+  if (!dateValue) return '';
+  const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) return '';
+  return ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'][date.getDay()] || '';
+};
 
 const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) => {
   const fallbackYear = targetDate.slice(0, 4);
@@ -277,8 +290,32 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
       summary.lateMembers.push(entry.row.name);
       return;
     }
+    if (entry.value === '0.5') {
+      summary.halfHolidayMembers.push(entry.row.name);
+      return;
+    }
     if (entry.value === '0') {
       summary.holidayMembers.push(entry.row.name);
+    }
+  });
+
+  const produceBlockStartIndex = produceRowIndex >= 0 ? produceRowIndex + 1 : -1;
+  const produceBoundaryCandidates = [timeyRowIndex].filter((index) => index >= 0);
+  const produceBlockEndIndex = produceBoundaryCandidates.length > 0 ? Math.min(...produceBoundaryCandidates) : normalizedRows.length;
+  const produceRows = produceBlockStartIndex >= 0
+    ? normalizedRows.slice(produceBlockStartIndex, produceBlockEndIndex)
+    : [];
+  produceRows.forEach((entry) => {
+    if (!entry.label || !entry.value) return;
+    if (
+      entry.label.includes('タイミー') ||
+      entry.label.includes('朝礼当番') ||
+      entry.label.includes('時間')
+    ) {
+      return;
+    }
+    if (entry.value === '0') {
+      summary.produceHolidayMembers.push(entry.row.name);
     }
   });
 
@@ -301,12 +338,18 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
     columnIndex: columnInfo.columnIndex,
     dutyRowCount: dutyRows.length,
     lateMembers: summary.lateMembers,
-    holidayMembers: summary.holidayMembers
+    holidayMembers: summary.holidayMembers,
+    halfHolidayMembers: summary.halfHolidayMembers
   });
   console.log('[Dashboard] shift leader rows', {
     targetDate,
     morningLeader: summary.morningLeader,
     produceLeader: summary.produceLeader
+  });
+  console.log('[Dashboard] shift produce rows', {
+    targetDate,
+    produceRowCount: produceRows.length,
+    produceHolidayMembers: summary.produceHolidayMembers
   });
   console.log('[Dashboard] shift timey rows', {
     targetDate,
@@ -1675,6 +1718,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const shiftInfo = useMemo(() => {
     const today = buildShiftSummary(sharedShiftRows, currentDate);
     const tomorrow = buildShiftSummary(sharedShiftRows, nextDate);
+    const todayLabel = formatJapaneseWeekday(currentDate);
+    const tomorrowLabel = formatJapaneseWeekday(nextDate);
 
     console.log('[Dashboard] shift target columns', {
       today: {
@@ -1692,10 +1737,19 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       today: today.summary,
       tomorrow: tomorrow.summary
     });
+    console.log('[Dashboard] shift labels and holidays', {
+      todayLabel,
+      tomorrowLabel,
+      holidayMembers: today.summary.holidayMembers,
+      halfHolidayMembers: today.summary.halfHolidayMembers,
+      produceHolidayMembers: today.summary.produceHolidayMembers
+    });
 
     return {
       today: today.summary,
-      tomorrow: tomorrow.summary
+      tomorrow: tomorrow.summary,
+      todayLabel,
+      tomorrowLabel
     };
   }, [sharedShiftRows, currentDate, nextDate]);
 
@@ -1971,12 +2025,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           </div>
           <div style={{ display: 'grid', gap: '12px' }}>
             {[
-              { label: '本日', date: currentDate, summary: shiftInfo.today },
-              { label: '翌日', date: nextDate, summary: shiftInfo.tomorrow }
+              { label: '本日', date: currentDate, weekday: shiftInfo.todayLabel, summary: shiftInfo.today },
+              { label: '翌日', date: nextDate, weekday: shiftInfo.tomorrowLabel, summary: shiftInfo.tomorrow }
             ].map((section) => (
               <div key={section.label} style={{ background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '6px' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>
-                  【{section.label}】 {section.date || '日付未設定'}
+                  【{section.label}】 {section.date || '日付未設定'}{section.weekday ? ` ${section.weekday}` : ''}
                 </div>
                 {section.summary.morningLeader && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>朝礼当番：{section.summary.morningLeader}</div>
@@ -1989,6 +2043,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 )}
                 {section.summary.holidayMembers.length > 0 && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>公休：{section.summary.holidayMembers.join('、')}</div>
+                )}
+                {section.summary.halfHolidayMembers.length > 0 && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>半休：{section.summary.halfHolidayMembers.join('、')}</div>
+                )}
+                {section.summary.produceHolidayMembers.length > 0 && (
+                  <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果休み：{section.summary.produceHolidayMembers.join('、')}</div>
                 )}
                 {section.summary.timey && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>タイミー：{section.summary.timey}</div>
