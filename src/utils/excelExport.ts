@@ -131,6 +131,12 @@ const syncSheetLayoutFromReference = (targetSheet: Worksheet, referenceSheet: Wo
     const targetMerges = (targetSheet as Worksheet & { _merges?: Record<string, { range: string }> })._merges || {};
     const referenceMerges = (referenceSheet as Worksheet & { _merges?: Record<string, { range: string }> })._merges || {};
 
+    targetSheet.properties = cloneStylePart(referenceSheet.properties) || targetSheet.properties;
+    targetSheet.pageSetup = cloneStylePart(referenceSheet.pageSetup) || targetSheet.pageSetup;
+    targetSheet.headerFooter = cloneStylePart(referenceSheet.headerFooter) || targetSheet.headerFooter;
+    targetSheet.views = cloneStylePart(referenceSheet.views) || targetSheet.views;
+    targetSheet.state = referenceSheet.state;
+
     Object.keys(targetMerges).forEach((mergeKey) => {
         const mergeRange = targetMerges[mergeKey];
         try {
