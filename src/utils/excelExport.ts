@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { Worksheet } from 'exceljs';
+import type { Borders, Worksheet } from 'exceljs';
 import type { InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 
 type ExportOptions = {
@@ -68,6 +68,12 @@ const CHECK_AREA_LAYOUT = [
     { headerRange: 'L:M', inputRange: 'L:M', label: '担当者（読上係）' },
     { headerRange: 'N:N', inputRange: 'N:N', label: '検査員' }
 ] as const;
+const CHECK_AREA_BORDER: Partial<Borders> = {
+    top: { style: 'thin' },
+    bottom: { style: 'thin' },
+    left: { style: 'thin' },
+    right: { style: 'thin' }
+};
 const WRITABLE_ROWS = PAGE_BLOCKS.flatMap(({ detailStartRow, detailEndRow }) =>
     Array.from({ length: detailEndRow - detailStartRow + 1 }, (_, rowOffset) => detailStartRow + rowOffset)
 );
@@ -139,7 +145,23 @@ const updateHeaderBlock = (
     sheet.getCell(`E${block.locationRow}`).value = getExecutionTimeLabel(options.executionTime);
 };
 
+const columnLetterToNumber = (columnLetter: string) => {
+    return columnLetter.split('').reduce((sum, char) => (sum * 26) + (char.charCodeAt(0) - 64), 0);
+};
+
+const applyBorderToRange = (sheet: Worksheet, startCol: string, endCol: string, rowNumber: number) => {
+    const start = columnLetterToNumber(startCol);
+    const end = columnLetterToNumber(endCol);
+
+    for (let columnNumber = start; columnNumber <= end; columnNumber += 1) {
+        sheet.getCell(rowNumber, columnNumber).border = CHECK_AREA_BORDER;
+    }
+};
+
 const rebuildCheckArea = (sheet: Worksheet, block: (typeof PAGE_BLOCKS)[number]) => {
+    sheet.getRow(block.checkHeaderRow).height = 30;
+    sheet.getRow(block.checkInputRow).height = 24;
+
     CHECK_AREA_LAYOUT.forEach(({ headerRange, inputRange, label }) => {
         const [headerStartCol, headerEndCol] = headerRange.split(':');
         const [inputStartCol, inputEndCol] = inputRange.split(':');
@@ -169,8 +191,13 @@ const rebuildCheckArea = (sheet: Worksheet, block: (typeof PAGE_BLOCKS)[number])
 
         headerCell.value = label;
         headerCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        headerCell.border = CHECK_AREA_BORDER;
         inputCell.value = null;
-        inputCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        inputCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        inputCell.border = CHECK_AREA_BORDER;
+
+        applyBorderToRange(sheet, headerStartCol, headerEndCol, block.checkHeaderRow);
+        applyBorderToRange(sheet, inputStartCol, inputEndCol, block.checkInputRow);
     });
 };
 
