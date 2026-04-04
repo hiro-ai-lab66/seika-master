@@ -643,6 +643,22 @@ function App() {
     setActiveTab('dashboard');
   };
 
+  const clearMonthEndAnalysis = (date: string) => {
+    setState(prev => ({
+      ...prev,
+      inspections: prev.inspections.map((entry) =>
+        entry.date === date
+          ? {
+              ...entry,
+              bestVegetables: [],
+              bestFruits: []
+            }
+          : entry
+      )
+    }));
+    setDashboardRefreshKey((prev) => prev + 1);
+  };
+
   const saveBudgets = (budgets: DailyBudget[]) => {
     setState(prev => ({ ...prev, dailyBudgets: budgets }));
   };
@@ -869,7 +885,7 @@ function App() {
       case 'products':
         return <ProductMaster />;
       case 'inventory':
-        return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} />;
+        return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} onMonthEndClose={clearMonthEndAnalysis} />;
       case 'dailySales':
         return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} onOpenPopGem={openPopGem} />;
        case 'sellfloor':

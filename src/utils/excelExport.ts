@@ -8,6 +8,7 @@ type ExportOptions = {
     valueType: InventoryValueType;
     storeName?: string;
     executionTime?: string;
+    filename?: string;
 };
 
 const TEMPLATE_PATH = '/templates/inventory_template.xlsx';
@@ -173,7 +174,7 @@ export const exportInventoryToExcel = async (
     items: InventoryItem[],
     dateStr: string,
     options: ExportOptions
-) => {
+): Promise<boolean> => {
     try {
         const filteredItems = getFilteredItems(items, options);
         if (filteredItems.length > MAX_EXPORT_ROWS) {
@@ -206,10 +207,12 @@ export const exportInventoryToExcel = async (
 
         await downloadWorkbook(
             workbook,
-            `inventory_${dateStr}_${options.department}_${options.type}_${options.valueType}.xlsx`
+            options.filename || `inventory_${dateStr}_${options.department}_${options.type}_${options.valueType}.xlsx`
         );
+        return true;
     } catch (error) {
         console.error('Excel出力エラー:', error);
         alert('Excel出力に失敗しました。\n詳細: ' + (error instanceof Error ? error.message : String(error)));
+        return false;
     }
 };

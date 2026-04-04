@@ -3,6 +3,7 @@ import { Boxes, Search, Trash2, Box, Printer, X, Copy, PlusCircle, Clock, Sparkl
 import type { Product, InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 import { loadProducts } from '../storage/products';
 import { loadInventory, saveInventory } from '../storage/inventory';
+import { loadDailySales, saveDailySales } from '../storage/dailySales';
 import { exportInventoryToExcel } from '../utils/excelExport';
 import {
     convertSharedRowsToInventoryItems,
@@ -14,11 +15,14 @@ import {
     migrateLocalInventoryOnce,
     replaceSharedInventoryItems
 } from '../services/googleSheetsInventoryService';
+import { upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
+import { upsertSharedDailySalesForDateDepartment } from '../services/googleSheetsDailySalesService';
 
 interface InventoryProps {
     currentDate: string;
     onProductActive?: (name: string) => void;
     onOpenPopGem?: (name?: string) => void;
+    onMonthEndClose?: (date: string) => void;
 }
 
 const resolveDepartment = (product?: Product | InventoryItem, fallback: InventoryDepartment = '野菜'): InventoryDepartment => {
@@ -63,6 +67,7 @@ type SharedInventoryPanelProps = {
     onReload: () => void;
     onSave: () => void;
     onExport?: () => void;
+    onMonthEndClose?: () => void;
 };
 
 const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
@@ -78,7 +83,8 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
     onLogin,
     onReload,
     onSave,
-    onExport
+    onExport,
+    onMonthEndClose
 }) => {
     console.log('render export button', {
         hasOnExport: Boolean(onExport),
@@ -173,6 +179,27 @@ const SharedInventoryPanel: React.FC<SharedInventoryPanelProps> = ({
                 >
                     <Printer size={16} />
                     Excel出力（強制）
+                </button>
+            )}
+            {onMonthEndClose && (
+                <button
+                    type="button"
+                    className="btn-action"
+                    style={{
+                        padding: '10px 16px',
+                        fontSize: '0.9rem',
+                        minWidth: '150px',
+                        width: 'auto',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        color: '#991b1b',
+                        borderColor: '#991b1b'
+                    }}
+                    onClick={onMonthEndClose}
+                >
+                    <Clock size={16} />
+                    月末締め
                 </button>
             )}
         </div>
@@ -347,7 +374,7 @@ const InventoryAreaSection: React.FC<InventoryAreaSectionProps> = ({
     </div>
 );
 
-export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActive, onOpenPopGem }) => {
+export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActive, onOpenPopGem, onMonthEndClose }) => {
     const [products, setProducts] = useState<Product[]>([]);
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(() => loadInventory());
     const [searchQuery, setSearchQuery] = useState('');
@@ -517,6 +544,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             currentDepartmentInventoryCount: currentDepartmentInventory.length,
             templatePaths: ['/templates/棚卸帳票類_原本.xlsx', '/templates/inventory_template.xlsx']
         });
+        console.log('[Inventory] export template candidates', '/templates/棚卸帳票類_原本.xlsx', '/templates/inventory_template.xlsx');
         exportInventoryToExcel(inventoryItems, currentDate, {
             type: currentType,
             department: currentDepartment,
@@ -524,6 +552,66 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
             storeName: '古沢店',
             executionTime
         });
+    };
+
+    const handleMonthEndClose = async () => {
+        if (!window.confirm('月末締めを実行しますか？データはクリアされます')) {
+            return;
+        }
+
+        const monthLabel = currentDate.slice(0, 7);
+        const exported = await exportInventoryToExcel(inventoryItems, currentDate, {
+            type: currentType,
+            department: currentDepartment,
+            valueType: currentValueType,
+            storeName: '古沢店',
+            executionTime,
+            filename: `棚卸_${monthLabel}.xlsx`
+        });
+
+        if (!exported) {
+            return;
+        }
+
+        const nextInventoryItems = inventoryItems.filter((item) => {
+            const itemType = item.inventoryType || 'monthend';
+            return !(item.date === currentDate && itemType === currentType);
+        });
+
+        setInventoryItems(nextInventoryItems);
+        setSearchQuery('');
+        setShowPreview(false);
+        setShowOnlyTarget(false);
+        setShowOnlyUnentered(false);
+        setManualItemName('');
+        setManualItemQty('');
+        setCurrentDepartment('野菜');
+        setCurrentValueType('cost');
+        setExecutionTime('16：00　　　～　18：00');
+        setTheoreticalCostStr('');
+        localStorage.removeItem(getTheoreticalCostKey(currentDate, currentType, currentValueType));
+
+        const nextDailySales = loadDailySales().filter((record) => record.date !== currentDate);
+        saveDailySales(nextDailySales);
+
+        if (isSheetsConfiguredState) {
+            try {
+                await upsertSharedCheckRowsForDateTimes(currentDate, ['csv-veggie', 'csv-fruit'], []);
+                await upsertSharedDailySalesForDateDepartment({ date: currentDate, department: '野菜', records: [] });
+                await upsertSharedDailySalesForDateDepartment({ date: currentDate, department: '果物', records: [] });
+                if (isSheetsAuthenticated) {
+                    await replaceSharedInventoryItems(nextInventoryItems);
+                }
+                setSharedStatus('月末締めを実行し、共有データも更新しました');
+                setSharedError(null);
+            } catch (error) {
+                console.error('Failed to clear shared month-end data', error);
+                setSharedError(`月末締め後の共有データ更新に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`);
+            }
+        }
+
+        onMonthEndClose?.(currentDate);
+        alert('月末締めを完了しました');
     };
 
     // 日付・区分の変更時に、該当する理論原価をlocalStorageから復元する
@@ -1084,6 +1172,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate, onProductActi
                     onReload={handleReloadSharedInventory}
                     onSave={handleSaveSharedInventory}
                     onExport={handleExcelExport}
+                    onMonthEndClose={currentType === 'monthend' ? handleMonthEndClose : undefined}
                 />
 
                 <div style={{ marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold', color: '#475569' }}>
