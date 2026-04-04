@@ -189,6 +189,8 @@ const normalizeShiftCellText = (value: string) =>
     .replace(/[\u3000\s]+/g, '')
     .trim();
 
+const hasTimeyFlag = (value: string) => normalizeShiftCellText(value).toLowerCase().includes('t');
+
 const normalizeShiftHeaderDate = (value: string, fallbackYear: string) => {
   const trimmed = (value || '').trim();
   if (!trimmed) return '';
@@ -326,10 +328,10 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
     summary.produceLeader = normalizedRows[produceRowIndex]?.value || '';
   }
   if (timeyRowIndex >= 0) {
-    const timeyValue = normalizeShiftCellText(normalizedRows[timeyRowIndex]?.value || '');
+    const timeyRaw = normalizedRows[timeyRowIndex]?.value || '';
     const timeyHours = timeyHoursRowIndex >= 0 ? normalizedRows[timeyHoursRowIndex]?.value || '' : '';
-    if (timeyValue.includes('t')) {
-      summary.timey = timeyHours ? `あり（${timeyHours}）` : 'あり';
+    if (hasTimeyFlag(timeyRaw)) {
+      summary.timey = timeyHours ? `あり（${timeyHours}時間）` : 'あり';
     }
   }
 
@@ -1720,6 +1722,17 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const tomorrow = buildShiftSummary(sharedShiftRows, nextDate);
     const todayLabel = formatJapaneseWeekday(currentDate);
     const tomorrowLabel = formatJapaneseWeekday(nextDate);
+    const todayTimeyColumnIndex = today.columnInfo?.columnIndex ?? -1;
+    const tomorrowTimeyColumnIndex = tomorrow.columnInfo?.columnIndex ?? -1;
+    const timeyRow = sharedShiftRows.find((row) => normalizeShiftCellText(row.name) === 'タイミー');
+    const timeyHoursRow = sharedShiftRows.find((row) => {
+      const label = normalizeShiftCellText(row.name);
+      return label.includes('タイミー') && label.includes('時間');
+    });
+    const todayTimeyRaw = todayTimeyColumnIndex >= 0 ? (timeyRow?.cells[todayTimeyColumnIndex] || '') : '';
+    const todayTimeyHoursRaw = todayTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[todayTimeyColumnIndex] || '') : '';
+    const tomorrowTimeyRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
+    const tomorrowTimeyHoursRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
 
     console.log('[Dashboard] shift target columns', {
       today: {
@@ -1736,6 +1749,14 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     console.log('[Dashboard] shift extracted summary', {
       today: today.summary,
       tomorrow: tomorrow.summary
+    });
+    console.log('[Dashboard] shift timey raw values', {
+      todayTimeyRaw,
+      todayTimeyHoursRaw,
+      tomorrowTimeyRaw,
+      tomorrowTimeyHoursRaw,
+      parsedTimeyToday: today.summary.timey,
+      parsedTimeyTomorrow: tomorrow.summary.timey
     });
     console.log('[Dashboard] shift labels and holidays', {
       todayLabel,
