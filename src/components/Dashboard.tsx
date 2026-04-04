@@ -4,7 +4,7 @@ import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun }
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
 import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
-import { buildGoogleDriveImageDisplayUrl } from '../services/storageService';
+import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageFallbackUrl } from '../services/storageService';
 import { ImageZoomModal } from './ImageZoomModal';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
 import { fetchSharedNotices } from '../services/googleSheetsNoticeService';
@@ -53,6 +53,10 @@ type NoticeSection = {
   heading: string;
   bullets: string[];
   paragraphs: string[];
+};
+type NoticeDisplayLine = {
+  raw: string;
+  normalized: string;
 };
 
 const ADVERTISEMENT_CACHE_KEY = 'seika_dashboard_advertisements_cache';
@@ -134,11 +138,15 @@ const toneStyles: Record<FocusItem['tone'], React.CSSProperties> = {
 const sortMarkets = (history: MarketInfo[] = []) =>
   [...history].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
 
-const toFilterDateValue = (value: string) => {
-  if (!value) return null;
-  const normalized = value.includes('/') ? value.replace(/\//g, '-') : value;
-  const date = new Date(`${normalized}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date.getTime();
+const normalizeFlexibleDateKey = (value: string) => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  const normalized = trimmed.replace(/[./]/g, '-');
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+  return normalized;
 };
 
 const getPreviousDate = (value: string) => {
@@ -158,8 +166,22 @@ const getAdvertisementFace = (title: string): 'front' | 'back' | 'single' => {
   return 'single';
 };
 
-const getAdvertisementBaseTitle = (title: string) =>
-  title.replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '').trim() || title.trim() || '無題の広告';
+const getAdvertisementBaseTitle = (title: string) => {
+  const trimmed = title.trim();
+  if (!trimmed) return '無題の広告';
+  const normalized = trimmed
+    .replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '')
+    .replace(/\s*[表裏]$/, '')
+    .trim();
+  return normalized || trimmed || '無題の広告';
+};
+
+const getAdvertisementGroupKey = (item: SharedAdvertisementEntry) => {
+  const baseTitle = getAdvertisementBaseTitle(item.title || '');
+  const startDate = normalizeFlexibleDateKey(item.startDate || '');
+  const endDate = normalizeFlexibleDateKey(item.endDate || '');
+  return `${baseTitle}__${startDate}__${endDate}`;
+};
 
 const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
 const normalizeDateKey = (value: string) => {
@@ -284,25 +306,52 @@ const parseSharedRankingRows = (rows: SharedCheckRow[], targetDate: string, type
     .slice(0, 5);
 };
 
+const normalizeNoticeLine = (value: string) =>
+  value
+    .replace(/\u3000/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[【】]/g, '')
+    .trim();
+
 const parseNoticeSections = (text: string): NoticeSection[] => {
   const normalized = text.replace(/\r\n/g, '\n').trim();
   if (!normalized) return [];
 
-  const blockSource = normalized.includes('■')
-    ? normalized.split('■').map((part) => part.trim()).filter(Boolean)
-    : [normalized];
+  const lines: NoticeDisplayLine[] = normalized
+    .split('\n')
+    .map((line) => ({
+      raw: line.trim(),
+      normalized: normalizeNoticeLine(line)
+    }))
+    .filter((line) => line.normalized);
+  const uniqueLines = Array.from(
+    new Map(lines.map((line) => [line.normalized, line])).values()
+  );
+
+  const normalizedTitle = uniqueLines[0]?.normalized || '';
+  const bodyLines = uniqueLines
+    .slice(1)
+    .filter((line) => line.normalized !== normalizedTitle)
+    .map((line) => line.raw);
+
+  const bodyText = bodyLines.join('\n').trim();
+  if (!bodyText) return [];
+
+  const blockSource = bodyText.includes('■')
+    ? bodyText.split('■').map((part) => part.trim()).filter(Boolean)
+    : [bodyText];
 
   return blockSource.map((block, index) => {
-    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
-    const firstLine = lines[0] || '';
-    const heading = normalized.includes('■')
+    const sectionLines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const firstLine = sectionLines[0] || '';
+    const heading = bodyText.includes('■')
       ? firstLine
       : `連絡 ${index + 1}`;
-    const bodyLines = normalized.includes('■') ? lines.slice(1) : lines;
+    const sectionBodyLines = bodyText.includes('■') ? sectionLines.slice(1) : sectionLines;
     const bullets: string[] = [];
     const paragraphs: string[] = [];
 
-    bodyLines.forEach((line) => {
+    sectionBodyLines.forEach((line) => {
       if (line.includes('・')) {
         line
           .split('・')
@@ -314,7 +363,7 @@ const parseNoticeSections = (text: string): NoticeSection[] => {
       paragraphs.push(line);
     });
 
-    if (bodyLines.length === 0 && !bullets.length && heading) {
+    if (sectionBodyLines.length === 0 && !bullets.length && heading) {
       paragraphs.push(heading);
     }
 
@@ -395,6 +444,10 @@ const AdvertisementCard: React.FC<{
   const hasBack = Boolean(group.back);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
   const [copyMessage, setCopyMessage] = useState('');
+  const [imageSrc, setImageSrc] = useState('');
+  const [imageCandidates, setImageCandidates] = useState<string[]>([]);
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
+  const [imageAccessError, setImageAccessError] = useState(false);
   const activeItem = activeFace === 'back' && group.back ? group.back : (group.front || group.back);
   const tasks = useMemo(() => {
     if (!activeItem) return [] as AdvertisementTask[];
@@ -459,6 +512,30 @@ const AdvertisementCard: React.FC<{
     setActiveFace(group.front ? 'front' : 'back');
   }, [group.front, group.back, group.key]);
 
+  useEffect(() => {
+    if (!activeItem?.imageUrl) {
+      setImageSrc('');
+      setImageCandidates([]);
+      setImageCandidateIndex(0);
+      setImageAccessError(false);
+      return;
+    }
+    const nextDisplayUrl = buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 800);
+    const nextFallbackUrl = buildGoogleDriveImageFallbackUrl(activeItem.imageUrl);
+    const nextCandidates = buildGoogleDriveImageCandidates(activeItem.imageUrl, 800);
+    console.log('[Dashboard] advertisement image urls', {
+      title: activeItem.title,
+      sourceUrl: activeItem.imageUrl,
+      displayUrl: nextDisplayUrl,
+      fallbackUrl: nextFallbackUrl,
+      candidates: nextCandidates
+    });
+    setImageSrc(nextDisplayUrl);
+    setImageCandidates(nextCandidates);
+    setImageCandidateIndex(0);
+    setImageAccessError(false);
+  }, [activeItem]);
+
   const handleCopyBriefing = async () => {
     if (!briefingText) return;
     try {
@@ -522,12 +599,36 @@ const AdvertisementCard: React.FC<{
         }}
       >
         <div style={{ width: '88px', height: '88px', borderRadius: '12px', overflow: 'hidden', background: '#e2e8f0' }}>
-          <img
-            src={buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 800)}
-            alt={activeItem.title || '広告画像'}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            referrerPolicy="no-referrer"
-          />
+          {imageSrc ? (
+            <img
+              src={imageSrc}
+              alt={activeItem.title || '広告画像'}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                const nextCandidate = imageCandidates[imageCandidateIndex + 1];
+                console.error('[Dashboard] advertisement image load failed', {
+                  title: activeItem.title,
+                  sourceUrl: activeItem.imageUrl,
+                  attemptedSrc: imageSrc,
+                  currentSrc: event.currentTarget.currentSrc,
+                  nextCandidate,
+                  imageCandidates,
+                  imageCandidateIndex
+                });
+                if (nextCandidate && nextCandidate !== imageSrc) {
+                  setImageCandidateIndex((prev) => prev + 1);
+                  setImageSrc(nextCandidate);
+                  return;
+                }
+                setImageAccessError(true);
+              }}
+            />
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: imageAccessError ? '#b91c1c' : '#64748b', fontSize: '0.72rem', fontWeight: 700, textAlign: 'center', padding: '6px' }}>
+              {imageAccessError ? '公開設定を確認' : '画像なし'}
+            </div>
+          )}
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
@@ -790,6 +891,13 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
         if (advertisementResult.status === 'fulfilled') {
           console.log('dashboard advertisement count:', advertisementResult.value.length);
+          console.log('[Dashboard] advertisement fetch payload', advertisementResult.value.map((item) => ({
+            id: item.id,
+            title: item.title,
+            imageUrl: item.imageUrl,
+            startDate: item.startDate,
+            endDate: item.endDate
+          })));
           setAdvertisements(advertisementResult.value);
           saveCachedAdvertisements(advertisementResult.value);
           setAdvertisementError('');
@@ -1237,23 +1345,40 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' }
   ];
   const todayAdvertisements = useMemo(() => {
-    const today = toFilterDateValue(currentDate);
-    const filteredRecords = advertisements.filter((item) => {
-      const start = toFilterDateValue(item.startDate);
-      const end = toFilterDateValue(item.endDate);
-      if (today === null || start === null || end === null) {
-        return false;
-      }
-      return start <= today && today <= end;
+    const filterDiagnostics = advertisements.map((item) => {
+      const normalizedStartDate = normalizeFlexibleDateKey(item.startDate);
+      const normalizedEndDate = normalizeFlexibleDateKey(item.endDate);
+
+      return {
+        id: item.id,
+        title: item.title,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        normalizedStartDate,
+        normalizedEndDate,
+        normalizedToday: normalizeFlexibleDateKey(currentDate),
+        include: true,
+        rejectReasons: ['filter-disabled-for-debug']
+      };
     });
+
+    const filteredRecords = advertisements;
     console.log('today used for filter:', currentDate);
+    console.log('[Dashboard] advertisement filter diagnostics', filterDiagnostics);
+    console.log('[Dashboard] advertisement filter temporarily disabled');
     console.log('advertisement filtered records:', filteredRecords);
+    console.log('[Dashboard] advertisement thumbnail urls', filteredRecords.map((item) => ({
+      title: item.title,
+      sourceUrl: item.imageUrl,
+      displayUrl: buildGoogleDriveImageDisplayUrl(item.imageUrl, 800)
+    })));
     const groupedMap = new Map<string, AdvertisementCardGroup>();
     filteredRecords.forEach((item) => {
       const baseTitle = getAdvertisementBaseTitle(item.title || '');
       const face = getAdvertisementFace(item.title || '');
-      const existing = groupedMap.get(baseTitle) || {
-        key: baseTitle,
+      const groupKey = getAdvertisementGroupKey(item);
+      const existing = groupedMap.get(groupKey) || {
+        key: groupKey,
         title: baseTitle
       };
 
@@ -1267,7 +1392,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         existing.front = item;
       }
 
-      groupedMap.set(baseTitle, existing);
+      groupedMap.set(groupKey, existing);
     });
     return Array.from(groupedMap.values()).slice(0, 3);
   }, [advertisements, currentDate]);
