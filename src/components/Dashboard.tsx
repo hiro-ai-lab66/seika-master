@@ -890,7 +890,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         if (!isMounted) return;
 
         if (advertisementResult.status === 'fulfilled') {
-          console.log('dashboard advertisement count:', advertisementResult.value.length);
+          console.log('[Dashboard] advertisement fetched count:', advertisementResult.value.length);
           console.log('[Dashboard] advertisement fetch payload', advertisementResult.value.map((item) => ({
             id: item.id,
             title: item.title,
@@ -1414,6 +1414,15 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     });
     return Array.from(groupedMap.values()).slice(0, 3);
   }, [advertisements, currentDate]);
+  const displayedAdvertisements = todayAdvertisements;
+
+  useEffect(() => {
+    console.log('[Dashboard] advertisement display lengths', {
+      fetchedAdvertisementsLength: advertisements.length,
+      filteredDisplayLength: todayAdvertisements.length,
+      renderedLength: displayedAdvertisements.length
+    });
+  }, [advertisements.length, todayAdvertisements.length, displayedAdvertisements.length]);
 
   return (
     <div style={shellStyle}>
@@ -1647,12 +1656,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             <h3 style={sectionTitleStyle}>本日の広告</h3>
           </div>
           <div style={{ display: 'grid', gap: '10px' }}>
-            {todayAdvertisements.length === 0 ? (
+            {displayedAdvertisements.length === 0 ? (
               <div style={{ color: '#64748b', fontSize: '0.9rem' }}>
                 {advertisementError ? `広告取得エラー: ${advertisementError}` : '本日有効な広告はありません。'}
               </div>
             ) : (
-              todayAdvertisements.map((group) => (
+              displayedAdvertisements.map((group) => (
                 <AdvertisementCard
                   key={group.key}
                   group={group}
