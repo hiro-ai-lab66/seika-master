@@ -20,6 +20,17 @@ const buildErrorMessage = (error: unknown) =>
 
 const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => cell?.toString().trim()));
 
+const ADVERTISEMENT_COLUMN_INDEX = {
+  id: 0,
+  title: 1,
+  imageUrl: 2,
+  startDate: 3,
+  endDate: 4,
+  memo: 5,
+  side: 6,
+  extra: 7
+} as const;
+
 const resourceConfigs = {
   check: {
     sheetName: SHARED_CHECK_SHEET_NAME,
@@ -60,24 +71,60 @@ const resourceConfigs = {
   },
   advertisement: {
     sheetName: 'shared_advertisement',
-    range: 'A2:G',
-    mapRows: (rows: string[][]) =>
-      parseRows(rows)
-        .map((row, index) => ({
-          id: row[0] || String(index + 1),
-          rowNumber: index + 2,
-          title: row[1] || '',
-          imageUrl: normalizeDriveImageUrl(row[2] || ''),
-          startDate: row[3] || '',
-          endDate: row[4] || '',
-          memo: row[5] || '',
-          side: row[6] || ''
-        }))
+    range: 'A2:H',
+    mapRows: (rows: string[][]) => {
+      console.log('[shared-read] advertisement column index', {
+        'row[0]': 'id',
+        'row[1]': 'title',
+        'row[2]': 'imageUrl',
+        'row[3]': 'startDate',
+        'row[4]': 'endDate',
+        'row[5]': 'memo',
+        'row[6]': 'side',
+        'row[7]': 'extra'
+      });
+      // raw データを列単位でログ出力（デバッグ用）
+      rows.forEach((row, i) => {
+        console.log(`[shared-read] advertisement row[${i}] raw`, {
+          rowLength: row.length,
+          A_id:        row[ADVERTISEMENT_COLUMN_INDEX.id] ?? '(undefined)',
+          B_title:     row[ADVERTISEMENT_COLUMN_INDEX.title] ?? '(undefined)',
+          C_imageUrl:  row[ADVERTISEMENT_COLUMN_INDEX.imageUrl] ?? '(undefined)',
+          D_startDate: row[ADVERTISEMENT_COLUMN_INDEX.startDate] ?? '(undefined)',
+          E_endDate:   row[ADVERTISEMENT_COLUMN_INDEX.endDate] ?? '(undefined)',
+          F_memo:      row[ADVERTISEMENT_COLUMN_INDEX.memo] ?? '(undefined)',
+          G_side:      row[ADVERTISEMENT_COLUMN_INDEX.side] ?? '(undefined)',
+          H_extra:     row[ADVERTISEMENT_COLUMN_INDEX.extra] ?? '(undefined)',
+        });
+      });
+      return parseRows(rows)
+        .map((row, index) => {
+          const mapped = {
+            id:        row[ADVERTISEMENT_COLUMN_INDEX.id] || String(index + 1),
+            rowNumber: index + 2,
+            title:     row[ADVERTISEMENT_COLUMN_INDEX.title] || '',
+            imageUrl:  normalizeDriveImageUrl(row[ADVERTISEMENT_COLUMN_INDEX.imageUrl] || ''),
+            startDate: row[ADVERTISEMENT_COLUMN_INDEX.startDate] || '',
+            endDate:   row[ADVERTISEMENT_COLUMN_INDEX.endDate] || '',
+            memo:      row[ADVERTISEMENT_COLUMN_INDEX.memo] || '',
+            side:      row[ADVERTISEMENT_COLUMN_INDEX.side] || ''
+          };
+          console.log(`[shared-read] advertisement mapped[${index}]`, {
+            id:        mapped.id,
+            title:     mapped.title,
+            startDate: mapped.startDate,
+            endDate:   mapped.endDate,
+            side:      mapped.side,
+            sideCharCodes: Array.from(mapped.side).map((c) => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`)
+          });
+          return mapped;
+        })
         .sort((a, b) => {
           const startCompare = b.startDate.localeCompare(a.startDate);
           if (startCompare !== 0) return startCompare;
           return (b.id || '').localeCompare(a.id || '');
-        })
+        });
+    }
   },
   popibrary: {
     sheetName: 'shared_popibrary',
@@ -204,6 +251,18 @@ export default async function handler(req: any, res: any) {
     console.log('[shared-read] target sheet:', config.sheetName);
     const rows = await readGoogleSheetValues(config.sheetName, config.range);
     const items = config.mapRows(rows);
+    if (resource === 'advertisement') {
+      console.log('[shared-read] advertisement response payload', {
+        count: items.length,
+        items: (items as Array<Record<string, unknown>>).map((item) => ({
+          id: item['id'],
+          title: item['title'],
+          startDate: item['startDate'],
+          endDate: item['endDate'],
+          side: item['side']
+        }))
+      });
+    }
     const uniqueDates = 'date' in (items[0] || {}) ? Array.from(new Set((items as Array<{ date?: string }>).map((item) => item.date).filter(Boolean))) : [];
     console.log('[shared-read] response status:', 200);
     console.log('[shared-read] item count:', items.length);
