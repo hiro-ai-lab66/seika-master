@@ -11,6 +11,7 @@ type ExportOptions = {
 };
 
 const TEMPLATE_PATH = '/templates/inventory_template.xlsx';
+const LAYOUT_REFERENCE_SHEET = '果物';
 const TARGET_SHEETS: Record<InventoryDepartment, string> = {
     野菜: '野菜',
     果物: '果物'
@@ -105,6 +106,87 @@ const getExecutionTimeLabel = (executionTime?: string) => {
 
 const clearMergedMasterValue = (sheet: Worksheet, address: string) => {
     sheet.getCell(address).value = null;
+};
+
+const cloneCellValue = (value: unknown) => {
+    if (value == null) {
+        return value;
+    }
+    if (typeof value === 'object') {
+        return JSON.parse(JSON.stringify(value));
+    }
+    return value;
+};
+
+const cloneStylePart = <T>(value: T | undefined) => {
+    if (!value) {
+        return value;
+    }
+    return JSON.parse(JSON.stringify(value)) as T;
+};
+
+const syncSheetLayoutFromReference = (targetSheet: Worksheet, referenceSheet: Worksheet) => {
+    const maxColumnCount = Math.max(targetSheet.columnCount, referenceSheet.columnCount);
+    const maxRowCount = Math.max(targetSheet.rowCount, referenceSheet.rowCount);
+    const targetMerges = (targetSheet as Worksheet & { _merges?: Record<string, { range: string }> })._merges || {};
+    const referenceMerges = (referenceSheet as Worksheet & { _merges?: Record<string, { range: string }> })._merges || {};
+
+    Object.keys(targetMerges).forEach((mergeKey) => {
+        const mergeRange = targetMerges[mergeKey];
+        try {
+            targetSheet.unMergeCells(mergeRange.range);
+        } catch {
+            // noop
+        }
+    });
+
+    for (let columnNumber = 1; columnNumber <= maxColumnCount; columnNumber += 1) {
+        targetSheet.getColumn(columnNumber).width = referenceSheet.getColumn(columnNumber).width;
+    }
+
+    for (let rowNumber = 1; rowNumber <= maxRowCount; rowNumber += 1) {
+        targetSheet.getRow(rowNumber).height = referenceSheet.getRow(rowNumber).height;
+    }
+
+    for (let rowNumber = 1; rowNumber <= maxRowCount; rowNumber += 1) {
+        for (let columnNumber = 1; columnNumber <= maxColumnCount; columnNumber += 1) {
+            const referenceCell = referenceSheet.getCell(rowNumber, columnNumber);
+            const targetCell = targetSheet.getCell(rowNumber, columnNumber);
+
+            targetCell.value = cloneCellValue(referenceCell.value);
+            targetCell.style = cloneStylePart(referenceCell.style) || {};
+            targetCell.numFmt = referenceCell.numFmt;
+            if (referenceCell.alignment) {
+                const alignment = cloneStylePart(referenceCell.alignment);
+                if (alignment) {
+                    targetCell.alignment = alignment;
+                }
+            }
+            if (referenceCell.font) {
+                const font = cloneStylePart(referenceCell.font);
+                if (font) {
+                    targetCell.font = font;
+                }
+            }
+            if (referenceCell.fill) {
+                const fill = cloneStylePart(referenceCell.fill);
+                if (fill) {
+                    targetCell.fill = fill;
+                }
+            }
+            if (referenceCell.border) {
+                const border = cloneStylePart(referenceCell.border);
+                if (border) {
+                    targetCell.border = border;
+                }
+            }
+        }
+    }
+
+    Object.keys(referenceMerges).forEach((mergeKey) => {
+        const mergeRange = referenceMerges[mergeKey];
+        targetSheet.mergeCells(mergeRange.range);
+    });
 };
 
 const refreshAmountFormulaCells = (sheet: Worksheet, rowNumber: number) => {
@@ -286,12 +368,20 @@ export const exportInventoryToExcel = async (
 
         const targetSheetName = TARGET_SHEETS[options.department];
         const targetSheet = workbook.getWorksheet(targetSheetName);
+        const referenceSheet = workbook.getWorksheet(LAYOUT_REFERENCE_SHEET);
 
         if (!targetSheet) {
             throw new Error(`テンプレートに「${targetSheetName}」シートがありません`);
         }
+        if (!referenceSheet) {
+            throw new Error(`テンプレートにレイアウト参照用の「${LAYOUT_REFERENCE_SHEET}」シートがありません`);
+        }
 
         const formattedDate = formatJapaneseDate(dateStr);
+
+        if (targetSheet.name !== referenceSheet.name) {
+            syncSheetLayoutFromReference(targetSheet, referenceSheet);
+        }
 
         PAGE_BLOCKS.forEach((block) => {
             updateHeaderBlock(targetSheet, block, options, formattedDate);
