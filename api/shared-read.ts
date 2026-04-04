@@ -60,7 +60,7 @@ const resourceConfigs = {
   },
   advertisement: {
     sheetName: 'shared_advertisement',
-    range: 'A2:F',
+    range: 'A2:G',
     mapRows: (rows: string[][]) =>
       parseRows(rows)
         .map((row, index) => ({
@@ -70,7 +70,8 @@ const resourceConfigs = {
           imageUrl: normalizeDriveImageUrl(row[2] || ''),
           startDate: row[3] || '',
           endDate: row[4] || '',
-          memo: row[5] || ''
+          memo: row[5] || '',
+          side: row[6] || ''
         }))
         .sort((a, b) => {
           const startCompare = b.startDate.localeCompare(a.startDate);

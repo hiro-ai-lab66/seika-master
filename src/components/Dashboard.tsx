@@ -916,7 +916,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             title: item.title,
             imageUrl: item.imageUrl,
             startDate: item.startDate,
-            endDate: item.endDate
+            endDate: item.endDate,
+            side: item.side || ''
           })));
           setAdvertisements(advertisementResult.value);
           saveCachedAdvertisements(advertisementResult.value);
@@ -1405,6 +1406,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       isActiveToday: item.isActiveToday
     })));
     console.log('advertisement filtered records:', filteredRecords);
+    console.log('[Dashboard] advertisement filtered record details', filteredRecords.map((item) => ({
+      title: item.title,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      side: item.side || ''
+    })));
     console.log('[Dashboard] advertisement thumbnail urls', filteredRecords.map((item) => ({
       title: item.title,
       sourceUrl: item.imageUrl,
