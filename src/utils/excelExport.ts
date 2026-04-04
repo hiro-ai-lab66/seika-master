@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { Borders, Fill, Font, Worksheet } from 'exceljs';
+import type { Worksheet } from 'exceljs';
 import type { InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 
 type ExportOptions = {
@@ -10,140 +10,67 @@ type ExportOptions = {
     executionTime?: string;
 };
 
-const TEMPLATE_CANDIDATES = [
-    '/templates/棚卸帳票類_原本.xlsx',
-    '/templates/inventory_template.xlsx'
-];
+const TEMPLATE_PATH = '/templates/inventory_template.xlsx';
 const TARGET_SHEETS: Record<InventoryDepartment, string> = {
     野菜: '野菜',
     果物: '果物'
 };
-const WRITE_BLOCKS = [
-    { start: 12, end: 36 },
-    { start: 49, end: 73 },
-    { start: 86, end: 110 }
+const PAGE_BLOCKS = [
+    {
+        number: 1,
+        titleRow: 1,
+        storeRow: 5,
+        departmentRow: 7,
+        locationRow: 9,
+        checkHeaderRow: 4,
+        checkInputRow: 5,
+        detailStartRow: 12,
+        detailEndRow: 36,
+        subtotalRow: 37
+    },
+    {
+        number: 2,
+        titleRow: 38,
+        storeRow: 42,
+        departmentRow: 44,
+        locationRow: 46,
+        checkHeaderRow: 41,
+        checkInputRow: 42,
+        detailStartRow: 49,
+        detailEndRow: 73,
+        subtotalRow: 74
+    },
+    {
+        number: 3,
+        titleRow: 75,
+        storeRow: 79,
+        departmentRow: 81,
+        locationRow: 83,
+        checkHeaderRow: 78,
+        checkInputRow: 79,
+        detailStartRow: 86,
+        detailEndRow: 110,
+        subtotalRow: 111
+    }
 ] as const;
-const MAX_EXPORT_ROWS = WRITE_BLOCKS.reduce((sum, block) => sum + (block.end - block.start + 1), 0);
-const COLUMN_MAP = {
-    name: 1,
-    qty: 2,
-    unit: 3,
-    cost: 4,
-    price: 5,
-    costAmount: 6,
-    salesAmount: 7
+const MAX_EXPORT_ROWS = PAGE_BLOCKS.reduce((sum, block) => sum + (block.detailEndRow - block.detailStartRow + 1), 0);
+const DETAIL_COLUMNS = {
+    name: 'B',
+    qty: 'F',
+    unit: 'G',
+    cost: 'I',
+    price: 'J',
+    costAmount: 'K',
+    salesAmount: 'N'
 } as const;
-const THIN_BORDER_STYLE: Partial<Borders> = {
-    top: { style: 'thin' },
-    bottom: { style: 'thin' },
-    left: { style: 'thin' },
-    right: { style: 'thin' }
-};
-const TOP_RIGHT_CHECK_AREAS = [4, 41, 78] as const;
-const CHECK_BOX_LAYOUT = [
-    { labelRange: 'J:K', boxRange: 'J:K', label: '読上係' },
-    { labelRange: 'L:M', boxRange: 'L:M', label: '記入係' },
-    { labelRange: 'N:O', boxRange: 'N:O', label: '検査員' }
+const CHECK_AREA_LAYOUT = [
+    { headerRange: 'K:K', inputRange: 'K:K', label: '担当者（記入係）' },
+    { headerRange: 'L:M', inputRange: 'L:M', label: '担当者（読上係）' },
+    { headerRange: 'N:N', inputRange: 'N:N', label: '検査員' }
 ] as const;
-
-const buildWritableRows = () => {
-    const rows: number[] = [];
-    WRITE_BLOCKS.forEach((block) => {
-        for (let row = block.start; row <= block.end; row += 1) {
-            rows.push(row);
-        }
-    });
-    return rows;
-};
-
-const WRITABLE_ROWS = buildWritableRows();
-
-const loadTemplateWorkbook = async () => {
-    let lastStatus = '';
-
-    for (const templatePath of TEMPLATE_CANDIDATES) {
-        console.log('[Inventory] try template path', templatePath);
-        const response = await fetch(templatePath);
-        if (!response.ok) {
-            lastStatus = `${templatePath} [${response.status}]`;
-            console.log('[Inventory] template fetch failed', templatePath, response.status);
-            continue;
-        }
-
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(await response.arrayBuffer());
-
-        console.log('[Inventory] using template path', templatePath);
-        console.log('[excelExport] loaded template workbook', {
-            templatePath,
-            sheetNames: workbook.worksheets.map((sheet) => sheet.name)
-        });
-
-        return { workbook, templatePath };
-    }
-
-    throw new Error(`テンプレートファイルの読み込みに失敗しました: ${lastStatus}`);
-};
-
-const clearWritableCells = (sheet: Worksheet) => {
-    WRITABLE_ROWS.forEach((rowNumber) => {
-        sheet.getCell(rowNumber, COLUMN_MAP.name).value = null;
-        sheet.getCell(rowNumber, COLUMN_MAP.qty).value = null;
-        sheet.getCell(rowNumber, COLUMN_MAP.cost).value = null;
-        sheet.getCell(rowNumber, COLUMN_MAP.price).value = null;
-    });
-};
-
-const copyCellStyle = (sheet: Worksheet, sourceAddress: string, targetAddress: string) => {
-    const source = sheet.getCell(sourceAddress);
-    const target = sheet.getCell(targetAddress);
-
-    if (source.fill) {
-        target.fill = { ...source.fill } as Fill;
-    }
-    if (source.font) {
-        target.font = { ...source.font } as Font;
-    }
-    if (source.alignment) {
-        target.alignment = { ...source.alignment };
-    }
-};
-
-const rebuildTopRightCheckArea = (sheet: Worksheet) => {
-    TOP_RIGHT_CHECK_AREAS.forEach((startRow) => {
-        CHECK_BOX_LAYOUT.forEach(({ labelRange, boxRange, label }) => {
-            const [labelStartCol, labelEndCol] = labelRange.split(':');
-            const [boxStartCol, boxEndCol] = boxRange.split(':');
-            const labelRangeAddress = `${labelStartCol}${startRow}:${labelEndCol}${startRow}`;
-            const boxRangeAddress = `${boxStartCol}${startRow + 1}:${boxEndCol}${startRow + 1}`;
-            const labelCell = sheet.getCell(`${labelStartCol}${startRow}`);
-            const boxCell = sheet.getCell(`${boxStartCol}${startRow + 1}`);
-
-            try {
-                sheet.unMergeCells(labelRangeAddress);
-            } catch {
-                // noop: the template range is not merged yet
-            }
-            try {
-                sheet.unMergeCells(boxRangeAddress);
-            } catch {
-                // noop: the template range is not merged yet
-            }
-            sheet.mergeCells(labelRangeAddress);
-            sheet.mergeCells(boxRangeAddress);
-
-            copyCellStyle(sheet, `J4`, `${labelStartCol}${startRow}`);
-            copyCellStyle(sheet, `M4`, `${boxStartCol}${startRow + 1}`);
-
-            labelCell.value = label;
-            labelCell.alignment = { horizontal: 'center', vertical: 'middle' };
-
-            boxCell.value = '□';
-            boxCell.alignment = { horizontal: 'center', vertical: 'middle' };
-            boxCell.border = THIN_BORDER_STYLE;
-        });
-    });
-};
+const WRITABLE_ROWS = PAGE_BLOCKS.flatMap(({ detailStartRow, detailEndRow }) =>
+    Array.from({ length: detailEndRow - detailStartRow + 1 }, (_, rowOffset) => detailStartRow + rowOffset)
+);
 
 const getFilteredItems = (
     items: InventoryItem[],
@@ -158,24 +85,123 @@ const getFilteredItems = (
         .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 };
 
+const formatJapaneseDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    if (!year || !month || !day) {
+        return dateStr;
+    }
+    return `${year}年 ${month}月 ${day}日`;
+};
+
+const getExecutionTimeLabel = (executionTime?: string) => {
+    return `実施時間　${executionTime || '16：00　　　～　18：00'}`;
+};
+
+const clearMergedMasterValue = (sheet: Worksheet, address: string) => {
+    sheet.getCell(address).value = null;
+};
+
+const refreshAmountFormulaCells = (sheet: Worksheet, rowNumber: number) => {
+    sheet.getCell(`${DETAIL_COLUMNS.costAmount}${rowNumber}`).value = {
+        formula: `${DETAIL_COLUMNS.qty}${rowNumber}*${DETAIL_COLUMNS.cost}${rowNumber}`
+    };
+    sheet.getCell(`${DETAIL_COLUMNS.salesAmount}${rowNumber}`).value = {
+        formula: `${DETAIL_COLUMNS.qty}${rowNumber}*${DETAIL_COLUMNS.price}${rowNumber}`
+    };
+};
+
+const refreshSubtotalFormulaCells = (
+    sheet: Worksheet,
+    detailStartRow: number,
+    detailEndRow: number,
+    subtotalRow: number
+) => {
+    sheet.getCell(`${DETAIL_COLUMNS.costAmount}${subtotalRow}`).value = {
+        formula: `SUM(${DETAIL_COLUMNS.costAmount}${detailStartRow}:${DETAIL_COLUMNS.costAmount}${detailEndRow})`
+    };
+    sheet.getCell(`${DETAIL_COLUMNS.salesAmount}${subtotalRow}`).value = {
+        formula: `SUM(${DETAIL_COLUMNS.salesAmount}${detailStartRow}:${DETAIL_COLUMNS.salesAmount}${detailEndRow})`
+    };
+};
+
+const updateHeaderBlock = (
+    sheet: Worksheet,
+    block: (typeof PAGE_BLOCKS)[number],
+    options: ExportOptions,
+    formattedDate: string
+) => {
+    sheet.getCell(`L${block.titleRow}`).value = block.number;
+
+    sheet.getCell(`C${block.storeRow}`).value = options.storeName || '古沢店';
+    sheet.getCell(`C${block.departmentRow}`).value = options.department;
+    sheet.getCell(`F${block.departmentRow}`).value = `         ${formattedDate}`;
+    sheet.getCell(`C${block.locationRow}`).value = '後方';
+    sheet.getCell(`E${block.locationRow}`).value = getExecutionTimeLabel(options.executionTime);
+};
+
+const rebuildCheckArea = (sheet: Worksheet, block: (typeof PAGE_BLOCKS)[number]) => {
+    CHECK_AREA_LAYOUT.forEach(({ headerRange, inputRange, label }) => {
+        const [headerStartCol, headerEndCol] = headerRange.split(':');
+        const [inputStartCol, inputEndCol] = inputRange.split(':');
+        const headerAddress = `${headerStartCol}${block.checkHeaderRow}:${headerEndCol}${block.checkHeaderRow}`;
+        const inputAddress = `${inputStartCol}${block.checkInputRow}:${inputEndCol}${block.checkInputRow}`;
+
+        try {
+            sheet.unMergeCells(headerAddress);
+        } catch {
+            // already unmerged
+        }
+        try {
+            sheet.unMergeCells(inputAddress);
+        } catch {
+            // already unmerged
+        }
+
+        if (headerStartCol !== headerEndCol) {
+            sheet.mergeCells(headerAddress);
+        }
+        if (inputStartCol !== inputEndCol) {
+            sheet.mergeCells(inputAddress);
+        }
+
+        const headerCell = sheet.getCell(`${headerStartCol}${block.checkHeaderRow}`);
+        const inputCell = sheet.getCell(`${inputStartCol}${block.checkInputRow}`);
+
+        headerCell.value = label;
+        headerCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        inputCell.value = null;
+        inputCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+};
+
+const clearDetailRows = (sheet: Worksheet) => {
+    PAGE_BLOCKS.forEach((block) => {
+        for (let row = block.detailStartRow; row <= block.detailEndRow; row += 1) {
+            clearMergedMasterValue(sheet, `${DETAIL_COLUMNS.name}${row}`);
+            clearMergedMasterValue(sheet, `${DETAIL_COLUMNS.qty}${row}`);
+            clearMergedMasterValue(sheet, `${DETAIL_COLUMNS.cost}${row}`);
+            clearMergedMasterValue(sheet, `${DETAIL_COLUMNS.price}${row}`);
+            refreshAmountFormulaCells(sheet, row);
+        }
+        refreshSubtotalFormulaCells(sheet, block.detailStartRow, block.detailEndRow, block.subtotalRow);
+    });
+};
+
 const writeInventoryRows = (sheet: Worksheet, items: InventoryItem[]) => {
-    clearWritableCells(sheet);
+    clearDetailRows(sheet);
 
     items.forEach((item, index) => {
         const rowNumber = WRITABLE_ROWS[index];
-        console.log('[Inventory] write start', {
-            row: rowNumber,
-            col: 'A,B,D,E',
-            name: item.name,
-            qty: item.qty || 0,
-            cost: item.cost || 0,
-            price: item.price || 0
-        });
 
-        sheet.getCell(rowNumber, COLUMN_MAP.name).value = item.name;
-        sheet.getCell(rowNumber, COLUMN_MAP.qty).value = item.qty || 0;
-        sheet.getCell(rowNumber, COLUMN_MAP.cost).value = item.cost || 0;
-        sheet.getCell(rowNumber, COLUMN_MAP.price).value = item.price || 0;
+        if (!rowNumber) {
+            return;
+        }
+
+        sheet.getCell(`${DETAIL_COLUMNS.name}${rowNumber}`).value = item.name;
+        sheet.getCell(`${DETAIL_COLUMNS.qty}${rowNumber}`).value = item.qty || 0;
+        sheet.getCell(`${DETAIL_COLUMNS.cost}${rowNumber}`).value = item.cost || 0;
+        sheet.getCell(`${DETAIL_COLUMNS.price}${rowNumber}`).value = item.price || 0;
+        refreshAmountFormulaCells(sheet, rowNumber);
     });
 };
 
@@ -203,8 +229,15 @@ export const exportInventoryToExcel = async (
             throw new Error(`出力件数が ${MAX_EXPORT_ROWS} 件を超えています（${filteredItems.length}件）。75件以内に絞ってください`);
         }
 
-        const { workbook, templatePath } = await loadTemplateWorkbook();
-        console.log('[Inventory] resolved template path on export', templatePath);
+        const response = await fetch(TEMPLATE_PATH);
+        if (!response.ok) {
+            throw new Error(`テンプレートファイルの読み込みに失敗しました: ${TEMPLATE_PATH} [${response.status}]`);
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(await response.arrayBuffer());
+        workbook.calcProperties.fullCalcOnLoad = true;
+
         const targetSheetName = TARGET_SHEETS[options.department];
         const targetSheet = workbook.getWorksheet(targetSheetName);
 
@@ -212,62 +245,13 @@ export const exportInventoryToExcel = async (
             throw new Error(`テンプレートに「${targetSheetName}」シートがありません`);
         }
 
-        console.log('[Inventory] target sheet', targetSheetName);
-        console.log('[Inventory] resolved inventory column map', {
-            sheetName: targetSheetName,
-            inputStartRow: WRITE_BLOCKS[0].start,
-            itemNameCol: 'A',
-            quantityCol: 'B',
-            unitCol: 'C',
-            costCol: 'D',
-            priceCol: 'E',
-            costAmountCol: 'F',
-            salesAmountCol: 'G'
-        });
-        console.log('[excelExport] writing inventory rows', {
-            templatePath,
-            targetSheetName,
-            dateStr,
-            blocks: WRITE_BLOCKS,
-            rowCount: filteredItems.length,
-            sampleRows: filteredItems.slice(0, 10).map((item, index) => ({
-                index,
-                targetRow: WRITABLE_ROWS[index],
-                name: item.name,
-                qty: item.qty,
-                cost: item.cost || 0,
-                price: item.price || 0
-            }))
-        });
+        const formattedDate = formatJapaneseDate(dateStr);
 
+        PAGE_BLOCKS.forEach((block) => {
+            updateHeaderBlock(targetSheet, block, options, formattedDate);
+            rebuildCheckArea(targetSheet, block);
+        });
         writeInventoryRows(targetSheet, filteredItems);
-        rebuildTopRightCheckArea(targetSheet);
-
-        console.log('[Inventory] workbook verification', {
-            templatePath,
-            targetSheetName,
-            firstWrittenCell: {
-                A12: targetSheet.getCell('A12').value,
-                B12: targetSheet.getCell('B12').value,
-                C12: targetSheet.getCell('C12').value,
-                D12: targetSheet.getCell('D12').value,
-                E12: targetSheet.getCell('E12').value
-            },
-            preservedCells: {
-                G12: targetSheet.getCell('G12').value,
-                C12: targetSheet.getCell('C12').value
-            },
-            formulas: {
-                F12: targetSheet.getCell('F12').formula || null,
-                G12: targetSheet.getCell('G12').formula || null,
-                F37: targetSheet.getCell('F37').formula || null,
-                G37: targetSheet.getCell('G37').formula || null,
-                F74: targetSheet.getCell('F74').formula || null,
-                G74: targetSheet.getCell('G74').formula || null,
-                F111: targetSheet.getCell('F111').formula || null,
-                G111: targetSheet.getCell('G111').formula || null
-            }
-        });
 
         await downloadWorkbook(
             workbook,
