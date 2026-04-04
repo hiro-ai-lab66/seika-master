@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { Borders, Worksheet } from 'exceljs';
+import type { Borders, Fill, Font, Worksheet } from 'exceljs';
 import type { InventoryDepartment, InventoryItem, InventoryType, InventoryValueType } from '../types';
 
 type ExportOptions = {
@@ -39,6 +39,12 @@ const THIN_BORDER_STYLE: Partial<Borders> = {
     left: { style: 'thin' },
     right: { style: 'thin' }
 };
+const TOP_RIGHT_CHECK_AREAS = [4, 41, 78] as const;
+const CHECK_BOX_LAYOUT = [
+    { labelRange: 'J:K', boxRange: 'J:K', label: '読上係' },
+    { labelRange: 'L:M', boxRange: 'L:M', label: '記入係' },
+    { labelRange: 'N:O', boxRange: 'N:O', label: '検査員' }
+] as const;
 
 const buildWritableRows = () => {
     const rows: number[] = [];
@@ -88,16 +94,55 @@ const clearWritableCells = (sheet: Worksheet) => {
     });
 };
 
-const applyBorder = (sheet: Worksheet) => {
-    const rowCount = sheet.rowCount;
-    const columnCount = Math.max(sheet.columnCount, COLUMN_MAP.salesAmount);
+const copyCellStyle = (sheet: Worksheet, sourceAddress: string, targetAddress: string) => {
+    const source = sheet.getCell(sourceAddress);
+    const target = sheet.getCell(targetAddress);
 
-    for (let row = 1; row <= rowCount; row += 1) {
-        for (let col = 1; col <= columnCount; col += 1) {
-            const cell = sheet.getCell(row, col);
-            cell.border = THIN_BORDER_STYLE;
-        }
+    if (source.fill) {
+        target.fill = { ...source.fill } as Fill;
     }
+    if (source.font) {
+        target.font = { ...source.font } as Font;
+    }
+    if (source.alignment) {
+        target.alignment = { ...source.alignment };
+    }
+};
+
+const rebuildTopRightCheckArea = (sheet: Worksheet) => {
+    TOP_RIGHT_CHECK_AREAS.forEach((startRow) => {
+        CHECK_BOX_LAYOUT.forEach(({ labelRange, boxRange, label }) => {
+            const [labelStartCol, labelEndCol] = labelRange.split(':');
+            const [boxStartCol, boxEndCol] = boxRange.split(':');
+            const labelRangeAddress = `${labelStartCol}${startRow}:${labelEndCol}${startRow}`;
+            const boxRangeAddress = `${boxStartCol}${startRow + 1}:${boxEndCol}${startRow + 1}`;
+            const labelCell = sheet.getCell(`${labelStartCol}${startRow}`);
+            const boxCell = sheet.getCell(`${boxStartCol}${startRow + 1}`);
+
+            try {
+                sheet.unMergeCells(labelRangeAddress);
+            } catch {
+                // noop: the template range is not merged yet
+            }
+            try {
+                sheet.unMergeCells(boxRangeAddress);
+            } catch {
+                // noop: the template range is not merged yet
+            }
+            sheet.mergeCells(labelRangeAddress);
+            sheet.mergeCells(boxRangeAddress);
+
+            copyCellStyle(sheet, `J4`, `${labelStartCol}${startRow}`);
+            copyCellStyle(sheet, `M4`, `${boxStartCol}${startRow + 1}`);
+
+            labelCell.value = label;
+            labelCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+            boxCell.value = '□';
+            boxCell.alignment = { horizontal: 'center', vertical: 'middle' };
+            boxCell.border = THIN_BORDER_STYLE;
+        });
+    });
 };
 
 const getFilteredItems = (
@@ -196,7 +241,7 @@ export const exportInventoryToExcel = async (
         });
 
         writeInventoryRows(targetSheet, filteredItems);
-        applyBorder(targetSheet);
+        rebuildTopRightCheckArea(targetSheet);
 
         console.log('[Inventory] workbook verification', {
             templatePath,
