@@ -159,8 +159,8 @@ const applyBorderToRange = (sheet: Worksheet, startCol: string, endCol: string, 
 };
 
 const rebuildCheckArea = (sheet: Worksheet, block: (typeof PAGE_BLOCKS)[number]) => {
-    sheet.getRow(block.checkHeaderRow).height = 30;
-    sheet.getRow(block.checkInputRow).height = 24;
+    sheet.getRow(block.checkHeaderRow).height = 34;
+    sheet.getRow(block.checkInputRow).height = 26;
 
     CHECK_AREA_LAYOUT.forEach(({ headerRange, inputRange, label }) => {
         const [headerStartCol, headerEndCol] = headerRange.split(':');
@@ -190,10 +190,20 @@ const rebuildCheckArea = (sheet: Worksheet, block: (typeof PAGE_BLOCKS)[number])
         const inputCell = sheet.getCell(`${inputStartCol}${block.checkInputRow}`);
 
         headerCell.value = label;
-        headerCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        headerCell.alignment = {
+            horizontal: 'center',
+            vertical: 'middle',
+            wrapText: true,
+            textRotation: 0
+        };
         headerCell.border = CHECK_AREA_BORDER;
         inputCell.value = null;
-        inputCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        inputCell.alignment = {
+            horizontal: 'center',
+            vertical: 'middle',
+            wrapText: true,
+            textRotation: 0
+        };
         inputCell.border = CHECK_AREA_BORDER;
 
         applyBorderToRange(sheet, headerStartCol, headerEndCol, block.checkHeaderRow);
