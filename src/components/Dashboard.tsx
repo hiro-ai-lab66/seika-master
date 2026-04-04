@@ -25,8 +25,10 @@ type FocusItem = {
 type AdvertisementCardGroup = {
   key: string;
   title: string;
-  front?: SharedAdvertisementEntry;
-  back?: SharedAdvertisementEntry;
+  startDate: string;
+  endDate: string;
+  omote?: SharedAdvertisementEntry;
+  ura?: SharedAdvertisementEntry;
 };
 
 type AdvertisementTask = {
@@ -160,9 +162,13 @@ const getPreviousDate = (value: string) => {
   return `${year}-${month}-${day}`;
 };
 
-const getAdvertisementFace = (title: string): 'front' | 'back' | 'single' => {
-  if (/（表）|\(表\)|\b表\b/.test(title)) return 'front';
-  if (/（裏）|\(裏\)|\b裏\b/.test(title)) return 'back';
+const getAdvertisementFace = (item: SharedAdvertisementEntry): 'omote' | 'ura' | 'single' => {
+  const normalizedSide = (item.side || '').trim();
+  if (normalizedSide === '表') return 'omote';
+  if (normalizedSide === '裏') return 'ura';
+  const title = item.title || '';
+  if (/（表）|\(表\)|\b表\b/.test(title)) return 'omote';
+  if (/（裏）|\(裏\)|\b裏\b/.test(title)) return 'ura';
   return 'single';
 };
 
@@ -441,14 +447,14 @@ const AdvertisementCard: React.FC<{
   avgSpend: number | null;
   lossAmount: number | null | undefined;
 }> = ({ group, onOpenImage, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount }) => {
-  const hasBack = Boolean(group.back);
-  const [activeFace, setActiveFace] = useState<'front' | 'back'>(() => (group.front ? 'front' : 'back'));
+  const hasUra = Boolean(group.ura);
+  const [activeFace, setActiveFace] = useState<'omote' | 'ura'>(() => (group.omote ? 'omote' : 'ura'));
   const [copyMessage, setCopyMessage] = useState('');
   const [imageSrc, setImageSrc] = useState('');
   const [imageCandidates, setImageCandidates] = useState<string[]>([]);
   const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
   const [imageAccessError, setImageAccessError] = useState(false);
-  const activeItem = activeFace === 'back' && group.back ? group.back : (group.front || group.back);
+  const activeItem = activeFace === 'ura' && group.ura ? group.ura : (group.omote || group.ura);
   const tasks = useMemo(() => {
     if (!activeItem) return [] as AdvertisementTask[];
     const sourceText = `${group.title} ${activeItem.memo || ''}`;
@@ -509,8 +515,8 @@ const AdvertisementCard: React.FC<{
   const briefingText = useMemo(() => briefingLines.join('\n'), [briefingLines]);
 
   useEffect(() => {
-    setActiveFace(group.front ? 'front' : 'back');
-  }, [group.front, group.back, group.key]);
+    setActiveFace(group.omote ? 'omote' : 'ura');
+  }, [group.omote, group.ura, group.key]);
 
   useEffect(() => {
     if (!activeItem?.imageUrl) {
@@ -585,7 +591,7 @@ const AdvertisementCard: React.FC<{
     >
       <button
         type="button"
-        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 1600), `${group.title} ${activeFace === 'front' ? '表' : '裏'}`)}
+        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(activeItem.imageUrl, 1600), `${group.title} ${activeFace === 'omote' ? '表' : '裏'}`)}
         style={{
           display: 'grid',
           gridTemplateColumns: '88px 1fr',
@@ -634,11 +640,11 @@ const AdvertisementCard: React.FC<{
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
             <div style={{ color: '#0f172a', fontWeight: 800 }}>{group.title}</div>
             <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4f46e5', background: '#e0e7ff', borderRadius: '999px', padding: '3px 8px' }}>
-              {activeFace === 'front' ? '表' : '裏'}
+              {activeFace === 'omote' ? '表' : '裏'}
             </span>
           </div>
           <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
-            {activeItem.startDate} - {activeItem.endDate}
+            {group.startDate} - {group.endDate}
           </div>
           {activeItem.memo && (
             <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '6px', lineHeight: 1.5 }}>
@@ -648,21 +654,21 @@ const AdvertisementCard: React.FC<{
         </div>
       </button>
 
-      {hasBack && (
+      {hasUra && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <button
             type="button"
-            className={activeFace === 'front' ? 'button-primary' : 'button-secondary'}
+            className={activeFace === 'omote' ? 'button-primary' : 'button-secondary'}
             style={{ width: 'auto', padding: '8px 12px' }}
-            onClick={() => setActiveFace('front')}
+            onClick={() => setActiveFace('omote')}
           >
             表
           </button>
           <button
             type="button"
-            className={activeFace === 'back' ? 'button-primary' : 'button-secondary'}
+            className={activeFace === 'ura' ? 'button-primary' : 'button-secondary'}
             style={{ width: 'auto', padding: '8px 12px' }}
-            onClick={() => setActiveFace('back')}
+            onClick={() => setActiveFace('ura')}
           >
             裏
           </button>
@@ -1393,26 +1399,45 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const groupedMap = new Map<string, AdvertisementCardGroup>();
     filteredRecords.forEach((item) => {
       const baseTitle = getAdvertisementBaseTitle(item.title || '');
-      const face = getAdvertisementFace(item.title || '');
+      const face = getAdvertisementFace(item);
       const groupKey = getAdvertisementGroupKey(item);
       const existing = groupedMap.get(groupKey) || {
         key: groupKey,
-        title: baseTitle
+        title: baseTitle,
+        startDate: item.startDate,
+        endDate: item.endDate
       };
 
-      if (face === 'back') {
-        existing.back = item;
+      if (face === 'ura') {
+        existing.ura = item;
       } else {
-        existing.front = item;
+        existing.omote = item;
       }
 
-      if (face === 'single' && !existing.front) {
-        existing.front = item;
+      if (face === 'single' && !existing.omote) {
+        existing.omote = item;
       }
 
       groupedMap.set(groupKey, existing);
     });
-    return Array.from(groupedMap.values()).slice(0, 3);
+    const groupedAdvertisements = Array.from(groupedMap.values()).slice(0, 3);
+    console.log('[Dashboard] advertisement grouped records', groupedAdvertisements.map((group) => ({
+      key: group.key,
+      title: group.title,
+      startDate: group.startDate,
+      endDate: group.endDate,
+      omote: group.omote ? {
+        id: group.omote.id,
+        title: group.omote.title,
+        side: group.omote.side
+      } : null,
+      ura: group.ura ? {
+        id: group.ura.id,
+        title: group.ura.title,
+        side: group.ura.side
+      } : null
+    })));
+    return groupedAdvertisements;
   }, [advertisements, currentDate]);
   const displayedAdvertisements = todayAdvertisements;
 

@@ -314,6 +314,7 @@ export interface SharedAdvertisementEntry {
     startDate: string;
     endDate: string;
     memo: string;
+    side?: string;
 }
 
 export interface AppState {
