@@ -1345,27 +1345,45 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     { label: '客数', value: dashboardCustomers > 0 ? `${dashboardCustomers}名` : '未設定' }
   ];
   const todayAdvertisements = useMemo(() => {
+    const normalizedToday = normalizeFlexibleDateKey(currentDate);
     const filterDiagnostics = advertisements.map((item) => {
       const normalizedStartDate = normalizeFlexibleDateKey(item.startDate);
       const normalizedEndDate = normalizeFlexibleDateKey(item.endDate);
+      const hasValidRange = Boolean(normalizedToday && normalizedStartDate && normalizedEndDate);
+      const isActiveToday = hasValidRange
+        ? normalizedStartDate <= normalizedToday && normalizedToday <= normalizedEndDate
+        : false;
+      const rejectReasons: string[] = [];
+
+      if (!normalizedToday) rejectReasons.push('today-invalid');
+      if (!normalizedStartDate) rejectReasons.push('startDate-invalid');
+      if (!normalizedEndDate) rejectReasons.push('endDate-invalid');
+      if (hasValidRange && normalizedToday < normalizedStartDate) rejectReasons.push('before-start');
+      if (hasValidRange && normalizedToday > normalizedEndDate) rejectReasons.push('after-end');
 
       return {
         id: item.id,
         title: item.title,
         startDate: item.startDate,
         endDate: item.endDate,
+        normalizedToday,
         normalizedStartDate,
         normalizedEndDate,
-        normalizedToday: normalizeFlexibleDateKey(currentDate),
-        include: true,
-        rejectReasons: ['filter-disabled-for-debug']
+        isActiveToday,
+        rejectReasons
       };
     });
 
-    const filteredRecords = advertisements;
+    const filteredRecords = advertisements.filter((_, index) => filterDiagnostics[index]?.isActiveToday);
     console.log('today used for filter:', currentDate);
     console.log('[Dashboard] advertisement filter diagnostics', filterDiagnostics);
-    console.log('[Dashboard] advertisement filter temporarily disabled');
+    console.log('[Dashboard] advertisement active today logs', filterDiagnostics.map((item) => ({
+      title: item.title,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      normalizedToday: item.normalizedToday,
+      isActiveToday: item.isActiveToday
+    })));
     console.log('advertisement filtered records:', filteredRecords);
     console.log('[Dashboard] advertisement thumbnail urls', filteredRecords.map((item) => ({
       title: item.title,
