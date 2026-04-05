@@ -321,7 +321,7 @@ const buildShiftDateLabel = (dateValue: string) => {
 
 const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) => {
   const fallbackYear = targetDate.slice(0, 4);
-  for (let rowIndex = 0; rowIndex < Math.min(rows.length, 3); rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex < Math.min(rows.length, 10); rowIndex += 1) {
     const row = rows[rowIndex];
     for (let columnIndex = 2; columnIndex < row.cells.length; columnIndex += 1) {
       const normalizedDate = normalizeShiftHeaderDate(row.cells[columnIndex] || '', fallbackYear);
@@ -337,21 +337,49 @@ const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) =
   return null;
 };
 
+const findShiftLeaderRow = (rows: SharedShiftMasterRow[], type: 'morning' | 'produce') => {
+  const matcher = (label: string) => {
+    if (type === 'morning') {
+      return label.includes('全体朝礼当番') || (label.includes('朝礼当番') && !label.includes('青果'));
+    }
+    return label.includes('青果朝礼当番');
+  };
+  const rowIndex = rows.findIndex((row) => matcher(normalizeShiftCellText(row.name)));
+  return {
+    rowIndex,
+    row: rowIndex >= 0 ? rows[rowIndex] : null
+  };
+};
+
 const getPlannedShiftLeaders = (rows: SharedShiftMasterRow[], targetDate: string) => {
   const columnInfo = findShiftDateColumn(rows, targetDate);
+  const morningLeaderInfo = findShiftLeaderRow(rows, 'morning');
+  const produceLeaderInfo = findShiftLeaderRow(rows, 'produce');
   if (!columnInfo) {
     return {
       columnInfo: null,
+      morningLeaderRowIndex: morningLeaderInfo.rowIndex,
+      morningLeaderRowRaw: morningLeaderInfo.row?.name || '',
+      morningLeaderCellValue: '',
       morningLeaderRaw: '',
+      produceLeaderRowIndex: produceLeaderInfo.rowIndex,
+      produceLeaderRowRaw: produceLeaderInfo.row?.name || '',
+      produceLeaderCellValue: '',
       produceLeaderRaw: ''
     };
   }
-  const morningLeaderRow = rows.find((row) => normalizeShiftCellText(row.name).includes('全体朝礼当番'));
-  const produceLeaderRow = rows.find((row) => normalizeShiftCellText(row.name).includes('青果朝礼当番'));
+  const morningLeaderCellValue = (morningLeaderInfo.row?.cells[columnInfo.columnIndex] || '').trim();
+  const produceLeaderCellValue = (produceLeaderInfo.row?.cells[columnInfo.columnIndex] || '').trim();
   return {
     columnInfo,
-    morningLeaderRaw: (morningLeaderRow?.cells[columnInfo.columnIndex] || '').trim(),
-    produceLeaderRaw: (produceLeaderRow?.cells[columnInfo.columnIndex] || '').trim()
+    morningLeaderRowIndex: morningLeaderInfo.rowIndex,
+    morningLeaderRowRaw: morningLeaderInfo.row?.name || '',
+    morningLeaderCellValue,
+    morningLeaderRaw: morningLeaderCellValue,
+    produceLeaderRowIndex: produceLeaderInfo.rowIndex,
+    produceLeaderRowRaw: produceLeaderInfo.row?.name || '',
+    produceLeaderCellValue,
+    produceLeaderRaw: produceLeaderCellValue
   };
 };
 
@@ -1953,6 +1981,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const tomorrowTimeyHoursRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
     const normalizedTomorrowKey = normalizeDateKey(nextDate);
     const matchedTomorrowColumnIndex = tomorrowPlanned.columnInfo?.columnIndex ?? -1;
+    const morningLeaderRowIndex = tomorrowPlanned.morningLeaderRowIndex ?? -1;
+    const morningLeaderRowRaw = tomorrowPlanned.morningLeaderRowRaw || '';
+    const morningLeaderCellValue = tomorrowPlanned.morningLeaderCellValue || '';
     const tomorrowMorningLeaderRaw = tomorrowPlanned.morningLeaderRaw;
     const tomorrowProduceLeaderRaw = tomorrowPlanned.produceLeaderRaw;
 
@@ -1976,6 +2007,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       tomorrowWeekdayLabel: tomorrowLabel.weekdayLabel,
       normalizedTomorrowKey,
       matchedTomorrowColumnIndex: matchedTomorrowColumnIndex >= 0 ? matchedTomorrowColumnIndex : null,
+      morningLeaderRowIndex: morningLeaderRowIndex >= 0 ? morningLeaderRowIndex : null,
+      morningLeaderRowRaw,
+      morningLeaderCellValue,
       tomorrowMorningLeaderRaw,
       tomorrowProduceLeaderRaw
     });
