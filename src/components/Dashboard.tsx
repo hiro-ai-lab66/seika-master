@@ -236,6 +236,41 @@ const buildEmptyShiftSummary = (): ShiftDaySummary => ({
   timey: ''
 });
 
+const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | null) => {
+  const originalValue = (rowData?.cells[dateIndex] || '').trim();
+  if (!rowData) {
+    return {
+      originalValue: '',
+      shiftedValue: '',
+      distance: 0
+    };
+  }
+  if (originalValue) {
+    return {
+      originalValue,
+      shiftedValue: originalValue,
+      distance: 0
+    };
+  }
+
+  for (let index = dateIndex - 1; index >= 2; index -= 1) {
+    const candidate = (rowData.cells[index] || '').trim();
+    if (candidate) {
+      return {
+        originalValue,
+        shiftedValue: candidate,
+        distance: dateIndex - index
+      };
+    }
+  }
+
+  return {
+    originalValue,
+    shiftedValue: '',
+    distance: 0
+  };
+};
+
 const formatJapaneseWeekday = (dateValue: string) => {
   if (!dateValue) return '';
   const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -322,10 +357,28 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
   });
 
   if (morningRowIndex >= 0) {
-    summary.morningLeader = normalizedRows[morningRowIndex]?.value || '';
+    const shiftedMorningLeader = getShiftedLeader(columnInfo.columnIndex, normalizedRows[morningRowIndex]?.row);
+    summary.morningLeader = shiftedMorningLeader.shiftedValue
+      ? `${shiftedMorningLeader.shiftedValue}${shiftedMorningLeader.distance > 0 ? '（繰越）' : ''}`
+      : '';
+    console.log('[Dashboard] shifted morning leader', {
+      targetDate,
+      originalValue: shiftedMorningLeader.originalValue,
+      shiftedValue: shiftedMorningLeader.shiftedValue,
+      slideDistance: shiftedMorningLeader.distance
+    });
   }
   if (produceRowIndex >= 0) {
-    summary.produceLeader = normalizedRows[produceRowIndex]?.value || '';
+    const shiftedProduceLeader = getShiftedLeader(columnInfo.columnIndex, normalizedRows[produceRowIndex]?.row);
+    summary.produceLeader = shiftedProduceLeader.shiftedValue
+      ? `${shiftedProduceLeader.shiftedValue}${shiftedProduceLeader.distance > 0 ? '（繰越）' : ''}`
+      : '';
+    console.log('[Dashboard] shifted produce leader', {
+      targetDate,
+      originalValue: shiftedProduceLeader.originalValue,
+      shiftedValue: shiftedProduceLeader.shiftedValue,
+      slideDistance: shiftedProduceLeader.distance
+    });
   }
   if (timeyRowIndex >= 0) {
     const timeyRaw = normalizedRows[timeyRowIndex]?.value || '';
