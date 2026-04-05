@@ -311,6 +311,14 @@ const formatJapaneseWeekday = (dateValue: string) => {
   return ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'][date.getDay()] || '';
 };
 
+const buildShiftDateLabel = (dateValue: string) => {
+  const weekday = formatJapaneseWeekday(dateValue);
+  return {
+    weekdayLabel: weekday || '曜日未設定',
+    dateDisplay: dateValue ? `${dateValue}${weekday || ''}` : '日付未設定'
+  };
+};
+
 const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) => {
   const fallbackYear = targetDate.slice(0, 4);
   for (let rowIndex = 0; rowIndex < Math.min(rows.length, 3); rowIndex += 1) {
@@ -327,6 +335,24 @@ const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) =
     }
   }
   return null;
+};
+
+const getPlannedShiftLeaders = (rows: SharedShiftMasterRow[], targetDate: string) => {
+  const columnInfo = findShiftDateColumn(rows, targetDate);
+  if (!columnInfo) {
+    return {
+      columnInfo: null,
+      morningLeaderRaw: '',
+      produceLeaderRaw: ''
+    };
+  }
+  const morningLeaderRow = rows.find((row) => normalizeShiftCellText(row.name).includes('全体朝礼当番'));
+  const produceLeaderRow = rows.find((row) => normalizeShiftCellText(row.name).includes('青果朝礼当番'));
+  return {
+    columnInfo,
+    morningLeaderRaw: (morningLeaderRow?.cells[columnInfo.columnIndex] || '').trim(),
+    produceLeaderRaw: (produceLeaderRow?.cells[columnInfo.columnIndex] || '').trim()
+  };
 };
 
 const buildShiftSummary = (
@@ -1911,8 +1937,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const shiftInfo = useMemo(() => {
     const today = buildShiftSummary(sharedShiftRows, currentDate, sharedMorningStatuses, { useExecutionStatus: true });
     const tomorrow = buildShiftSummary(sharedShiftRows, nextDate, sharedMorningStatuses, { useExecutionStatus: false });
-    const todayLabel = formatJapaneseWeekday(currentDate);
-    const tomorrowLabel = formatJapaneseWeekday(nextDate);
+    const tomorrowPlanned = getPlannedShiftLeaders(sharedShiftRows, nextDate);
+    const todayLabel = buildShiftDateLabel(currentDate);
+    const tomorrowLabel = buildShiftDateLabel(nextDate);
     const todayTimeyColumnIndex = today.columnInfo?.columnIndex ?? -1;
     const tomorrowTimeyColumnIndex = tomorrow.columnInfo?.columnIndex ?? -1;
     const timeyRow = sharedShiftRows.find((row) => normalizeShiftCellText(row.name) === 'タイミー');
@@ -1925,11 +1952,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const tomorrowTimeyRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
     const tomorrowTimeyHoursRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
     const normalizedTomorrowKey = normalizeDateKey(nextDate);
-    const morningLeaderRow = sharedShiftRows.find((row) => normalizeShiftCellText(row.name).includes('全体朝礼当番'));
-    const produceLeaderRow = sharedShiftRows.find((row) => normalizeShiftCellText(row.name).includes('青果朝礼当番'));
-    const matchedTomorrowColumnIndex = tomorrow.columnInfo?.columnIndex ?? -1;
-    const morningLeaderRowValue = matchedTomorrowColumnIndex >= 0 ? (morningLeaderRow?.cells[matchedTomorrowColumnIndex] || '').trim() : '';
-    const produceMorningLeaderRowValue = matchedTomorrowColumnIndex >= 0 ? (produceLeaderRow?.cells[matchedTomorrowColumnIndex] || '').trim() : '';
+    const matchedTomorrowColumnIndex = tomorrowPlanned.columnInfo?.columnIndex ?? -1;
+    const tomorrowMorningLeaderRaw = tomorrowPlanned.morningLeaderRaw;
+    const tomorrowProduceLeaderRaw = tomorrowPlanned.produceLeaderRaw;
+
+    tomorrow.summary.morningLeader = tomorrowMorningLeaderRaw;
+    tomorrow.summary.produceLeader = tomorrowProduceLeaderRaw;
 
     console.log('[Dashboard] shift target columns', {
       today: {
@@ -1945,10 +1973,11 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     });
     console.log('[Dashboard] tomorrow leader lookup', {
       tomorrowDate: nextDate,
+      tomorrowWeekdayLabel: tomorrowLabel.weekdayLabel,
       normalizedTomorrowKey,
       matchedTomorrowColumnIndex: matchedTomorrowColumnIndex >= 0 ? matchedTomorrowColumnIndex : null,
-      morningLeaderRowValue,
-      produceMorningLeaderRowValue
+      tomorrowMorningLeaderRaw,
+      tomorrowProduceLeaderRaw
     });
     console.log('[Dashboard] shift extracted summary', {
       today: today.summary,
@@ -1973,8 +2002,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     return {
       today: today.summary,
       tomorrow: tomorrow.summary,
-      todayLabel,
-      tomorrowLabel
+      todayLabel: todayLabel.weekdayLabel,
+      tomorrowLabel: tomorrowLabel.weekdayLabel,
+      todayDateDisplay: todayLabel.dateDisplay,
+      tomorrowDateDisplay: tomorrowLabel.dateDisplay
     };
   }, [sharedShiftRows, sharedMorningStatuses, currentDate, nextDate]);
 
@@ -2314,17 +2345,17 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
             </div>
           )}
           {[
-              { label: '本日', date: currentDate, weekday: shiftInfo.todayLabel, summary: shiftInfo.today },
-              { label: '翌日', date: nextDate, weekday: shiftInfo.tomorrowLabel, summary: shiftInfo.tomorrow }
+              { label: shiftInfo.todayLabel, date: shiftInfo.todayDateDisplay, summary: shiftInfo.today },
+              { label: shiftInfo.tomorrowLabel, date: shiftInfo.tomorrowDateDisplay, summary: shiftInfo.tomorrow }
             ].map((section) => (
               <div key={section.label} style={{ background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '6px' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>
-                  【{section.label}】 {section.date || '日付未設定'}{section.weekday ? ` ${section.weekday}` : ''}
+                  【{section.label}】 {section.date || '日付未設定'}
                 </div>
-                {section.label === '本日' && section.summary.morningLeader && (
+                {section.label === shiftInfo.todayLabel && section.summary.morningLeader && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>朝礼当番：{section.summary.morningLeader}</div>
                 )}
-                {section.label === '本日' && section.summary.produceLeader && (
+                {section.label === shiftInfo.todayLabel && section.summary.produceLeader && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果朝礼当番：{section.summary.produceLeader}</div>
                 )}
                 {section.summary.lateMembers.length > 0 && (
