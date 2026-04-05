@@ -2225,6 +2225,15 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         <div style={{ display: 'grid', gap: '12px' }}>
           {isTodaySelected && (
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '10px' }}>
+              <div style={{ display: 'grid', gap: '6px', paddingBottom: '10px', borderBottom: '1px solid #bfdbfe' }}>
+                <div style={{ color: '#1e3a8a', fontSize: '0.9rem', fontWeight: 900 }}>本日の当番</div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
+                  朝礼当番：{shiftInfo.today.morningLeader || '未設定'}
+                </div>
+                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
+                  青果朝礼当番：{shiftInfo.today.produceLeader || '未設定'}
+                </div>
+              </div>
               <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>本日の朝礼実施操作</div>
               <div style={{ display: 'grid', gap: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2286,10 +2295,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>
                   【{section.label}】 {section.date || '日付未設定'}{section.weekday ? ` ${section.weekday}` : ''}
                 </div>
-                {section.summary.morningLeader && (
+                {section.label === '本日' && section.summary.morningLeader && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>朝礼当番：{section.summary.morningLeader}</div>
                 )}
-                {section.summary.produceLeader && (
+                {section.label === '本日' && section.summary.produceLeader && (
                   <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果朝礼当番：{section.summary.produceLeader}</div>
                 )}
                 {section.summary.lateMembers.length > 0 && (
@@ -2309,8 +2318,17 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 )}
               </div>
             ))}
+          <div style={{ background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '6px' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>明日の当番</div>
+            <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
+              明日の朝礼当番：{shiftInfo.tomorrow.morningLeader || '未設定'}
+            </div>
+            <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
+              明日の青果朝礼当番：{shiftInfo.tomorrow.produceLeader || '未設定'}
+            </div>
           </div>
         </div>
+      </div>
 
         <div style={{ ...cardStyle, borderColor: '#fecaca' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
