@@ -319,8 +319,38 @@ const buildShiftDateLabel = (dateValue: string) => {
   };
 };
 
+const normalizeMonthDayKey = (value: string) => {
+  const normalized = (value || '').trim().replace(/[年月]/g, '/').replace(/日/g, '');
+  const match = normalized.match(/(?:\d{2,4}[\/-])?(\d{1,2})[\/-](\d{1,2})/);
+  if (!match) return '';
+  return `${Number(match[1])}/${Number(match[2])}`;
+};
+
 const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) => {
   const fallbackYear = targetDate.slice(0, 4);
+  const tomorrowNormalized = normalizeMonthDayKey(targetDate);
+  const headerRow = rows[0]?.cells || [];
+  const normalizedHeaderDates = headerRow.map((cell, index) => ({
+    index,
+    raw: cell || '',
+    normalized: normalizeMonthDayKey(cell || '') || normalizeMonthDayKey(normalizeShiftHeaderDate(cell || '', fallbackYear))
+  }));
+  const matchedHeader = normalizedHeaderDates.find((entry) => entry.index >= 2 && entry.normalized === tomorrowNormalized);
+  console.log('[Dashboard] shift header lookup', {
+    targetDate,
+    headerRowValues: headerRow,
+    normalizedHeaderDates,
+    tomorrowNormalized,
+    matchedIndex: matchedHeader?.index ?? null
+  });
+  if (matchedHeader) {
+    return {
+      rowIndex: 0,
+      columnIndex: matchedHeader.index,
+      headerValue: headerRow[matchedHeader.index] || ''
+    };
+  }
+
   for (let rowIndex = 0; rowIndex < Math.min(rows.length, 10); rowIndex += 1) {
     const row = rows[rowIndex];
     for (let columnIndex = 2; columnIndex < row.cells.length; columnIndex += 1) {
@@ -2004,12 +2034,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     });
     console.log('[Dashboard] tomorrow leader lookup', {
       tomorrowDate: nextDate,
-      tomorrowWeekdayLabel: tomorrowLabel.weekdayLabel,
       normalizedTomorrowKey,
       matchedTomorrowColumnIndex: matchedTomorrowColumnIndex >= 0 ? matchedTomorrowColumnIndex : null,
       morningLeaderRowIndex: morningLeaderRowIndex >= 0 ? morningLeaderRowIndex : null,
       morningLeaderRowRaw,
       morningLeaderCellValue,
+      cellValue: morningLeaderCellValue,
       tomorrowMorningLeaderRaw,
       tomorrowProduceLeaderRaw
     });
