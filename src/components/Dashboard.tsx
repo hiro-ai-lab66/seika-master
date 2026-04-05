@@ -1517,19 +1517,22 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const sharedVegetables = parseSharedRankingRows(sharedCheckRows, normalizedPreviousDate, 'veggie');
     const sharedFruits = parseSharedRankingRows(sharedCheckRows, normalizedPreviousDate, 'fruit');
     const hasSharedRanking = sharedVegetables.length > 0 || sharedFruits.length > 0;
+    const matchedPreviousDateRecords = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate);
 
     console.log('[Dashboard] top5 ranking source selection', {
-      selectedDate: currentDate,
-      previousDate,
-      targetDate: normalizedPreviousDate,
+      currentDate,
+      targetPreviousDate: normalizedPreviousDate,
+      dailySalesCount: allDailySales.length,
+      matchedPreviousDateRecordsCount: matchedPreviousDateRecords.length,
+      veggieBestCount: hasSharedRanking ? sharedVegetables.length : matchedPreviousDateRecords.filter((row) => isVegetableDepartment(row.department)).slice(0, 5).length,
+      fruitBestCount: hasSharedRanking ? sharedFruits.length : matchedPreviousDateRecords.filter((row) => isFruitDepartment(row.department)).slice(0, 5).length,
       sharedCheckRowCount: sharedCheckRows.length,
       sharedVegetableCount: sharedVegetables.length,
       sharedFruitCount: sharedFruits.length,
-      localDailySalesCount: allDailySales.length,
       using: hasSharedRanking ? 'shared_check' : 'local_daily_sales_fallback'
     });
 
-    const fallbackRows = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate);
+    const fallbackRows = matchedPreviousDateRecords;
     const buildFallbackRanking = (department: '野菜' | '果物') =>
       fallbackRows
         .filter((row) => {
@@ -1552,8 +1555,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     });
     console.log('[Dashboard] ranking source local fallback rows', fallbackRows);
     console.log('[Dashboard] top5 source before render', {
-      selectedDate: currentDate,
-      previousDate,
+      currentDate,
+      targetPreviousDate: normalizedPreviousDate,
+      dailySalesCount: allDailySales.length,
+      matchedPreviousDateRecordsCount: fallbackRows.length,
+      veggieBestCount: vegetables.length,
+      fruitBestCount: fruits.length,
       sharedVegetables,
       sharedFruits,
       fallbackRowsCount: fallbackRows.length,
@@ -1569,7 +1576,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       vegetableComment: buildDepartmentTrendComment('野菜', vegetables),
       fruitComment: buildDepartmentTrendComment('果物', fruits)
     };
-  }, [allDailySales, previousDate]);
+  }, [allDailySales, previousDate, currentDate, sharedCheckRows]);
 
   const morningBriefingLines = useMemo(() => {
     return [
