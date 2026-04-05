@@ -383,32 +383,52 @@ const findShiftLeaderRow = (rows: SharedShiftMasterRow[], type: 'morning' | 'pro
 
 const getPlannedShiftLeaders = (rows: SharedShiftMasterRow[], targetDate: string) => {
   const columnInfo = findShiftDateColumn(rows, targetDate);
-  const morningLeaderInfo = findShiftLeaderRow(rows, 'morning');
-  const produceLeaderInfo = findShiftLeaderRow(rows, 'produce');
+  const detectedMorningLeaderInfo = findShiftLeaderRow(rows, 'morning');
+  const detectedProduceLeaderInfo = findShiftLeaderRow(rows, 'produce');
+  const fallbackMorningRow = rows.find((row) => row.rowNumber === 13) || null;
+  const fallbackProduceRow = rows.find((row) => row.rowNumber === 14) || null;
+  const morningLeaderInfo = detectedMorningLeaderInfo.row
+    ? detectedMorningLeaderInfo
+    : { rowIndex: fallbackMorningRow ? rows.findIndex((row) => row.rowNumber === 13) : -1, row: fallbackMorningRow };
+  const produceLeaderInfo = detectedProduceLeaderInfo.row
+    ? detectedProduceLeaderInfo
+    : { rowIndex: fallbackProduceRow ? rows.findIndex((row) => row.rowNumber === 14) : -1, row: fallbackProduceRow };
   if (!columnInfo) {
     return {
       columnInfo: null,
-      morningLeaderRowIndex: morningLeaderInfo.rowIndex,
+      morningLeaderRowIndex: morningLeaderInfo.row?.rowNumber ?? morningLeaderInfo.rowIndex,
       morningLeaderRowRaw: morningLeaderInfo.row?.name || '',
       morningLeaderCellValue: '',
       morningLeaderRaw: '',
-      produceLeaderRowIndex: produceLeaderInfo.rowIndex,
+      produceMorningLeaderRowIndex: produceLeaderInfo.row?.rowNumber ?? produceLeaderInfo.rowIndex,
       produceLeaderRowRaw: produceLeaderInfo.row?.name || '',
-      produceLeaderCellValue: '',
+      produceMorningLeaderCellValue: '',
       produceLeaderRaw: ''
     };
   }
-  const morningLeaderCellValue = (morningLeaderInfo.row?.cells[columnInfo.columnIndex] || '').trim();
-  const produceLeaderCellValue = (produceLeaderInfo.row?.cells[columnInfo.columnIndex] || '').trim();
+  const detectedMorningCellValue = (detectedMorningLeaderInfo.row?.cells[columnInfo.columnIndex] || '').trim();
+  const fallbackMorningCellValue = (fallbackMorningRow?.cells[columnInfo.columnIndex] || '').trim();
+  const morningLeaderCellValue = detectedMorningCellValue || fallbackMorningCellValue;
+  const detectedProduceCellValue = (detectedProduceLeaderInfo.row?.cells[columnInfo.columnIndex] || '').trim();
+  const fallbackProduceCellValue = (fallbackProduceRow?.cells[columnInfo.columnIndex] || '').trim();
+  const produceLeaderCellValue = detectedProduceCellValue || fallbackProduceCellValue;
   return {
     columnInfo,
-    morningLeaderRowIndex: morningLeaderInfo.rowIndex,
-    morningLeaderRowRaw: morningLeaderInfo.row?.name || '',
+    morningLeaderRowIndex: morningLeaderCellValue === fallbackMorningCellValue && fallbackMorningRow
+      ? (fallbackMorningRow.rowNumber || rows.findIndex((row) => row.rowNumber === 13))
+      : (morningLeaderInfo.row?.rowNumber ?? morningLeaderInfo.rowIndex),
+    morningLeaderRowRaw: morningLeaderCellValue === fallbackMorningCellValue && fallbackMorningRow
+      ? fallbackMorningRow.name || ''
+      : morningLeaderInfo.row?.name || '',
     morningLeaderCellValue,
     morningLeaderRaw: morningLeaderCellValue,
-    produceLeaderRowIndex: produceLeaderInfo.rowIndex,
-    produceLeaderRowRaw: produceLeaderInfo.row?.name || '',
-    produceLeaderCellValue,
+    produceMorningLeaderRowIndex: produceLeaderCellValue === fallbackProduceCellValue && fallbackProduceRow
+      ? (fallbackProduceRow.rowNumber || rows.findIndex((row) => row.rowNumber === 14))
+      : (produceLeaderInfo.row?.rowNumber ?? produceLeaderInfo.rowIndex),
+    produceLeaderRowRaw: produceLeaderCellValue === fallbackProduceCellValue && fallbackProduceRow
+      ? fallbackProduceRow.name || ''
+      : produceLeaderInfo.row?.name || '',
+    produceMorningLeaderCellValue: produceLeaderCellValue,
     produceLeaderRaw: produceLeaderCellValue
   };
 };
@@ -2014,6 +2034,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const morningLeaderRowIndex = tomorrowPlanned.morningLeaderRowIndex ?? -1;
     const morningLeaderRowRaw = tomorrowPlanned.morningLeaderRowRaw || '';
     const morningLeaderCellValue = tomorrowPlanned.morningLeaderCellValue || '';
+    const produceMorningLeaderRowIndex = tomorrowPlanned.produceMorningLeaderRowIndex ?? -1;
+    const produceMorningLeaderCellValue = tomorrowPlanned.produceMorningLeaderCellValue || '';
     const tomorrowMorningLeaderRaw = tomorrowPlanned.morningLeaderRaw;
     const tomorrowProduceLeaderRaw = tomorrowPlanned.produceLeaderRaw;
 
@@ -2039,7 +2061,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       morningLeaderRowIndex: morningLeaderRowIndex >= 0 ? morningLeaderRowIndex : null,
       morningLeaderRowRaw,
       morningLeaderCellValue,
-      cellValue: morningLeaderCellValue,
+      produceMorningLeaderRowIndex: produceMorningLeaderRowIndex >= 0 ? produceMorningLeaderRowIndex : null,
+      produceMorningLeaderCellValue,
       tomorrowMorningLeaderRaw,
       tomorrowProduceLeaderRaw
     });
