@@ -236,17 +236,26 @@ const buildEmptyShiftSummary = (): ShiftDaySummary => ({
   timey: ''
 });
 
-const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | null) => {
+const hasShiftExecutionFlag = (value: string) => {
+  const normalized = normalizeShiftCellText(value).toLowerCase();
+  if (!normalized) return false;
+  return ['1', 'y', 'yes', 'true', '済', '実施', 'あり', '有'].some((token) => normalized === token || normalized.includes(token));
+};
+
+const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | null, executionRowData?: SharedShiftMasterRow | null) => {
   const originalValue = (rowData?.cells[dateIndex] || '').trim();
+  const executionFlag = (executionRowData?.cells[dateIndex] || '').trim();
   if (!rowData) {
     return {
+      executionFlag: '',
       originalValue: '',
       shiftedValue: '',
       distance: 0
     };
   }
-  if (originalValue) {
+  if (hasShiftExecutionFlag(executionFlag)) {
     return {
+      executionFlag,
       originalValue,
       shiftedValue: originalValue,
       distance: 0
@@ -255,8 +264,10 @@ const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | nu
 
   for (let index = dateIndex - 1; index >= 2; index -= 1) {
     const candidate = (rowData.cells[index] || '').trim();
-    if (candidate) {
+    const candidateExecutionFlag = (executionRowData?.cells[index] || '').trim();
+    if (candidate && hasShiftExecutionFlag(candidateExecutionFlag)) {
       return {
+        executionFlag,
         originalValue,
         shiftedValue: candidate,
         distance: dateIndex - index
@@ -265,6 +276,7 @@ const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | nu
   }
 
   return {
+    executionFlag,
     originalValue,
     shiftedValue: '',
     distance: 0
@@ -312,6 +324,7 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
     value: (row.cells[columnInfo.columnIndex] || '').trim()
   }));
 
+  const executionRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('朝礼実施'));
   const morningRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('全体朝礼当番'));
   const produceRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('青果朝礼当番'));
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
@@ -357,24 +370,34 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
   });
 
   if (morningRowIndex >= 0) {
-    const shiftedMorningLeader = getShiftedLeader(columnInfo.columnIndex, normalizedRows[morningRowIndex]?.row);
+    const shiftedMorningLeader = getShiftedLeader(
+      columnInfo.columnIndex,
+      normalizedRows[morningRowIndex]?.row,
+      executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null
+    );
     summary.morningLeader = shiftedMorningLeader.shiftedValue
       ? `${shiftedMorningLeader.shiftedValue}${shiftedMorningLeader.distance > 0 ? '（繰越）' : ''}`
       : '';
     console.log('[Dashboard] shifted morning leader', {
       targetDate,
+      executionFlag: shiftedMorningLeader.executionFlag,
       originalValue: shiftedMorningLeader.originalValue,
       shiftedValue: shiftedMorningLeader.shiftedValue,
       slideDistance: shiftedMorningLeader.distance
     });
   }
   if (produceRowIndex >= 0) {
-    const shiftedProduceLeader = getShiftedLeader(columnInfo.columnIndex, normalizedRows[produceRowIndex]?.row);
+    const shiftedProduceLeader = getShiftedLeader(
+      columnInfo.columnIndex,
+      normalizedRows[produceRowIndex]?.row,
+      executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null
+    );
     summary.produceLeader = shiftedProduceLeader.shiftedValue
       ? `${shiftedProduceLeader.shiftedValue}${shiftedProduceLeader.distance > 0 ? '（繰越）' : ''}`
       : '';
     console.log('[Dashboard] shifted produce leader', {
       targetDate,
+      executionFlag: shiftedProduceLeader.executionFlag,
       originalValue: shiftedProduceLeader.originalValue,
       shiftedValue: shiftedProduceLeader.shiftedValue,
       slideDistance: shiftedProduceLeader.distance
