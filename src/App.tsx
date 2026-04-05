@@ -55,6 +55,16 @@ const parseSharedCheckNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const isFinalConfirmationRow = (item: string) => item === '最終値確定';
+
+const hasConfirmedFinalRows = (rows: SharedCheckRow[]) => rows.some((row) => {
+  if (row.time !== 'final') return false;
+  if (isFinalConfirmationRow(row.item)) {
+    return row.content === 'true';
+  }
+  return row.item === '最終実績' || row.item === '店計売上' || row.item === '構成比';
+});
+
 const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): InspectionEntry => ({
   id: existing?.id || `shared-check-${date}`,
   date,
@@ -76,11 +86,12 @@ const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): I
   compositionRatio: existing?.compositionRatio ?? null,
   diffFinal: existing?.diffFinal ?? null,
   accDiff: existing?.accDiff ?? null,
-  customersFinal: existing?.customersFinal ?? null,
+  customersFinal: existing?.isFinalConfirmed ? existing?.customersFinal ?? null : null,
+  isFinalConfirmed: existing?.isFinalConfirmed ?? false,
   accBudgetRatio: existing?.accBudgetRatio ?? null,
   accPrevYearRatio: existing?.accPrevYearRatio ?? null,
-  lossAmount: existing?.lossAmount ?? null,
-  lossRate: existing?.lossRate ?? null,
+  lossAmount: existing?.isFinalConfirmed ? existing?.lossAmount ?? null : null,
+  lossRate: existing?.isFinalConfirmed ? existing?.lossRate ?? null : null,
   promotionItem: existing?.promotionItem || '',
   promotionTargetSales: existing?.promotionTargetSales || 0,
   promotionTargetMargin: existing?.promotionTargetMargin || 0,
@@ -119,11 +130,23 @@ const mergeDailyBudgetsFromInspections = (existingBudgets: DailyBudget[], inspec
 };
 
 const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
-  const grouped = new Map<string, InspectionEntry>();
+  const groupedRows = new Map<string, SharedCheckRow[]>();
 
   rows.forEach((row) => {
     if (!row.date) return;
-    const current = grouped.get(row.date) || createEmptyInspectionEntry(row.date);
+    const dateRows = groupedRows.get(row.date) || [];
+    dateRows.push(row);
+    groupedRows.set(row.date, dateRows);
+  });
+
+  const grouped = new Map<string, InspectionEntry>();
+
+  groupedRows.forEach((dateRows, date) => {
+    const current = createEmptyInspectionEntry(date);
+    const isFinalConfirmed = hasConfirmedFinalRows(dateRows);
+
+    current.isFinalConfirmed = isFinalConfirmed;
+    dateRows.forEach((row) => {
     switch (row.item) {
       case '本日の売上予算':
         current.totalBudget = parseSharedCheckAmount(row.content) || 0;
@@ -157,10 +180,17 @@ const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
         break;
       case '最終客数':
       case '客数':
-        current.customersFinal = parseSharedCheckNumber(row.content);
+        if (isFinalConfirmed) {
+          current.customersFinal = parseSharedCheckNumber(row.content);
+        }
         break;
       case 'ロス額':
-        current.lossAmount = parseSharedCheckAmount(row.content);
+        if (isFinalConfirmed) {
+          current.lossAmount = parseSharedCheckAmount(row.content);
+        }
+        break;
+      case '最終値確定':
+        current.isFinalConfirmed = row.content === 'true';
         break;
       case '売り込み品':
         current.promotionItem = row.content || '';
@@ -183,7 +213,8 @@ const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
       default:
         break;
     }
-    grouped.set(row.date, current);
+    });
+    grouped.set(date, current);
   });
   const sortedEntries = Array.from(grouped.values()).sort((a, b) => b.date.localeCompare(a.date));
   console.log('[App] inspection history sorted entries preview', sortedEntries.slice(0, 3).map((entry) => ({

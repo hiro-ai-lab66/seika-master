@@ -70,6 +70,7 @@ export interface InspectionEntry {
     diffFinal: number | null;
     accDiff: number | null;
     customersFinal: number | null;
+    isFinalConfirmed?: boolean;
     accBudgetRatio: number | null;
     accPrevYearRatio: number | null;
 

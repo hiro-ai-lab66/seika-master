@@ -63,6 +63,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (value === null || value === undefined) return '';
         return String(Math.round(value / 1000));
     };
+    const isFinalConfirmationRow = (item: string) => item === '最終値確定';
+    const hasConfirmedFinalRows = (rows: SharedCheckRow[]) => rows.some((row) => {
+        if (row.time !== 'final') return false;
+        if (isFinalConfirmationRow(row.item)) {
+            return row.content === 'true';
+        }
+        return row.item === '最終実績' || row.item === '店計売上' || row.item === '構成比';
+    });
     const sortBestItemsByQuantity = (items: BestItem[]) => {
         return [...items].sort((a, b) => {
             const qtyA = Number(a.salesQty || 0);
@@ -184,6 +192,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (existingEntry && existingEntry.date === targetDate) {
             return {
                 ...existingEntry,
+                customersFinal: existingEntry.isFinalConfirmed ? existingEntry.customersFinal ?? null : null,
+                lossAmount: existingEntry.isFinalConfirmed ? existingEntry.lossAmount ?? null : null,
+                isFinalConfirmed: existingEntry.isFinalConfirmed ?? false,
                 totalBudget: masterBudget > 0 ? masterBudget : (existingEntry.totalBudget || 0)
             };
         }
@@ -199,6 +210,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             customers12: null,
             customers17: null,
             customersFinal: null,
+            isFinalConfirmed: false,
             storeSalesFinal: null,
             compositionRatio: null,
             promotionItem: '',
@@ -466,6 +478,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 { date: currentDate, store: STORE_NAME, item: '最終実績', content: formatCheckValue(form.actualFinal), status: form.actualFinal !== null && form.actualFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '店計売上', content: storeSalesInput, status: storeSalesInput ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '構成比', content: currentCompositionRatio !== null && currentCompositionRatio !== undefined ? String(currentCompositionRatio) : '', status: currentCompositionRatio !== null && currentCompositionRatio !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
+                { date: currentDate, store: STORE_NAME, item: '最終値確定', content: 'true', status: '入力済', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '最終客数', content: form.customersFinal?.toString() || '', status: form.customersFinal !== null && form.customersFinal !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: 'ロス額', content: formatLossThousandInput(form.lossAmount), status: form.lossAmount !== null && form.lossAmount !== undefined ? '入力済' : '未入力', owner: '', time: 'final' },
                 { date: currentDate, store: STORE_NAME, item: '天気（12時）', content: aiWeather12, status: aiWeather12 ? '入力済' : '未入力', owner: '', time: 'final' },
@@ -504,6 +517,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             setSharedStatus(`共有データはありますが、この日付/時間帯の該当行はありません（シート: ${getSharedCheckSheetName()}）`);
             return;
         }
+        const finalRowsForDate = rows.filter((row) => row.date === currentDate && row.time === 'final');
+        const isFinalConfirmed = hasConfirmedFinalRows(finalRowsForDate);
 
         setForm((prev) => {
             const next = { ...prev };
@@ -564,16 +579,19 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         next.compositionRatio = row.content ? Number(row.content) : null;
                         break;
                     case '最終客数':
-                        next.customersFinal = row.content ? Number(row.content) : null;
+                        next.customersFinal = isFinalConfirmed && row.content ? Number(row.content) : null;
                         break;
                     case '客数':
-                        if (next.customersFinal === null || next.customersFinal === undefined) {
+                        if (isFinalConfirmed && (next.customersFinal === null || next.customersFinal === undefined)) {
                             next.customersFinal = row.content ? Number(row.content) : null;
                         }
                         break;
                     case 'ロス額':
-                        next.lossAmount = parseLossThousandInput(row.content);
-                        setLossAmountInput(row.content);
+                        next.lossAmount = isFinalConfirmed ? parseLossThousandInput(row.content) : null;
+                        setLossAmountInput(isFinalConfirmed ? row.content : '');
+                        break;
+                    case '最終値確定':
+                        next.isFinalConfirmed = row.content === 'true';
                         break;
                     case '天気（12時）':
                         setAiWeather12(row.content);
@@ -591,6 +609,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         break;
                 }
             });
+            if (period === 'final') {
+                next.isFinalConfirmed = isFinalConfirmed;
+                if (!isFinalConfirmed) {
+                    next.customersFinal = null;
+                    next.lossAmount = null;
+                    setLossAmountInput('');
+                }
+            }
             return next;
         });
 
@@ -1046,6 +1072,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         const entryToSave = {
             ...form,
+            isFinalConfirmed: period === 'final' ? true : Boolean(form.isFinalConfirmed),
             storeSalesFinal: normalizedStoreSalesFinal,
             compositionRatio: normalizedCompositionRatio,
             bestVegetables: analysisVeggies,
@@ -1337,9 +1364,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     setAiHighTemp('');
                     setAiLowTemp('');
                     const avgPrice = first.avg_price !== undefined ? Math.round(first.avg_price / 1000) : null;
-                    if ((form.customersFinal === null || form.customersFinal === undefined) && first.customer_count !== undefined) {
-                        setForm((prev) => ({ ...prev, customersFinal: first.customer_count ?? null }));
-                    }
                     setStoreSalesInput(
                         first.customer_count !== undefined && avgPrice !== null
                             ? String(Math.round(((first.customer_count || 0) * avgPrice * 1000) / 1000))
@@ -1435,26 +1459,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 let appliedCount = 0;
 
                 setForm((prev) => {
-                    const next = { ...prev };
-
-                    if ((next.customersFinal === null || next.customersFinal === undefined) && rowMap.get('最終客数')) {
-                        const previousCustomers = Number(rowMap.get('最終客数'));
-                        if (!Number.isNaN(previousCustomers)) {
-                            next.customersFinal = previousCustomers;
-                            appliedCount += 1;
-                        }
-                    }
-
-                    if ((next.lossAmount === null || next.lossAmount === undefined) && rowMap.get('ロス額')) {
-                        const previousLossAmount = parseLossThousandInput(rowMap.get('ロス額') || '');
-                        if (previousLossAmount !== null) {
-                            next.lossAmount = previousLossAmount;
-                            setLossAmountInput(rowMap.get('ロス額') || '');
-                            appliedCount += 1;
-                        }
-                    }
-
-                    return next;
+                    return { ...prev };
                 });
 
                 if (!aiWeather12 && rowMap.get('天気（12時）')) {
