@@ -329,7 +329,13 @@ const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) =
   return null;
 };
 
-const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string, morningStatuses: SharedMorningStatusEntry[]) => {
+const buildShiftSummary = (
+  rows: SharedShiftMasterRow[],
+  targetDate: string,
+  morningStatuses: SharedMorningStatusEntry[],
+  options: { useExecutionStatus?: boolean } = {}
+) => {
+  const useExecutionStatus = options.useExecutionStatus ?? true;
   const columnInfo = findShiftDateColumn(rows, targetDate);
   const summary = buildEmptyShiftSummary();
 
@@ -346,6 +352,9 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string, mor
   const executionRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('朝礼実施'));
   const morningStatusByDate = new Map(morningStatuses.map((entry) => [entry.date, entry]));
   const resolveDoneFlag = (columnIndex: number, field: 'morningDone' | 'produceMorningDone') => {
+    if (!useExecutionStatus) {
+      return true;
+    }
     const columnDate = getShiftDateForColumn(rows, columnIndex, targetDate.slice(0, 4));
     const stored = columnDate ? morningStatusByDate.get(columnDate) : undefined;
     if (stored) {
@@ -399,6 +408,7 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string, mor
   });
 
   if (morningRowIndex >= 0) {
+    const morningLeaderRowValue = (normalizedRows[morningRowIndex]?.row.cells[columnInfo.columnIndex] || '').trim();
     const shiftedMorningLeader = getShiftedLeader(
       columnInfo.columnIndex,
       normalizedRows[morningRowIndex]?.row,
@@ -413,12 +423,14 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string, mor
       targetDate,
       doneFlag: summary.morningDone,
       executionFlag: shiftedMorningLeader.executionFlag,
+      morningLeaderRowValue,
       originalValue: shiftedMorningLeader.originalValue,
       shiftedValue: shiftedMorningLeader.shiftedValue,
       slideDistance: shiftedMorningLeader.distance
     });
   }
   if (produceRowIndex >= 0) {
+    const produceMorningLeaderRowValue = (normalizedRows[produceRowIndex]?.row.cells[columnInfo.columnIndex] || '').trim();
     const shiftedProduceLeader = getShiftedLeader(
       columnInfo.columnIndex,
       normalizedRows[produceRowIndex]?.row,
@@ -433,6 +445,7 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string, mor
       targetDate,
       doneFlag: summary.produceMorningDone,
       executionFlag: shiftedProduceLeader.executionFlag,
+      produceMorningLeaderRowValue,
       originalValue: shiftedProduceLeader.originalValue,
       shiftedValue: shiftedProduceLeader.shiftedValue,
       slideDistance: shiftedProduceLeader.distance
@@ -1896,8 +1909,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const displayedAdvertisements = todayAdvertisements;
 
   const shiftInfo = useMemo(() => {
-    const today = buildShiftSummary(sharedShiftRows, currentDate, sharedMorningStatuses);
-    const tomorrow = buildShiftSummary(sharedShiftRows, nextDate, sharedMorningStatuses);
+    const today = buildShiftSummary(sharedShiftRows, currentDate, sharedMorningStatuses, { useExecutionStatus: true });
+    const tomorrow = buildShiftSummary(sharedShiftRows, nextDate, sharedMorningStatuses, { useExecutionStatus: false });
     const todayLabel = formatJapaneseWeekday(currentDate);
     const tomorrowLabel = formatJapaneseWeekday(nextDate);
     const todayTimeyColumnIndex = today.columnInfo?.columnIndex ?? -1;
@@ -1911,6 +1924,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const todayTimeyHoursRaw = todayTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[todayTimeyColumnIndex] || '') : '';
     const tomorrowTimeyRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
     const tomorrowTimeyHoursRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
+    const normalizedTomorrowKey = normalizeDateKey(nextDate);
+    const morningLeaderRow = sharedShiftRows.find((row) => normalizeShiftCellText(row.name).includes('全体朝礼当番'));
+    const produceLeaderRow = sharedShiftRows.find((row) => normalizeShiftCellText(row.name).includes('青果朝礼当番'));
+    const matchedTomorrowColumnIndex = tomorrow.columnInfo?.columnIndex ?? -1;
+    const morningLeaderRowValue = matchedTomorrowColumnIndex >= 0 ? (morningLeaderRow?.cells[matchedTomorrowColumnIndex] || '').trim() : '';
+    const produceMorningLeaderRowValue = matchedTomorrowColumnIndex >= 0 ? (produceLeaderRow?.cells[matchedTomorrowColumnIndex] || '').trim() : '';
 
     console.log('[Dashboard] shift target columns', {
       today: {
@@ -1923,6 +1942,13 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         columnIndex: tomorrow.columnInfo?.columnIndex ?? null,
         headerValue: tomorrow.columnInfo?.headerValue ?? ''
       }
+    });
+    console.log('[Dashboard] tomorrow leader lookup', {
+      tomorrowDate: nextDate,
+      normalizedTomorrowKey,
+      matchedTomorrowColumnIndex: matchedTomorrowColumnIndex >= 0 ? matchedTomorrowColumnIndex : null,
+      morningLeaderRowValue,
+      produceMorningLeaderRowValue
     });
     console.log('[Dashboard] shift extracted summary', {
       today: today.summary,
