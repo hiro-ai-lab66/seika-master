@@ -26,13 +26,28 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         (typeof window !== 'undefined' && window.localStorage.getItem('seika_sales_author')) ||
         (import.meta as any).env?.VITE_SALES_AUTHOR?.trim() ||
         '点検最終';
-    const sanitizeThousandInput = (value: string) => value.replace(/[^\d]/g, '');
+    const normalizeNumericText = (value: string) => value
+        .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/[．。]/g, '.')
+        .replace(/[，]/g, ',')
+        .replace(/[ー－―]/g, '-')
+        .trim();
+    const sanitizeThousandInput = (value: string) => normalizeNumericText(value).replace(/[^\d]/g, '');
     const normalizeLossThousandInput = (value: string) => value.replace(/,/g, '').trim();
     const isValidLossThousandInput = (value: string) => value === '' || /^\d+(\.\d{0,2})?$/.test(value);
+    const normalizeRateInput = (value: string) => normalizeNumericText(value).replace(/,/g, '');
+    const isValidRateInput = (value: string) => value === '' || /^(\d+(\.\d{0,2})?|\.\d{0,2})$/.test(value);
     const parseThousandInput = (value: string) => {
         const digits = sanitizeThousandInput(value);
         if (!digits) return null;
         return Number(digits) * 1000;
+    };
+    const parseRateInput = (value: string) => {
+        const normalized = normalizeRateInput(value);
+        if (!normalized || normalized === '.') return null;
+        const parsed = Number(normalized);
+        if (!Number.isFinite(parsed)) return null;
+        return parsed;
     };
     const parseLossThousandInput = (value: string) => {
         const normalized = normalizeLossThousandInput(value);
@@ -231,6 +246,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [promotionActual12SalesInput, setPromotionActual12SalesInput] = useState(formatThousandInput(form.promotionActual12Sales));
     const [promotionActual17SalesInput, setPromotionActual17SalesInput] = useState(formatThousandInput(form.promotionActual17Sales));
     const [actual12Input, setActual12Input] = useState(formatThousandInput(form.actual12));
+    const [actual17Input, setActual17Input] = useState(formatThousandInput(form.actual17));
+    const [rate12Input, setRate12Input] = useState(form.rate12?.toString() || '');
+    const [rate17Input, setRate17Input] = useState(form.rate17?.toString() || '');
     const [lossAmountInput, setLossAmountInput] = useState(formatLossThousandInput(form.lossAmount));
     const formRef = useRef<HTMLFormElement>(null);
     const isSubmittingRef = useRef(false);
@@ -319,9 +337,25 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                 next.forecast12 = calculateForecast(next.actual12 ?? null, next.rate12 ?? null);
                 next.diff12 = calculateGap(next.forecast12, budget);
+                console.log('[InspectionForm][AndroidDebug] realtime forecast values', {
+                    period: '12:00',
+                    salesRaw: actual12Input,
+                    rateRaw: rate12Input,
+                    salesNormalized: next.actual12 ?? null,
+                    rateNormalized: next.rate12 ?? null,
+                    displayedFinalSales: next.forecast12
+                });
 
                 next.forecast17 = calculateForecast(next.actual17 ?? null, next.rate17 ?? null);
                 next.diff17 = calculateGap(next.forecast17, budget);
+                console.log('[InspectionForm][AndroidDebug] realtime forecast values', {
+                    period: '17:00',
+                    salesRaw: actual17Input,
+                    rateRaw: rate17Input,
+                    salesNormalized: next.actual17 ?? null,
+                    rateNormalized: next.rate17 ?? null,
+                    displayedFinalSales: next.forecast17
+                });
 
                 if (next.actualFinal !== null && next.actualFinal !== undefined) {
                     const finalForecast = calculateForecast(next.actualFinal, 100);
@@ -368,19 +402,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             });
         };
         updateCalculations();
-    }, [form.actual12, form.rate12, form.actual17, form.rate17, form.actualFinal, form.storeSalesFinal, form.totalBudget, form.promotionTargetSales, form.promotionActual12Sales, form.promotionActual17Sales, form.lossAmount]);
+    }, [form.actual12, form.rate12, form.actual17, form.rate17, form.actualFinal, form.storeSalesFinal, form.totalBudget, form.promotionTargetSales, form.promotionActual12Sales, form.promotionActual17Sales, form.lossAmount, actual12Input, actual17Input, rate12Input, rate17Input]);
 
     const handleChange = (field: keyof InspectionEntry, value: any) => {
         setForm(prev => ({ ...prev, [field]: value }));
     };
 
     const handleNumberChange = (field: keyof InspectionEntry, value: string) => {
-        if (value === "") {
+        const normalized = normalizeNumericText(value).replace(/,/g, '');
+        if (normalized === '' || normalized === '.' || normalized === '-') {
             handleChange(field, null);
-        } else {
-            const num = parseFloat(value);
-            handleChange(field, isNaN(num) ? null : num);
+            return;
         }
+        const num = Number(normalized);
+        handleChange(field, Number.isFinite(num) ? num : null);
     };
 
     const handleAmountChange = (field: keyof InspectionEntry, value: string) => {
@@ -389,6 +424,37 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             return;
         }
         handleChange(field, parseThousandInput(value));
+    };
+
+    const handleRateInputChange = (
+        field: 'rate12' | 'rate17',
+        value: string,
+        setDraft: React.Dispatch<React.SetStateAction<string>>,
+        salesField: 'actual12' | 'actual17',
+        salesRaw: string
+    ) => {
+        const normalized = normalizeRateInput(value);
+        console.log('[InspectionForm][AndroidDebug] rate input raw', { field, raw: value, normalized });
+        if (!isValidRateInput(normalized)) {
+            return;
+        }
+        setDraft(normalized);
+        const parsed = parseRateInput(normalized);
+        setForm((prev) => ({
+            ...prev,
+            [field]: parsed
+        }));
+        const salesNormalized = salesField === 'actual12' ? parseThousandInput(salesRaw) : parseThousandInput(salesRaw);
+        const displayedFinalSales = calculateForecast(salesNormalized, parsed);
+        console.log('[InspectionForm][AndroidDebug] forecast compare', {
+            period: field === 'rate12' ? '12:00' : '17:00',
+            salesRaw,
+            rateRaw: value,
+            salesNormalized,
+            rateNormalized: parsed,
+            displayedFinalSales,
+            savedFinalSales: displayedFinalSales
+        });
     };
 
     const handleLossAmountChange = (value: string) => {
@@ -422,10 +488,26 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const sanitized = sanitizeThousandInput(value);
         console.log('[InspectionForm] amount change', { field, raw: value, sanitized });
         setDraft(sanitized);
+        const parsedAmount = sanitized === '' ? null : Number(sanitized) * 1000;
         setForm((prev) => ({
             ...prev,
-            [field]: sanitized === '' ? null : Number(sanitized) * 1000
+            [field]: parsedAmount
         }));
+        if (field === 'actual12' || field === 'actual17') {
+            const rateField = field === 'actual12' ? 'rate12' : 'rate17';
+            const rateRaw = rateField === 'rate12' ? rate12Input : rate17Input;
+            const rateNormalized = parseRateInput(rateRaw);
+            const displayedFinalSales = calculateForecast(parsedAmount, rateNormalized);
+            console.log('[InspectionForm][AndroidDebug] forecast compare', {
+                period: field === 'actual12' ? '12:00' : '17:00',
+                salesRaw: value,
+                rateRaw,
+                salesNormalized: parsedAmount,
+                rateNormalized,
+                displayedFinalSales,
+                savedFinalSales: displayedFinalSales
+            });
+        }
     };
 
     const buildSharedCheckRows = (): SharedCheckRow[] => {
@@ -533,6 +615,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         break;
                     case '12時消化率':
                         next.rate12 = row.content ? Number(row.content) : null;
+                        setRate12Input(row.content);
                         break;
                     case '12時客数':
                         next.customers12 = row.content ? Number(row.content) : null;
@@ -542,9 +625,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         break;
                     case '17時実績':
                         next.actual17 = parseThousandInput(row.content);
+                        setActual17Input(row.content);
                         break;
                     case '17時消化率':
                         next.rate17 = row.content ? Number(row.content) : null;
+                        setRate17Input(row.content);
                         break;
                     case '17時客数':
                         next.customers17 = row.content ? Number(row.content) : null;
@@ -1078,6 +1163,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             bestVegetables: analysisVeggies,
             bestFruits: analysisFruits,
         } as InspectionEntry;
+        console.log('[InspectionForm][AndroidDebug] submit forecast compare', {
+            period,
+            salesRaw: period === '17:00' ? actual17Input : actual12Input,
+            rateRaw: period === '17:00' ? rate17Input : rate12Input,
+            salesNormalized: period === '17:00' ? entryToSave.actual17 ?? null : entryToSave.actual12 ?? null,
+            rateNormalized: period === '17:00' ? entryToSave.rate17 ?? null : entryToSave.rate12 ?? null,
+            displayedFinalSales: period === '17:00' ? form.forecast17 ?? null : form.forecast12 ?? null,
+            savedFinalSales: period === '17:00'
+                ? calculateForecast(entryToSave.actual17 ?? null, entryToSave.rate17 ?? null)
+                : calculateForecast(entryToSave.actual12 ?? null, entryToSave.rate12 ?? null)
+        });
 
         // 商品マスターへの登録（報告時のみ・累計更新）
         const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
@@ -1509,6 +1605,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         setPromotionActual12SalesInput(formatThousandInput(form.promotionActual12Sales));
         setPromotionActual17SalesInput(formatThousandInput(form.promotionActual17Sales));
         setActual12Input(formatThousandInput(form.actual12));
+        setActual17Input(formatThousandInput(form.actual17));
+        setRate12Input(form.rate12?.toString() || '');
+        setRate17Input(form.rate17?.toString() || '');
         setStoreSalesInput(formatThousandInput(form.storeSalesFinal));
         setLossAmountInput(formatLossThousandInput(form.lossAmount));
     }, [currentDate, existingEntry?.id]);
@@ -1693,11 +1792,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>12時消化率 (%)</label>
                                 <input
                                     ref={registerFieldRef('rate12')}
-                                    type="number"
-                                    step="any"
+                                    type="text"
                                     inputMode="decimal"
-                                    value={form.rate12 ?? ''}
-                                    onChange={e => handleNumberChange('rate12', e.target.value)}
+                                    value={rate12Input}
+                                    onChange={e => handleRateInputChange('rate12', e.target.value, setRate12Input, 'actual12', actual12Input)}
                                     onKeyDown={e => handleEnterToNext(e, 'rate12')}
                                     placeholder="0.0"
                                 />
@@ -1808,8 +1906,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     type="text"
                                     inputMode="numeric"
                                     pattern="[0-9]*"
-                                    value={formatThousandInput(form.actual17)}
-                                    onChange={e => handleAmountChange('actual17', e.target.value)}
+                                    value={actual17Input}
+                                    onChange={e => handleDraftAmountInputChange('actual17', e.target.value, setActual17Input)}
                                     onKeyDown={e => handleEnterToNext(e, 'actual17')}
                                     placeholder="0"
                                 />
@@ -1818,11 +1916,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>17時消化率 (%)</label>
                                 <input
                                     ref={registerFieldRef('rate17')}
-                                    type="number"
-                                    step="any"
+                                    type="text"
                                     inputMode="decimal"
-                                    value={form.rate17 ?? ''}
-                                    onChange={e => handleNumberChange('rate17', e.target.value)}
+                                    value={rate17Input}
+                                    onChange={e => handleRateInputChange('rate17', e.target.value, setRate17Input, 'actual17', actual17Input)}
                                     onKeyDown={e => handleEnterToNext(e, 'rate17')}
                                     placeholder="0.0"
                                 />
