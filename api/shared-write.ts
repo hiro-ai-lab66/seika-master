@@ -1,5 +1,5 @@
 import { appendGoogleSheetValues, ensureGoogleSheetExists, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
-import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_NOTICE_SHEET_NAME, SHARED_SALES_SHEET_NAME } from '../sharedSheetNames.js';
+import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME, SHARED_SALES_SHEET_NAME } from '../sharedSheetNames.js';
 
 const nowIso = () => new Date().toISOString();
 
@@ -83,6 +83,11 @@ const SHEETS = {
     name: SHARED_DAILY_SALES_SHEET_NAME,
     header: ['日付', 'コード', '名称', '売上数', '売上数昨比', '売上高', '部門', '天候', '気温帯', '客数', '客単価'],
     width: 11
+  },
+  morningStatus: {
+    name: SHARED_MORNING_STATUS_SHEET_NAME,
+    header: ['id', '日付', '朝礼実施', '青果朝礼実施', '作成者', '更新日時'],
+    width: 6
   }
 } as const;
 
@@ -569,6 +574,46 @@ async function handleDailyNotesUpsert(payload: any) {
   return { id: nextId, ...entry, updatedAt };
 }
 
+async function handleMorningStatusUpsert(payload: any) {
+  const { entry } = payload as {
+    entry: {
+      date: string;
+      morningDone: boolean;
+      produceMorningDone: boolean;
+      author?: string;
+    };
+  };
+  const sheet = SHEETS.morningStatus;
+  await ensureHeader(sheet.name, sheet.header);
+  const existing = await readParsedRows(sheet.name, sheet.width);
+  const targetIndex = existing.findIndex((row) => row[1] === entry.date);
+  const updatedAt = nowIso();
+
+  if (targetIndex >= 0) {
+    const rowId = existing[targetIndex][0];
+    await writeGoogleSheetValues(sheet.name, `A${targetIndex + 2}:F${targetIndex + 2}`, [[
+      rowId,
+      entry.date,
+      entry.morningDone ? 'true' : 'false',
+      entry.produceMorningDone ? 'true' : 'false',
+      entry.author || '',
+      updatedAt
+    ]]);
+    return { id: Number(rowId), ...entry, updatedAt };
+  }
+
+  const nextId = existing.reduce((max, row) => Math.max(max, Number(row[0] || '0') || 0), 0) + 1;
+  await appendGoogleSheetValues(sheet.name, 'A:F', [[
+    String(nextId),
+    entry.date,
+    entry.morningDone ? 'true' : 'false',
+    entry.produceMorningDone ? 'true' : 'false',
+    entry.author || '',
+    updatedAt
+  ]]);
+  return { id: nextId, ...entry, updatedAt };
+}
+
 const handlers: Record<string, (payload: any) => Promise<any>> = {
   'check:upsertForDateTimes': handleCheckUpsert,
   'check:restoreFromBackup': handleCheckRestoreFromBackup,
@@ -587,7 +632,8 @@ const handlers: Record<string, (payload: any) => Promise<any>> = {
   'budget:upsert': handleBudgetUpsert,
   'dailyNotes:upsert': handleDailyNotesUpsert,
   'dailySales:upsertForDateDepartment': handleDailySalesUpsert,
-  'dailySales:enrichByDate': handleDailySalesEnrich
+  'dailySales:enrichByDate': handleDailySalesEnrich,
+  'morningStatus:upsert': handleMorningStatusUpsert
 };
 
 export default async function handler(req: any, res: any) {

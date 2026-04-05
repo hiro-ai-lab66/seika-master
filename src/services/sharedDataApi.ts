@@ -1,5 +1,5 @@
-export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift';
-export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales';
+export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift' | 'morningStatus';
+export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'morningStatus';
 
 type SharedReadResponse<T> = {
   sheetName: string;
@@ -39,6 +39,8 @@ const getInvalidatedReadResources = (resource: SharedWriteResource): SharedReadR
       return ['dailyNotes'];
     case 'dailySales':
       return ['dailySales'];
+    case 'morningStatus':
+      return ['morningStatus'];
     default:
       return [];
   }

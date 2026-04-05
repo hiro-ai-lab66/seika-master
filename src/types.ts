@@ -324,6 +324,16 @@ export interface SharedShiftMasterRow {
     cells: string[];
 }
 
+export interface SharedMorningStatusEntry {
+    id: number;
+    rowNumber?: number;
+    date: string;
+    morningDone: boolean;
+    produceMorningDone: boolean;
+    author: string;
+    updatedAt: string;
+}
+
 export interface AppState {
     sales: SalesData[];
     todos: ToDoItem[];

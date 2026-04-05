@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
+import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedMorningStatusEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
 import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
+import { getLocalTodayDateString } from '../utils/calculations';
 import { loadDailySales } from '../storage/dailySales';
 import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
+import { fetchSharedMorningStatuses, upsertSharedMorningStatus } from '../services/googleSheetsMorningStatusService';
 import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageFallbackUrl } from '../services/storageService';
 import { ImageZoomModal } from './ImageZoomModal';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
@@ -65,6 +67,8 @@ type NoticeDisplayLine = {
 type ShiftDaySummary = {
   morningLeader: string;
   produceLeader: string;
+  morningDone: boolean;
+  produceMorningDone: boolean;
   lateMembers: string[];
   holidayMembers: string[];
   halfHolidayMembers: string[];
@@ -229,6 +233,8 @@ const normalizeShiftHeaderDate = (value: string, fallbackYear: string) => {
 const buildEmptyShiftSummary = (): ShiftDaySummary => ({
   morningLeader: '',
   produceLeader: '',
+  morningDone: false,
+  produceMorningDone: false,
   lateMembers: [],
   holidayMembers: [],
   halfHolidayMembers: [],
@@ -242,7 +248,20 @@ const hasShiftExecutionFlag = (value: string) => {
   return ['1', 'y', 'yes', 'true', '済', '実施', 'あり', '有'].some((token) => normalized === token || normalized.includes(token));
 };
 
-const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | null, executionRowData?: SharedShiftMasterRow | null) => {
+const getShiftDateForColumn = (rows: SharedShiftMasterRow[], columnIndex: number, fallbackYear: string) => {
+  for (let rowIndex = 0; rowIndex < Math.min(rows.length, 3); rowIndex += 1) {
+    const normalizedDate = normalizeShiftHeaderDate(rows[rowIndex]?.cells[columnIndex] || '', fallbackYear);
+    if (normalizedDate) return normalizedDate;
+  }
+  return '';
+};
+
+const getShiftedLeader = (
+  dateIndex: number,
+  rowData?: SharedShiftMasterRow | null,
+  executionRowData?: SharedShiftMasterRow | null,
+  isDoneForColumn?: (columnIndex: number) => boolean
+) => {
   const originalValue = (rowData?.cells[dateIndex] || '').trim();
   const executionFlag = (executionRowData?.cells[dateIndex] || '').trim();
   if (!rowData) {
@@ -253,7 +272,7 @@ const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | nu
       distance: 0
     };
   }
-  if (hasShiftExecutionFlag(executionFlag)) {
+  if ((isDoneForColumn && isDoneForColumn(dateIndex)) || hasShiftExecutionFlag(executionFlag)) {
     return {
       executionFlag,
       originalValue,
@@ -265,7 +284,7 @@ const getShiftedLeader = (dateIndex: number, rowData?: SharedShiftMasterRow | nu
   for (let index = dateIndex - 1; index >= 2; index -= 1) {
     const candidate = (rowData.cells[index] || '').trim();
     const candidateExecutionFlag = (executionRowData?.cells[index] || '').trim();
-    if (candidate && hasShiftExecutionFlag(candidateExecutionFlag)) {
+    if (candidate && ((isDoneForColumn && isDoneForColumn(index)) || hasShiftExecutionFlag(candidateExecutionFlag))) {
       return {
         executionFlag,
         originalValue,
@@ -310,7 +329,7 @@ const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) =
   return null;
 };
 
-const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => {
+const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string, morningStatuses: SharedMorningStatusEntry[]) => {
   const columnInfo = findShiftDateColumn(rows, targetDate);
   const summary = buildEmptyShiftSummary();
 
@@ -325,6 +344,16 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
   }));
 
   const executionRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('朝礼実施'));
+  const morningStatusByDate = new Map(morningStatuses.map((entry) => [entry.date, entry]));
+  const resolveDoneFlag = (columnIndex: number, field: 'morningDone' | 'produceMorningDone') => {
+    const columnDate = getShiftDateForColumn(rows, columnIndex, targetDate.slice(0, 4));
+    const stored = columnDate ? morningStatusByDate.get(columnDate) : undefined;
+    if (stored) {
+      return stored[field];
+    }
+    const executionValue = executionRowIndex >= 0 ? (normalizedRows[executionRowIndex]?.row.cells[columnIndex] || '').trim() : '';
+    return hasShiftExecutionFlag(executionValue);
+  };
   const morningRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('全体朝礼当番'));
   const produceRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('青果朝礼当番'));
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
@@ -373,13 +402,16 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
     const shiftedMorningLeader = getShiftedLeader(
       columnInfo.columnIndex,
       normalizedRows[morningRowIndex]?.row,
-      executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null
+      executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null,
+      (columnIndex) => resolveDoneFlag(columnIndex, 'morningDone')
     );
+    summary.morningDone = resolveDoneFlag(columnInfo.columnIndex, 'morningDone');
     summary.morningLeader = shiftedMorningLeader.shiftedValue
       ? `${shiftedMorningLeader.shiftedValue}${shiftedMorningLeader.distance > 0 ? '（繰越）' : ''}`
       : '';
     console.log('[Dashboard] shifted morning leader', {
       targetDate,
+      doneFlag: summary.morningDone,
       executionFlag: shiftedMorningLeader.executionFlag,
       originalValue: shiftedMorningLeader.originalValue,
       shiftedValue: shiftedMorningLeader.shiftedValue,
@@ -390,13 +422,16 @@ const buildShiftSummary = (rows: SharedShiftMasterRow[], targetDate: string) => 
     const shiftedProduceLeader = getShiftedLeader(
       columnInfo.columnIndex,
       normalizedRows[produceRowIndex]?.row,
-      executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null
+      executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null,
+      (columnIndex) => resolveDoneFlag(columnIndex, 'produceMorningDone')
     );
+    summary.produceMorningDone = resolveDoneFlag(columnInfo.columnIndex, 'produceMorningDone');
     summary.produceLeader = shiftedProduceLeader.shiftedValue
       ? `${shiftedProduceLeader.shiftedValue}${shiftedProduceLeader.distance > 0 ? '（繰越）' : ''}`
       : '';
     console.log('[Dashboard] shifted produce leader', {
       targetDate,
+      doneFlag: summary.produceMorningDone,
       executionFlag: shiftedProduceLeader.executionFlag,
       originalValue: shiftedProduceLeader.originalValue,
       shiftedValue: shiftedProduceLeader.shiftedValue,
@@ -1032,6 +1067,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
   const [sharedNotices, setSharedNotices] = useState<SharedNoticeEntry[]>([]);
   const [sharedShiftRows, setSharedShiftRows] = useState<SharedShiftMasterRow[]>([]);
+  const [sharedMorningStatuses, setSharedMorningStatuses] = useState<SharedMorningStatusEntry[]>([]);
+  const [morningStatusSaving, setMorningStatusSaving] = useState<'morning' | 'produce' | null>(null);
+  const [morningStatusMessage, setMorningStatusMessage] = useState('');
+  const [morningStatusError, setMorningStatusError] = useState('');
   const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
     weather: '',
     tempBand: '',
@@ -1051,6 +1090,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const latestMarket = useMemo(() => sortMarkets(state.marketHistory || [])[0], [state.marketHistory]);
   // localStorage変更を検知してdaily_salesを再読み込みするためのカウンター
   const [dailySalesVersion, setDailySalesVersion] = useState(0);
+  const isTodaySelected = currentDate === getLocalTodayDateString();
+  const currentMorningStatus = sharedMorningStatuses.find((entry) => entry.date === currentDate) || null;
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'seika_daily_sales_v1') {
@@ -1182,11 +1223,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const loadDashboardData = async () => {
       try {
         console.log('[Dashboard] starting advertisement fetch');
-        const [advertisementResult, inspectionResult, noticeResult, shiftResult] = await Promise.allSettled([
+        const [advertisementResult, inspectionResult, noticeResult, shiftResult, morningStatusResult] = await Promise.allSettled([
           fetchAdvertisementsWithRetry(),
           fetchSharedCheckRows(),
           fetchSharedNotices(),
-          fetchSharedShiftRows()
+          fetchSharedShiftRows(),
+          fetchSharedMorningStatuses()
         ]);
         if (!isMounted) return;
 
@@ -1379,6 +1421,18 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           setSharedShiftRows([]);
         }
 
+        if (morningStatusResult.status === 'fulfilled') {
+          setSharedMorningStatuses(morningStatusResult.value);
+          console.log('[Dashboard] loaded morning statuses', {
+            count: morningStatusResult.value.length,
+            currentDate,
+            currentEntry: morningStatusResult.value.find((entry) => entry.date === currentDate) || null
+          });
+        } else {
+          console.error('[Dashboard] failed to load morning statuses', morningStatusResult.reason);
+          setSharedMorningStatuses([]);
+        }
+
         setLastUpdatedAt(new Date().toISOString());
       } catch (error) {
         console.error('[Dashboard] failed to refresh dashboard data', error);
@@ -1406,6 +1460,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         setSharedCheckRows([]);
         setSharedNotices([]);
         setSharedShiftRows([]);
+        setSharedMorningStatuses([]);
       }
     };
 
@@ -1421,6 +1476,46 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     window.setTimeout(() => {
       setIsRefreshing(false);
     }, 300);
+  };
+
+  const handleUpdateMorningStatus = async (field: 'morningDone' | 'produceMorningDone', value: boolean) => {
+    setMorningStatusSaving(field === 'morningDone' ? 'morning' : 'produce');
+    setMorningStatusMessage('');
+    setMorningStatusError('');
+    const author =
+      (typeof window !== 'undefined' && window.localStorage.getItem('seika_sales_author')) ||
+      (import.meta as any).env?.VITE_SALES_AUTHOR?.trim() ||
+      '概要画面';
+    const nextEntry = {
+      date: currentDate,
+      morningDone: field === 'morningDone' ? value : (currentMorningStatus?.morningDone ?? false),
+      produceMorningDone: field === 'produceMorningDone' ? value : (currentMorningStatus?.produceMorningDone ?? false),
+      author
+    };
+
+    try {
+      const saved = await upsertSharedMorningStatus(nextEntry);
+      setSharedMorningStatuses((prev) => {
+        const filtered = prev.filter((entry) => entry.date !== saved.date);
+        return [saved, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
+      });
+      setMorningStatusMessage(field === 'morningDone' ? '朝礼実施状態を更新しました' : '青果朝礼実施状態を更新しました');
+      console.log('[Dashboard] updated morning status', {
+        currentDate,
+        field,
+        value,
+        saved
+      });
+    } catch (error) {
+      console.error('[Dashboard] failed to update morning status', { currentDate, field, value, error });
+      setMorningStatusError(error instanceof Error ? error.message : '朝礼実施状態の更新に失敗しました');
+    } finally {
+      setMorningStatusSaving(null);
+      window.setTimeout(() => {
+        setMorningStatusMessage('');
+        setMorningStatusError('');
+      }, 2000);
+    }
   };
 
   const handleCopyMorningBriefing = async () => {
@@ -1801,8 +1896,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const displayedAdvertisements = todayAdvertisements;
 
   const shiftInfo = useMemo(() => {
-    const today = buildShiftSummary(sharedShiftRows, currentDate);
-    const tomorrow = buildShiftSummary(sharedShiftRows, nextDate);
+    const today = buildShiftSummary(sharedShiftRows, currentDate, sharedMorningStatuses);
+    const tomorrow = buildShiftSummary(sharedShiftRows, nextDate, sharedMorningStatuses);
     const todayLabel = formatJapaneseWeekday(currentDate);
     const tomorrowLabel = formatJapaneseWeekday(nextDate);
     const todayTimeyColumnIndex = today.columnInfo?.columnIndex ?? -1;
@@ -1855,7 +1950,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       todayLabel,
       tomorrowLabel
     };
-  }, [sharedShiftRows, currentDate, nextDate]);
+  }, [sharedShiftRows, sharedMorningStatuses, currentDate, nextDate]);
 
   useEffect(() => {
     console.log('[Dashboard] advertisement display lengths', {
@@ -2123,12 +2218,67 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         </div>
 
         <div style={{ ...cardStyle, borderColor: '#bfdbfe' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-            <Target size={18} color="#2563eb" />
-            <h3 style={sectionTitleStyle}>勤務情報</h3>
-          </div>
-          <div style={{ display: 'grid', gap: '12px' }}>
-            {[
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <Target size={18} color="#2563eb" />
+          <h3 style={sectionTitleStyle}>勤務情報</h3>
+        </div>
+        <div style={{ display: 'grid', gap: '12px' }}>
+          {isTodaySelected && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '10px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>本日の朝礼実施操作</div>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ color: '#334155', fontSize: '0.88rem', fontWeight: 700 }}>朝礼実施</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className={currentMorningStatus?.morningDone ? 'button-secondary' : 'button-primary'}
+                      style={{ width: 'auto', padding: '7px 10px' }}
+                      disabled={morningStatusSaving !== null}
+                      onClick={() => void handleUpdateMorningStatus('morningDone', false)}
+                    >
+                      未実施
+                    </button>
+                    <button
+                      type="button"
+                      className={currentMorningStatus?.morningDone ? 'button-primary' : 'button-secondary'}
+                      style={{ width: 'auto', padding: '7px 10px' }}
+                      disabled={morningStatusSaving !== null}
+                      onClick={() => void handleUpdateMorningStatus('morningDone', true)}
+                    >
+                      実施済み
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ color: '#334155', fontSize: '0.88rem', fontWeight: 700 }}>青果朝礼実施</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className={currentMorningStatus?.produceMorningDone ? 'button-secondary' : 'button-primary'}
+                      style={{ width: 'auto', padding: '7px 10px' }}
+                      disabled={morningStatusSaving !== null}
+                      onClick={() => void handleUpdateMorningStatus('produceMorningDone', false)}
+                    >
+                      未実施
+                    </button>
+                    <button
+                      type="button"
+                      className={currentMorningStatus?.produceMorningDone ? 'button-primary' : 'button-secondary'}
+                      style={{ width: 'auto', padding: '7px 10px' }}
+                      disabled={morningStatusSaving !== null}
+                      onClick={() => void handleUpdateMorningStatus('produceMorningDone', true)}
+                    >
+                      実施済み
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {morningStatusMessage && <div style={{ color: '#0369a1', fontSize: '0.8rem', fontWeight: 700 }}>{morningStatusMessage}</div>}
+              {morningStatusError && <div style={{ color: '#b91c1c', fontSize: '0.8rem', fontWeight: 700 }}>{morningStatusError}</div>}
+            </div>
+          )}
+          {[
               { label: '本日', date: currentDate, weekday: shiftInfo.todayLabel, summary: shiftInfo.today },
               { label: '翌日', date: nextDate, weekday: shiftInfo.tomorrowLabel, summary: shiftInfo.tomorrow }
             ].map((section) => (

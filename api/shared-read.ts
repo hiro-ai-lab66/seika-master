@@ -1,5 +1,5 @@
 import { ensureGoogleSheetExists, readGoogleSheetValues } from './_lib/googleServiceAccount.js';
-import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_NOTICE_SHEET_NAME } from '../sharedSheetNames.js';
+import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME } from '../sharedSheetNames.js';
 
 const normalizeDriveImageUrl = (url: string) => {
   if (!url) return '';
@@ -229,6 +229,22 @@ const resourceConfigs = {
           if (amtCompare !== 0) return amtCompare;
           return b.salesQty - a.salesQty;
         })
+  },
+  morningStatus: {
+    sheetName: SHARED_MORNING_STATUS_SHEET_NAME,
+    range: 'A2:F',
+    mapRows: (rows: string[][]) =>
+      parseRows(rows)
+        .map((row, index) => ({
+          id: Number(row[0] || '0'),
+          rowNumber: index + 2,
+          date: row[1] || '',
+          morningDone: row[2] === 'true',
+          produceMorningDone: row[3] === 'true',
+          author: row[4] || '',
+          updatedAt: row[5] || ''
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date))
   },
   shift: {
     sheetName: 'shift_master',
