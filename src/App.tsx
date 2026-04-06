@@ -2002,6 +2002,11 @@ const HistorySheet = ({
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const filteredInspections = inspections.filter((entry) => {
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    const recordDate = new Date(entry.date.replace(/-/g, '/'));
+    if (recordDate < startDate) return false;
+
     if (dateFilterMode === 'today') {
       return entry.date === currentDate;
     }

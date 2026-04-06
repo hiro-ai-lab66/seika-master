@@ -43,7 +43,13 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
 
   const categories = ['すべて', ...Array.from(new Set(records.map((record) => resolveRecordCategory(record)).filter(Boolean)))];
 
-  const filteredRecords = records.filter(record => 
+  const today = new Date();
+  const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const filteredRecords = records.filter(record => {
+    const recordDate = new Date(record.date.replace(/-/g, '/'));
+    
+    return recordDate >= startDate &&
     (
       (record.product || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (record.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -51,8 +57,8 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
       resolveRecordCategory(record).toLowerCase().includes(searchQuery.toLowerCase()) ||
       resolveRecordPopTitle(record).toLowerCase().includes(searchQuery.toLowerCase())
     ) &&
-    (categoryFilter === 'すべて' || resolveRecordCategory(record) === categoryFilter)
-  );
+    (categoryFilter === 'すべて' || resolveRecordCategory(record) === categoryFilter);
+  });
 
   const topCategory = categories
     .filter((category) => category !== 'すべて')

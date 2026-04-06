@@ -495,10 +495,20 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                 {dailySalesError && <div style={{ color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700, marginTop: '8px' }}>{dailySalesError}</div>}
 
                 <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
-                    {sharedSales.length === 0 ? (
+                    {sharedSales.filter(item => {
+                        const today = new Date();
+                        const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                        const recordDate = new Date(item.date.replace(/-/g, '/'));
+                        return recordDate >= startDate;
+                    }).length === 0 ? (
                         <p style={{ margin: 0, color: '#64748b' }}>まだ共有売上履歴がありません。</p>
                     ) : (
-                        sharedSales.map((item) => (
+                        sharedSales.filter(item => {
+                            const today = new Date();
+                            const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                            const recordDate = new Date(item.date.replace(/-/g, '/'));
+                            return recordDate >= startDate;
+                        }).map((item) => (
                             <div key={`${item.id}-${item.updatedAt}`} style={sharedSalesItemStyle}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#64748b' }}>
                                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

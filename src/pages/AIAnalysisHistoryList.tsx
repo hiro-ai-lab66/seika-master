@@ -18,6 +18,14 @@ export const AIAnalysisHistoryList: React.FC<AIAnalysisHistoryListProps> = ({ hi
   const filteredHistory = sortedHistory.filter(analysis => {
       const record = records.find(r => r.id === analysis.recordId);
       const productName = record?.product || '不明な記録';
+      
+      const today = new Date();
+      const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      const dateStr = record?.date || analysis.analyzedAt.split('T')[0];
+      const recordDate = new Date(dateStr.replace(/-/g, '/'));
+      
+      if (recordDate < startDate) return false;
+
       return productName.toLowerCase().includes(searchQuery.toLowerCase()) || 
              analysis.summary.toLowerCase().includes(searchQuery.toLowerCase());
   });
