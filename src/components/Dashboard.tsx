@@ -1890,6 +1890,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const topCardProduceLeader = dayCardTodayProduceLeader || '未設定';
   const topCardTomorrowMorningLeader = tomorrowDayCardSection?.renderedMorningLeader || '未設定';
   const topCardTomorrowProduceLeader = tomorrowDayCardSection?.renderedProduceLeader || '未設定';
+  const displayedMorningLeader = dayCardTodayMorningLeader;
+  const displayedProduceLeader = dayCardTodayProduceLeader;
+  const renderedTopMorningLeader = displayedMorningLeader || '未設定';
+  const renderedTopProduceLeader = displayedProduceLeader || '未設定';
 
   useEffect(() => {
     console.log('[Dashboard] shiftInfo today values', {
@@ -1904,17 +1908,34 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       dayCardTodayProduceLeader
     });
     console.log('[Dashboard] rendered top duty display', {
-      renderedTopMorningLeader: topCardMorningLeader,
-      renderedTopProduceLeader: topCardProduceLeader
+      dayCardTodayMorningLeader,
+      dayCardTodayProduceLeader,
+      displayedMorningLeader,
+      displayedProduceLeader,
+      renderedTopMorningLeader,
+      renderedTopProduceLeader
+    });
+    console.log('[Dashboard] top card direct source check', {
+      dayCardTodayMorningLeader,
+      dayCardTodayProduceLeader,
+      dayCardTodayMorningLeaderType: typeof dayCardTodayMorningLeader,
+      dayCardTodayProduceLeaderType: typeof dayCardTodayProduceLeader,
+      dayCardTodayMorningLeaderIsEmptyString: dayCardTodayMorningLeader === '',
+      dayCardTodayProduceLeaderIsEmptyString: dayCardTodayProduceLeader === '',
+      topCardUsesSameMorningValue: topCardMorningLeader === (dayCardTodayMorningLeader || '未設定'),
+      topCardUsesSameProduceValue: topCardProduceLeader === (dayCardTodayProduceLeader || '未設定'),
+      isTodaySelected
     });
     dayCardSections.forEach((section) => {
       console.log('[Dashboard] rendered day card duty display', {
         renderedDayCardDate: section.date,
+        renderedDayCardMorningLeaderSource: section.summary.morningLeader,
+        renderedDayCardProduceLeaderSource: section.summary.produceLeader,
         renderedDayCardMorningLeader: section.renderedMorningLeader,
         renderedDayCardProduceLeader: section.renderedProduceLeader
       });
     });
-  }, [shiftInfo.today, topCardMorningLeader, topCardProduceLeader, dayCardTodayMorningLeader, dayCardTodayProduceLeader, dayCardSections]);
+  }, [shiftInfo.today, topCardMorningLeader, topCardProduceLeader, dayCardTodayMorningLeader, dayCardTodayProduceLeader, dayCardSections, isTodaySelected, displayedMorningLeader, displayedProduceLeader, renderedTopMorningLeader, renderedTopProduceLeader]);
 
   useEffect(() => {
     console.log('[Dashboard] advertisement display lengths', {
@@ -2192,10 +2213,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
               <div style={{ display: 'grid', gap: '6px' }}>
                 <div style={{ color: '#1e3a8a', fontSize: '0.9rem', fontWeight: 900 }}>本日の当番</div>
                 <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
-                  朝礼当番：{topCardMorningLeader}
+                  朝礼当番：{displayedMorningLeader || '未設定'}
                 </div>
                 <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
-                  青果朝礼当番：{topCardProduceLeader}
+                  青果朝礼当番：{displayedProduceLeader || '未設定'}
                 </div>
                 {(topCardTomorrowMorningLeader !== '未設定' || topCardTomorrowProduceLeader !== '未設定') && (
                   <div style={{ marginTop: '4px', paddingTop: '10px', borderTop: '1px dashed #bfdbfe', display: 'grid', gap: '4px' }}>
