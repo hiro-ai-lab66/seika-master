@@ -2031,7 +2031,7 @@ const HistorySheet = ({
       ? `日付指定 (${selectedDate})`
       : selectedMonth !== 'all'
         ? `月指定 (${selectedMonth})`
-        : '全履歴';
+        : '今月';
   const displayRowCount = sorted.length;
 
   useEffect(() => {
@@ -2117,7 +2117,7 @@ const HistorySheet = ({
             cursor: 'pointer'
           }}
         >
-          全履歴
+          今月
         </button>
         <button
           type="button"
@@ -2132,7 +2132,7 @@ const HistorySheet = ({
             cursor: 'pointer'
           }}
         >
-          当日だけ
+          当日
         </button>
         <select
           value={selectedMonth}
@@ -2143,7 +2143,7 @@ const HistorySheet = ({
           }}
           style={{ border: '1px solid #cbd5e1', borderRadius: '999px', padding: '6px 12px', background: '#fff', fontWeight: 700 }}
         >
-          <option value="all">全月</option>
+          <option value="all">今月</option>
           {availableMonths.map((month) => (
             <option key={month} value={month}>
               {month}
