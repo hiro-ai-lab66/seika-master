@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
 import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
-import { getLocalTodayDateString } from '../utils/calculations';
 import { loadDailySales } from '../storage/dailySales';
 import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
 import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageFallbackUrl } from '../services/storageService';
@@ -1075,7 +1074,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const latestMarket = useMemo(() => sortMarkets(state.marketHistory || [])[0], [state.marketHistory]);
   // localStorage変更を検知してdaily_salesを再読み込みするためのカウンター
   const [dailySalesVersion, setDailySalesVersion] = useState(0);
-  const isTodaySelected = currentDate === getLocalTodayDateString();
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'seika_daily_sales_v1') {
@@ -1884,8 +1882,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     };
   }, [sharedShiftRows, currentDate, nextDate]);
 
-  const dayCardTodayMorningLeader = shiftInfo.today.morningLeader;
-  const dayCardTodayProduceLeader = shiftInfo.today.produceLeader;
   const dayCardSections = [
     { label: shiftInfo.todayLabel, date: shiftInfo.todayDateDisplay, summary: shiftInfo.today },
     { label: shiftInfo.tomorrowLabel, date: shiftInfo.tomorrowDateDisplay, summary: shiftInfo.tomorrow }
@@ -1899,46 +1895,12 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     renderedProduceHolidayMembers: section.summary.produceHolidayMembers.length > 0 ? section.summary.produceHolidayMembers.join('、') : '未設定',
     renderedTimey: section.summary.timey || '未設定'
   }));
-  const tomorrowDayCardSection = dayCardSections[1];
-  const topCardMorningLeader = dayCardTodayMorningLeader || '未設定';
-  const topCardProduceLeader = dayCardTodayProduceLeader || '未設定';
-  const topCardTomorrowMorningLeader = tomorrowDayCardSection?.renderedMorningLeader || '未設定';
-  const topCardTomorrowProduceLeader = tomorrowDayCardSection?.renderedProduceLeader || '未設定';
-  const displayedMorningLeader = dayCardTodayMorningLeader;
-  const displayedProduceLeader = dayCardTodayProduceLeader;
-  const renderedTopMorningLeader = displayedMorningLeader || '未設定';
-  const renderedTopProduceLeader = displayedProduceLeader || '未設定';
 
   useEffect(() => {
     console.log('[Dashboard] shiftInfo today values', {
       'shiftInfo.today': shiftInfo.today,
       'shiftInfo.today.morningLeader': shiftInfo.today.morningLeader,
       'shiftInfo.today.produceLeader': shiftInfo.today.produceLeader
-    });
-    console.log('[Dashboard] top/day card duty display', {
-      topCardMorningLeader,
-      topCardProduceLeader,
-      dayCardTodayMorningLeader,
-      dayCardTodayProduceLeader
-    });
-    console.log('[Dashboard] rendered top duty display', {
-      dayCardTodayMorningLeader,
-      dayCardTodayProduceLeader,
-      displayedMorningLeader,
-      displayedProduceLeader,
-      renderedTopMorningLeader,
-      renderedTopProduceLeader
-    });
-    console.log('[Dashboard] top card direct source check', {
-      dayCardTodayMorningLeader,
-      dayCardTodayProduceLeader,
-      dayCardTodayMorningLeaderType: typeof dayCardTodayMorningLeader,
-      dayCardTodayProduceLeaderType: typeof dayCardTodayProduceLeader,
-      dayCardTodayMorningLeaderIsEmptyString: dayCardTodayMorningLeader === '',
-      dayCardTodayProduceLeaderIsEmptyString: dayCardTodayProduceLeader === '',
-      topCardUsesSameMorningValue: topCardMorningLeader === (dayCardTodayMorningLeader || '未設定'),
-      topCardUsesSameProduceValue: topCardProduceLeader === (dayCardTodayProduceLeader || '未設定'),
-      isTodaySelected
     });
     dayCardSections.forEach((section) => {
       console.log('[Dashboard] rendered day card duty display', {
@@ -1949,7 +1911,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         renderedDayCardProduceLeader: section.renderedProduceLeader
       });
     });
-  }, [shiftInfo.today, topCardMorningLeader, topCardProduceLeader, dayCardTodayMorningLeader, dayCardTodayProduceLeader, dayCardSections, isTodaySelected, displayedMorningLeader, displayedProduceLeader, renderedTopMorningLeader, renderedTopProduceLeader]);
+  }, [shiftInfo.today, dayCardSections]);
 
   useEffect(() => {
     console.log('[Dashboard] advertisement display lengths', {
@@ -2222,30 +2184,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           <h3 style={sectionTitleStyle}>勤務情報</h3>
         </div>
         <div style={{ display: 'grid', gap: '12px' }}>
-          {isTodaySelected && (
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '10px' }}>
-              <div style={{ display: 'grid', gap: '6px' }}>
-                <div style={{ color: '#1e3a8a', fontSize: '0.9rem', fontWeight: 900 }}>本日の当番</div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
-                  朝礼当番：{displayedMorningLeader || '未設定'}
-                </div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
-                  青果朝礼当番：{displayedProduceLeader || '未設定'}
-                </div>
-                {(topCardTomorrowMorningLeader !== '未設定' || topCardTomorrowProduceLeader !== '未設定') && (
-                  <div style={{ marginTop: '4px', paddingTop: '10px', borderTop: '1px dashed #bfdbfe', display: 'grid', gap: '4px' }}>
-                    <div style={{ color: '#1d4ed8', fontSize: '0.8rem', fontWeight: 900 }}>明日の当番</div>
-                    <div style={{ color: '#475569', fontSize: '0.82rem', lineHeight: 1.5 }}>
-                      明日の朝礼当番：{topCardTomorrowMorningLeader}
-                    </div>
-                    <div style={{ color: '#475569', fontSize: '0.82rem', lineHeight: 1.5 }}>
-                      明日の青果朝礼当番：{topCardTomorrowProduceLeader}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
           {dayCardSections.map((section) => (
               <div key={section.label} style={{ background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '6px' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>
