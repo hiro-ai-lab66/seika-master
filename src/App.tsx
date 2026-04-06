@@ -2070,7 +2070,22 @@ const HistorySheet = ({
     const d = new Date(i.date + 'T00:00:00');
     const dow = dayNames[d.getDay()];
     const day = `${parseInt(i.date.split('-')[1])}/${parseInt(i.date.split('-')[2])}`;
-    return { id: i.id, day, dow, budget, actual12: i.actual12, actual17: i.actual17, actualFinal: i.actualFinal, diff, cumSales, cumBudget, cumRatio, cumDiff };
+    
+    const customers = i.isFinalConfirmed ? i.customersFinal : (i.customers17 ?? i.customers12);
+    const avgSpend = (customers && finalSales > 0) ? Math.round(finalSales / customers) : null;
+    const ratio = budget > 0 ? Math.round((finalSales / budget) * 1000) / 10 : null;
+    const isToday = i.date === currentDate;
+
+    return {
+      id: i.id, day, dow, budget,
+      actual12: i.actual12, actual17: i.actual17, actualFinal: i.actualFinal,
+      customers: customers ?? null,
+      avgSpend,
+      ratio,
+      lossAmount: i.lossAmount,
+      isToday,
+      diff, cumSales, cumBudget, cumRatio, cumDiff
+    };
   });
 
   const totalSales = cumSales;
@@ -2176,10 +2191,10 @@ const HistorySheet = ({
         </div>
         <div className="hist-s-item">
           <span className="hist-s-label">予算比</span>
-          <span className={`hist-s-val ${totalRatio !== null ? (totalRatio >= 100 ? 'good' : 'warn') : ''}`}>{totalRatio !== null ? `${totalRatio}%` : '-'}</span>
+          <span className={`hist-s-val ${totalRatio !== null ? (totalRatio >= 100 ? 'good' : totalRatio >= 95 ? 'notice' : 'warn') : ''}`}>{totalRatio !== null ? `${totalRatio}%` : '-'}</span>
         </div>
         <div className="hist-s-item">
-          <span className="hist-s-label">登録日数</span>
+          <span className="hist-s-label">表示日数</span>
           <span className="hist-s-val">{rows.length}日</span>
         </div>
       </div>
@@ -2190,32 +2205,36 @@ const HistorySheet = ({
             <tr>
               <th>日付</th>
               <th>予算</th>
-              <th>12時</th>
-              <th>17時</th>
-              <th>最終</th>
+              <th>12時実績</th>
+              <th>17時実績</th>
+              <th>最終実績</th>
+              <th>客数</th>
+              <th>客単価</th>
+              <th>消化率</th>
+              <th>ロス額</th>
               <th>差異</th>
-              <th>累計</th>
-              <th>累予算比</th>
-              <th>累差額</th>
+              <th>累計比</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(r => (
-              <tr key={r.id}>
+              <tr key={r.id} className={r.isToday ? 'ht-today' : ''}>
                 <td className="ht-date">{r.day}<span className={`ht-dow ${r.dow === '日' ? 'sun' : r.dow === '土' ? 'sat' : ''}`}>({r.dow})</span></td>
                 <td className="ht-num">{fmtK(r.budget)}</td>
                 <td className="ht-num">{fmtK(r.actual12)}</td>
                 <td className="ht-num">{fmtK(r.actual17)}</td>
                 <td className="ht-num ht-bold">{fmtK(r.actualFinal)}</td>
+                <td className="ht-num">{r.customers !== null ? `${r.customers.toLocaleString()}名` : '-'}</td>
+                <td className="ht-num">{r.avgSpend !== null ? `¥${r.avgSpend.toLocaleString()}` : '-'}</td>
+                <td className={`ht-num ${r.ratio !== null ? (r.ratio >= 100 ? 'ht-good' : r.ratio >= 95 ? 'ht-notice' : 'ht-warn') : ''}`}>{r.ratio !== null ? `${r.ratio}%` : '-'}</td>
+                <td className="ht-num">{r.lossAmount !== null ? fmtK(r.lossAmount) : '-'}</td>
                 <td className={`ht-num ${r.diff !== null ? (r.diff >= 0 ? 'ht-good' : 'ht-warn') : ''}`}>{r.diff !== null ? fmtK(r.diff) : '-'}</td>
-                <td className="ht-num ht-cum">{fmtK(r.cumSales)}</td>
-                <td className={`ht-num ${r.cumRatio !== null ? (r.cumRatio >= 100 ? 'ht-good' : 'ht-warn') : ''}`}>{r.cumRatio !== null ? `${r.cumRatio}%` : '-'}</td>
-                <td className={`ht-num ${r.cumDiff >= 0 ? 'ht-good' : 'ht-warn'}`}>{fmtK(r.cumDiff)}</td>
+                <td className={`ht-num ${r.cumRatio !== null ? (r.cumRatio >= 100 ? 'ht-good' : r.cumRatio >= 95 ? 'ht-notice' : 'ht-warn') : ''}`}>{r.cumRatio !== null ? `${r.cumRatio}%` : '-'}</td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '18px 12px', color: '#64748b' }}>
+                <td colSpan={11} style={{ textAlign: 'center', padding: '18px 12px', color: '#64748b' }}>
                   条件に一致する履歴がありません。
                 </td>
               </tr>
@@ -2239,6 +2258,7 @@ const HistorySheet = ({
         .hist-s-label { display: block; font-size: 0.68rem; opacity: 0.7; margin-bottom: 2px; }
         .hist-s-val { font-size: 1rem; font-weight: 800; }
         .hist-s-val.good { color: #86efac; }
+        .hist-s-val.notice { color: #fcd34d; }
         .hist-s-val.warn { color: #fca5a5; }
         .hist-table-wrap {
           overflow-x: auto;
@@ -2248,7 +2268,7 @@ const HistorySheet = ({
           border: 1px solid #e2e8f0;
         }
         .hist-table {
-          min-width: 700px;
+          min-width: 900px;
           width: 100%;
           border-collapse: collapse;
           font-size: 0.78rem;
@@ -2271,6 +2291,13 @@ const HistorySheet = ({
           border-bottom: 1px solid #f1f5f9;
           color: #334155;
         }
+        .ht-today { background-color: #fffbeb !important; }
+        .ht-today td {
+          border-top: 1px solid #fde047;
+          border-bottom: 1px solid #fde047;
+          font-weight: 700;
+          color: #854d0e;
+        }
         .ht-date { font-weight: 700; white-space: nowrap; }
         .ht-dow { font-weight: 400; font-size: 0.68rem; margin-left: 2px; color: #64748b; }
         .ht-dow.sun { color: #dc2626; }
@@ -2279,6 +2306,7 @@ const HistorySheet = ({
         .ht-bold { font-weight: 700; }
         .ht-cum { font-weight: 600; color: #1e3a5f; }
         .ht-good { color: #16a34a; font-weight: 700; }
+        .ht-notice { color: #f59e0b; font-weight: 700; }
         .ht-warn { color: #dc2626; font-weight: 700; }
         .hist-table tbody tr:hover td { background-color: #f8fafc; }
         @media (max-width: 600px) {
