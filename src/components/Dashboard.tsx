@@ -301,31 +301,6 @@ const findShiftDateColumn = (rows: SharedShiftMasterRow[], targetDate: string) =
   return null;
 };
 
-const findShiftLeaderRow = (rows: SharedShiftMasterRow[], type: 'morning' | 'produce') => {
-  const matcher = (label: string) => {
-    if (type === 'morning') {
-      return label.includes('全体朝礼当番') || (label.includes('朝礼当番') && !label.includes('青果'));
-    }
-    return label === '青果' || label.includes('青果 ');
-  };
-  const rowIndex = rows.findIndex((row) => matcher(normalizeShiftCellText(row.name)));
-  return {
-    rowIndex,
-    row: rowIndex >= 0 ? rows[rowIndex] : null
-  };
-};
-
-const findProduceLeaderRow = (rows: SharedShiftMasterRow[]) => {
-  const produceAnchorInfo = findShiftLeaderRow(rows, 'produce');
-  const produceLeaderRowIndex = produceAnchorInfo.rowIndex >= 0 ? produceAnchorInfo.rowIndex + 1 : -1;
-  return {
-    rowIndex: produceLeaderRowIndex,
-    row: produceLeaderRowIndex >= 0 ? rows[produceLeaderRowIndex] || null : null,
-    anchorRowIndex: produceAnchorInfo.rowIndex,
-    anchorRow: produceAnchorInfo.row
-  };
-};
-
 const buildShiftSummary = (
   rows: SharedShiftMasterRow[],
   targetDate: string
@@ -351,10 +326,8 @@ const buildShiftSummary = (
     value: (row.cells[columnInfo.columnIndex] || '').trim()
   }));
 
-  const detectedMorningLeaderInfo = findShiftLeaderRow(rows, 'morning');
-  const detectedProduceLeaderInfo = findProduceLeaderRow(rows);
-  const morningLeaderRow = detectedMorningLeaderInfo.row;
-  const produceLeaderRow = detectedProduceLeaderInfo.row;
+  const morningLeaderRow = rows.find((row) => row.rowNumber === 13) || null;
+  const produceLeaderRow = rows.find((row) => row.rowNumber === 14) || null;
   const morningRowIndex = morningLeaderRow ? rows.findIndex((row) => row === morningLeaderRow) : -1;
   const produceRowIndex = produceLeaderRow ? rows.findIndex((row) => row === produceLeaderRow) : -1;
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
@@ -407,6 +380,8 @@ const buildShiftSummary = (
     debug.displayedMorningLeader = summary.morningLeader;
     console.log('[Dashboard] morning leader display', {
       targetDate,
+      sourceRowNumber: morningLeaderRow?.rowNumber ?? null,
+      sourceRowName: morningLeaderRow?.name || '',
       morningLeaderRowValue,
       displayedValue: summary.morningLeader
     });
@@ -419,9 +394,8 @@ const buildShiftSummary = (
     debug.displayedProduceLeader = summary.produceLeader;
     console.log('[Dashboard] produce leader display', {
       targetDate,
-      produceAnchorRow: detectedProduceLeaderInfo.anchorRow?.name || '',
-      produceAnchorRowIndex: detectedProduceLeaderInfo.anchorRowIndex >= 0 ? detectedProduceLeaderInfo.anchorRowIndex : null,
-      produceLeaderRowName: produceLeaderRow?.name || '',
+      sourceRowNumber: produceLeaderRow?.rowNumber ?? null,
+      sourceRowName: produceLeaderRow?.name || '',
       produceMorningLeaderRowValue,
       displayedValue: summary.produceLeader
     });
