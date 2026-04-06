@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, Image as ImageIcon, ChevronRight, Sparkles, AlertCircle, CheckCircle2, Trash2, MoreVertical, Edit } from 'lucide-react';
 import type { SellfloorRecord, PopItem, AIAnalysisResult, InspectionEntry } from '../types';
 import { generateSellfloorAnalysis } from '../services/aiAnalysisService';
-import { buildGoogleDriveImageDisplayUrl, extractGoogleDriveFileId, normalizeDriveImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, extractGoogleDriveFileId, normalizeDriveImageUrl } from '../services/storageService';
 
 interface SellfloorRecordDetailProps {
   record: SellfloorRecord;
@@ -301,7 +301,7 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
                        >
                            <div style={{ width: '60px', height: '60px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#f1f5f9', flexShrink: 0 }}>
                                {normalizeDriveImageUrl(attachedPop.thumbUrl || '') ? (
-                                 <img src={normalizeDriveImageUrl(attachedPop.thumbUrl || '')} alt="POP thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                 <img src={buildGoogleDriveImageCandidates(attachedPop.thumbUrl || '', 240)[0] || normalizeDriveImageUrl(attachedPop.thumbUrl || '')} alt="POP thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
                                ) : (
                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                                    <ImageIcon size={20} />

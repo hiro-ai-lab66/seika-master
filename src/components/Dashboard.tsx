@@ -324,8 +324,8 @@ const buildShiftSummary = (
     value: (row.cells[columnInfo.columnIndex] || '').trim()
   }));
 
-  const morningLeaderRow = rows.find((row) => row.rowNumber === 13) || null;
-  const produceLeaderRow = rows.find((row) => row.rowNumber === 15) || null;
+  const morningLeaderRow = normalizedRows.find((entry) => entry.label.includes('全体朝礼当番'))?.row || null;
+  const produceLeaderRow = normalizedRows.find((entry) => entry.label.includes('青果朝礼当番'))?.row || null;
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
   const timeyHoursRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('タイミー') && entry.label.includes('時間'));
 
@@ -354,7 +354,6 @@ const buildShiftSummary = (
     debug.displayedMorningLeader = summary.morningLeader;
     console.log('[Dashboard] morning leader display', {
       targetDate,
-      sourceRowNumber: morningLeaderRow.rowNumber,
       sourceRowName: morningLeaderRow.name || '',
       morningLeaderRowValue,
       displayedValue: summary.morningLeader
@@ -369,7 +368,6 @@ const buildShiftSummary = (
     debug.displayedProduceLeader = summary.produceLeader;
     console.log('[Dashboard] produce leader display', {
       targetDate,
-      sourceRowNumber: produceLeaderRow.rowNumber,
       sourceRowName: produceLeaderRow.name || '',
       produceMorningLeaderRowValue,
       displayedValue: summary.produceLeader
