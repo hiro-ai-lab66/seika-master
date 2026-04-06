@@ -68,7 +68,6 @@ type ShiftDaySummary = {
   lateMembers: string[];
   holidayMembers: string[];
   halfHolidayMembers: string[];
-  produceHolidayMembers: string[];
   timey: string;
 };
 
@@ -232,7 +231,6 @@ const buildEmptyShiftSummary = (): ShiftDaySummary => ({
   lateMembers: [],
   holidayMembers: [],
   halfHolidayMembers: [],
-  produceHolidayMembers: [],
   timey: ''
 });
 
@@ -328,14 +326,10 @@ const buildShiftSummary = (
 
   const morningLeaderRow = rows.find((row) => row.rowNumber === 13) || null;
   const produceLeaderRow = rows.find((row) => row.rowNumber === 15) || null;
-  const morningRowIndex = morningLeaderRow ? rows.findIndex((row) => row === morningLeaderRow) : -1;
-  const produceRowIndex = produceLeaderRow ? rows.findIndex((row) => row === produceLeaderRow) : -1;
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
   const timeyHoursRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('タイミー') && entry.label.includes('時間'));
 
-  const dutyBoundaryCandidates = [morningRowIndex, produceRowIndex, timeyRowIndex].filter((index) => index >= 0);
-  const dutyEndIndex = dutyBoundaryCandidates.length > 0 ? Math.min(...dutyBoundaryCandidates) : normalizedRows.length;
-  const dutyRows = normalizedRows.slice(0, dutyEndIndex);
+  const dutyRows = timeyRowIndex >= 0 ? normalizedRows.slice(0, timeyRowIndex) : normalizedRows;
 
   dutyRows.forEach((entry) => {
     if (!entry.label || !entry.value) return;
@@ -352,54 +346,36 @@ const buildShiftSummary = (
     }
   });
 
-  const produceBlockStartIndex = produceRowIndex >= 0 ? produceRowIndex + 1 : -1;
-  const produceBoundaryCandidates = [timeyRowIndex].filter((index) => index >= 0);
-  const produceBlockEndIndex = produceBoundaryCandidates.length > 0 ? Math.min(...produceBoundaryCandidates) : normalizedRows.length;
-  const produceRows = produceBlockStartIndex >= 0
-    ? normalizedRows.slice(produceBlockStartIndex, produceBlockEndIndex)
-    : [];
-  produceRows.forEach((entry) => {
-    if (!entry.label || !entry.value) return;
-    if (
-      entry.label.includes('タイミー') ||
-      entry.label.includes('朝礼当番') ||
-      entry.label.includes('時間')
-    ) {
-      return;
-    }
-    if (entry.value === '0') {
-      summary.produceHolidayMembers.push(entry.row.name);
-    }
-  });
-
-  if (morningRowIndex >= 0) {
-    const morningLeaderRowValue = (morningLeaderRow?.cells[columnInfo.columnIndex] || '').trim();
+  if (morningLeaderRow) {
+    const morningLeaderRowValue = (morningLeaderRow.cells[columnInfo.columnIndex] || '').trim();
     summary.morningLeader = morningLeaderRowValue;
     debug.todayMorningLeaderRaw = morningLeaderRowValue;
     debug.shiftedMorningLeader = morningLeaderRowValue;
     debug.displayedMorningLeader = summary.morningLeader;
     console.log('[Dashboard] morning leader display', {
       targetDate,
-      sourceRowNumber: morningLeaderRow?.rowNumber ?? null,
-      sourceRowName: morningLeaderRow?.name || '',
+      sourceRowNumber: morningLeaderRow.rowNumber,
+      sourceRowName: morningLeaderRow.name || '',
       morningLeaderRowValue,
       displayedValue: summary.morningLeader
     });
   }
-  if (produceRowIndex >= 0) {
-    const produceMorningLeaderRowValue = (produceLeaderRow?.cells[columnInfo.columnIndex] || '').trim();
+
+  if (produceLeaderRow) {
+    const produceMorningLeaderRowValue = (produceLeaderRow.cells[columnInfo.columnIndex] || '').trim();
     summary.produceLeader = produceMorningLeaderRowValue;
     debug.todayProduceLeaderRaw = produceMorningLeaderRowValue;
     debug.shiftedProduceLeader = produceMorningLeaderRowValue;
     debug.displayedProduceLeader = summary.produceLeader;
     console.log('[Dashboard] produce leader display', {
       targetDate,
-      sourceRowNumber: produceLeaderRow?.rowNumber ?? null,
-      sourceRowName: produceLeaderRow?.name || '',
+      sourceRowNumber: produceLeaderRow.rowNumber,
+      sourceRowName: produceLeaderRow.name || '',
       produceMorningLeaderRowValue,
       displayedValue: summary.produceLeader
     });
   }
+
   if (timeyRowIndex >= 0) {
     const timeyRaw = normalizedRows[timeyRowIndex]?.value || '';
     const timeyHours = timeyHoursRowIndex >= 0 ? normalizedRows[timeyHoursRowIndex]?.value || '' : '';
@@ -420,11 +396,6 @@ const buildShiftSummary = (
     targetDate,
     morningLeader: summary.morningLeader,
     produceLeader: summary.produceLeader
-  });
-  console.log('[Dashboard] shift produce rows', {
-    targetDate,
-    produceRowCount: produceRows.length,
-    produceHolidayMembers: summary.produceHolidayMembers
   });
   console.log('[Dashboard] shift timey rows', {
     targetDate,
@@ -1842,8 +1813,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       todayLabel,
       tomorrowLabel,
       holidayMembers: today.summary.holidayMembers,
-      halfHolidayMembers: today.summary.halfHolidayMembers,
-      produceHolidayMembers: today.summary.produceHolidayMembers
+      halfHolidayMembers: today.summary.halfHolidayMembers
     });
 
     return {
@@ -1866,7 +1836,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     renderedLateMembers: section.summary.lateMembers.length > 0 ? section.summary.lateMembers.join('、') : '未設定',
     renderedHolidayMembers: section.summary.holidayMembers.length > 0 ? section.summary.holidayMembers.join('、') : '未設定',
     renderedHalfHolidayMembers: section.summary.halfHolidayMembers.length > 0 ? section.summary.halfHolidayMembers.join('、') : '未設定',
-    renderedProduceHolidayMembers: section.summary.produceHolidayMembers.length > 0 ? section.summary.produceHolidayMembers.join('、') : '未設定',
     renderedTimey: section.summary.timey || '未設定'
   }));
 
@@ -2168,7 +2137,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>遅番：{section.renderedLateMembers}</div>
                 <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>公休：{section.renderedHolidayMembers}</div>
                 <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>半休：{section.renderedHalfHolidayMembers}</div>
-                <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>青果休み：{section.renderedProduceHolidayMembers}</div>
                 <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6 }}>タイミー：{section.renderedTimey}</div>
               </div>
             ))}
