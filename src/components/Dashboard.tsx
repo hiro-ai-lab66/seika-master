@@ -2075,6 +2075,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const todayTimeyHoursRaw = todayTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[todayTimeyColumnIndex] || '') : '';
     const tomorrowTimeyRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
     const tomorrowTimeyHoursRaw = tomorrowTimeyColumnIndex >= 0 ? (timeyHoursRow?.cells[tomorrowTimeyColumnIndex] || '') : '';
+    const todayNormalized = normalizeMonthDayKey(currentDate);
+    const matchedTodayIndex = todayPlanned.columnInfo?.columnIndex ?? -1;
+    const todayMorningLeaderCellValue = todayPlanned.morningLeaderCellValue || '';
+    const todayProduceLeaderCellValue = todayPlanned.produceMorningLeaderCellValue || '';
     const normalizedTomorrowKey = normalizeDateKey(nextDate);
     const matchedTomorrowColumnIndex = tomorrowPlanned.columnInfo?.columnIndex ?? -1;
     const morningLeaderRowIndex = tomorrowPlanned.morningLeaderRowIndex ?? -1;
@@ -2085,6 +2089,8 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const tomorrowMorningLeaderRaw = tomorrowPlanned.morningLeaderRaw;
     const tomorrowProduceLeaderRaw = tomorrowPlanned.produceLeaderRaw;
 
+    today.summary.morningLeader = todayMorningLeaderCellValue;
+    today.summary.produceLeader = todayProduceLeaderCellValue;
     tomorrow.summary.morningLeader = tomorrowMorningLeaderRaw;
     tomorrow.summary.produceLeader = tomorrowProduceLeaderRaw;
 
@@ -2117,6 +2123,9 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       tomorrow: tomorrow.summary
     });
     console.log('[Dashboard] today duty display debug', {
+      todayNormalized,
+      matchedTodayIndex: matchedTodayIndex >= 0 ? matchedTodayIndex : null,
+      todayMorningLeaderCellValue,
       todayMorningLeaderRaw: todayPlanned.morningLeaderRaw || today.debug.todayMorningLeaderRaw,
       todayProduceLeaderRaw: todayPlanned.produceLeaderRaw || today.debug.todayProduceLeaderRaw,
       shiftedMorningLeader: today.debug.shiftedMorningLeader,
