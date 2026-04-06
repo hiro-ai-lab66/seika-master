@@ -96,6 +96,8 @@ const readParsedRows = async (sheetName: string, width: number) => {
   return parseRows(await readGoogleSheetValues(sheetName, `A2:${widthLetter}`));
 };
 
+const normalizeSheetDateKey = (value: string) => (value || '').trim().replace(/\//g, '-');
+
 const buildCheckRowKey = (row: string[]) =>
   row
     .slice(0, 7)
@@ -586,8 +588,15 @@ async function handleMorningStatusUpsert(payload: any) {
   const sheet = SHEETS.morningStatus;
   await ensureHeader(sheet.name, sheet.header);
   const existing = await readParsedRows(sheet.name, sheet.width);
-  const targetIndex = existing.findIndex((row) => row[1] === entry.date);
+  const normalizedEntryDate = normalizeSheetDateKey(entry.date);
+  const targetIndex = existing.findIndex((row) => normalizeSheetDateKey(row[1]) === normalizedEntryDate);
   const updatedAt = nowIso();
+  console.log('[shared-write] saveMorningStatus payload', {
+    sheetName: sheet.name,
+    entry,
+    normalizedEntryDate,
+    targetIndex
+  });
 
   if (targetIndex >= 0) {
     const rowId = existing[targetIndex][0];
@@ -599,7 +608,9 @@ async function handleMorningStatusUpsert(payload: any) {
       entry.author || '',
       updatedAt
     ]]);
-    return { id: Number(rowId), ...entry, updatedAt };
+    const response = { id: Number(rowId), ...entry, updatedAt };
+    console.log('[shared-write] saveMorningStatus response', response);
+    return response;
   }
 
   const nextId = existing.reduce((max, row) => Math.max(max, Number(row[0] || '0') || 0), 0) + 1;
@@ -611,7 +622,9 @@ async function handleMorningStatusUpsert(payload: any) {
     entry.author || '',
     updatedAt
   ]]);
-  return { id: nextId, ...entry, updatedAt };
+  const response = { id: nextId, ...entry, updatedAt };
+  console.log('[shared-write] saveMorningStatus response', response);
+  return response;
 }
 
 const handlers: Record<string, (payload: any) => Promise<any>> = {

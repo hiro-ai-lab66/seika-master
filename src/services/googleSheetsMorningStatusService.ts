@@ -1,8 +1,10 @@
 import type { SharedMorningStatusEntry } from '../types';
 import { fetchSharedReadResource, postSharedWriteAction } from './sharedDataApi';
 
-export const fetchSharedMorningStatuses = async (): Promise<SharedMorningStatusEntry[]> => {
-    return fetchSharedReadResource<SharedMorningStatusEntry>('morningStatus');
+export const fetchSharedMorningStatuses = async (
+    options?: { force?: boolean; ttlMs?: number }
+): Promise<SharedMorningStatusEntry[]> => {
+    return fetchSharedReadResource<SharedMorningStatusEntry>('morningStatus', options);
 };
 
 export const upsertSharedMorningStatus = async (

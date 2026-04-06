@@ -297,7 +297,7 @@ const getShiftedLeader = (
   return {
     executionFlag,
     originalValue,
-    shiftedValue: '',
+    shiftedValue: originalValue,
     distance: 0
   };
 };
@@ -442,9 +442,17 @@ const buildShiftSummary = (
   const useExecutionStatus = options.useExecutionStatus ?? true;
   const columnInfo = findShiftDateColumn(rows, targetDate);
   const summary = buildEmptyShiftSummary();
+  const debug = {
+    todayMorningLeaderRaw: '',
+    todayProduceLeaderRaw: '',
+    shiftedMorningLeader: '',
+    shiftedProduceLeader: '',
+    displayedMorningLeader: '',
+    displayedProduceLeader: ''
+  };
 
   if (!columnInfo) {
-    return { columnInfo: null, summary };
+    return { columnInfo: null, summary, debug };
   }
 
   const normalizedRows = rows.map((row) => ({
@@ -454,21 +462,31 @@ const buildShiftSummary = (
   }));
 
   const executionRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('朝礼実施'));
-  const morningStatusByDate = new Map(morningStatuses.map((entry) => [entry.date, entry]));
+  const morningStatusByDate = new Map(
+    morningStatuses
+      .map((entry) => [normalizeDateKey(entry.date), entry] as const)
+      .filter(([dateKey]) => Boolean(dateKey))
+  );
   const resolveDoneFlag = (columnIndex: number, field: 'morningDone' | 'produceMorningDone') => {
     if (!useExecutionStatus) {
       return true;
     }
     const columnDate = getShiftDateForColumn(rows, columnIndex, targetDate.slice(0, 4));
-    const stored = columnDate ? morningStatusByDate.get(columnDate) : undefined;
+    const stored = columnDate ? morningStatusByDate.get(normalizeDateKey(columnDate)) : undefined;
     if (stored) {
       return stored[field];
     }
     const executionValue = executionRowIndex >= 0 ? (normalizedRows[executionRowIndex]?.row.cells[columnIndex] || '').trim() : '';
     return hasShiftExecutionFlag(executionValue);
   };
-  const morningRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('全体朝礼当番'));
-  const produceRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('青果朝礼当番'));
+  const detectedMorningLeaderInfo = findShiftLeaderRow(rows, 'morning');
+  const detectedProduceLeaderInfo = findShiftLeaderRow(rows, 'produce');
+  const fallbackMorningRow = rows.find((row) => row.rowNumber === 13) || null;
+  const fallbackProduceRow = rows.find((row) => row.rowNumber === 14) || null;
+  const morningLeaderRow = detectedMorningLeaderInfo.row || fallbackMorningRow;
+  const produceLeaderRow = detectedProduceLeaderInfo.row || fallbackProduceRow;
+  const morningRowIndex = morningLeaderRow ? rows.findIndex((row) => row === morningLeaderRow) : -1;
+  const produceRowIndex = produceLeaderRow ? rows.findIndex((row) => row === produceLeaderRow) : -1;
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
   const timeyHoursRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('タイミー') && entry.label.includes('時間'));
 
@@ -512,10 +530,10 @@ const buildShiftSummary = (
   });
 
   if (morningRowIndex >= 0) {
-    const morningLeaderRowValue = (normalizedRows[morningRowIndex]?.row.cells[columnInfo.columnIndex] || '').trim();
+    const morningLeaderRowValue = (morningLeaderRow?.cells[columnInfo.columnIndex] || '').trim();
     const shiftedMorningLeader = getShiftedLeader(
       columnInfo.columnIndex,
-      normalizedRows[morningRowIndex]?.row,
+      morningLeaderRow,
       executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null,
       (columnIndex) => resolveDoneFlag(columnIndex, 'morningDone')
     );
@@ -523,6 +541,9 @@ const buildShiftSummary = (
     summary.morningLeader = shiftedMorningLeader.shiftedValue
       ? `${shiftedMorningLeader.shiftedValue}${shiftedMorningLeader.distance > 0 ? '（繰越）' : ''}`
       : '';
+    debug.todayMorningLeaderRaw = morningLeaderRowValue;
+    debug.shiftedMorningLeader = shiftedMorningLeader.shiftedValue;
+    debug.displayedMorningLeader = summary.morningLeader;
     console.log('[Dashboard] shifted morning leader', {
       targetDate,
       doneFlag: summary.morningDone,
@@ -534,10 +555,10 @@ const buildShiftSummary = (
     });
   }
   if (produceRowIndex >= 0) {
-    const produceMorningLeaderRowValue = (normalizedRows[produceRowIndex]?.row.cells[columnInfo.columnIndex] || '').trim();
+    const produceMorningLeaderRowValue = (produceLeaderRow?.cells[columnInfo.columnIndex] || '').trim();
     const shiftedProduceLeader = getShiftedLeader(
       columnInfo.columnIndex,
-      normalizedRows[produceRowIndex]?.row,
+      produceLeaderRow,
       executionRowIndex >= 0 ? normalizedRows[executionRowIndex]?.row : null,
       (columnIndex) => resolveDoneFlag(columnIndex, 'produceMorningDone')
     );
@@ -545,6 +566,9 @@ const buildShiftSummary = (
     summary.produceLeader = shiftedProduceLeader.shiftedValue
       ? `${shiftedProduceLeader.shiftedValue}${shiftedProduceLeader.distance > 0 ? '（繰越）' : ''}`
       : '';
+    debug.todayProduceLeaderRaw = produceMorningLeaderRowValue;
+    debug.shiftedProduceLeader = shiftedProduceLeader.shiftedValue;
+    debug.displayedProduceLeader = summary.produceLeader;
     console.log('[Dashboard] shifted produce leader', {
       targetDate,
       doneFlag: summary.produceMorningDone,
@@ -588,7 +612,7 @@ const buildShiftSummary = (
     timey: summary.timey
   });
 
-  return { columnInfo, summary };
+  return { columnInfo, summary, debug };
 };
 
 const normalizeAdvertisementSide = (sideRaw: string): '表' | '裏' | 'web' | '' => {
@@ -1208,7 +1232,16 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   // localStorage変更を検知してdaily_salesを再読み込みするためのカウンター
   const [dailySalesVersion, setDailySalesVersion] = useState(0);
   const isTodaySelected = currentDate === getLocalTodayDateString();
-  const currentMorningStatus = sharedMorningStatuses.find((entry) => entry.date === currentDate) || null;
+  const currentDateKey = normalizeDateKey(currentDate);
+  const currentMorningStatus = sharedMorningStatuses.find((entry) => normalizeDateKey(entry.date) === currentDateKey) || null;
+  useEffect(() => {
+    console.log('[Dashboard] current morning status resolved', {
+      'currentDate key': currentDateKey,
+      morningDone: currentMorningStatus?.morningDone ?? false,
+      produceMorningDone: currentMorningStatus?.produceMorningDone ?? false,
+      matchedEntry: currentMorningStatus
+    });
+  }, [currentDateKey, currentMorningStatus]);
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'seika_daily_sales_v1') {
@@ -1543,7 +1576,15 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           console.log('[Dashboard] loaded morning statuses', {
             count: morningStatusResult.value.length,
             currentDate,
-            currentEntry: morningStatusResult.value.find((entry) => entry.date === currentDate) || null
+            currentEntry: morningStatusResult.value.find((entry) => normalizeDateKey(entry.date) === normalizeDateKey(currentDate)) || null
+          });
+          console.log('[Dashboard] loadedMorningStatus raw', morningStatusResult.value);
+          console.log('[Dashboard] currentDate key', normalizeDateKey(currentDate));
+          const loadedCurrentEntry =
+            morningStatusResult.value.find((entry) => normalizeDateKey(entry.date) === normalizeDateKey(currentDate)) || null;
+          console.log('[Dashboard] loaded morning status flags', {
+            morningDone: loadedCurrentEntry?.morningDone ?? false,
+            produceMorningDone: loadedCurrentEntry?.produceMorningDone ?? false
           });
         } else {
           console.error('[Dashboard] failed to load morning statuses', morningStatusResult.reason);
@@ -1609,19 +1650,23 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       produceMorningDone: field === 'produceMorningDone' ? value : (currentMorningStatus?.produceMorningDone ?? false),
       author
     };
+    console.log('[Dashboard] saveMorningStatus payload', nextEntry);
 
     try {
       const saved = await upsertSharedMorningStatus(nextEntry);
-      setSharedMorningStatuses((prev) => {
-        const filtered = prev.filter((entry) => entry.date !== saved.date);
-        return [saved, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
-      });
+      console.log('[Dashboard] saveMorningStatus response', saved);
+      const reloadedStatuses = await fetchSharedMorningStatuses({ force: true, ttlMs: 0 });
+      console.log('[Dashboard] loadedMorningStatus raw', reloadedStatuses);
+      setSharedMorningStatuses(reloadedStatuses);
       setMorningStatusMessage(field === 'morningDone' ? '朝礼実施状態を更新しました' : '青果朝礼実施状態を更新しました');
       console.log('[Dashboard] updated morning status', {
         currentDate,
+        'currentDate key': normalizeDateKey(currentDate),
         field,
         value,
-        saved
+        saved,
+        morningDone: reloadedStatuses.find((entry) => normalizeDateKey(entry.date) === normalizeDateKey(currentDate))?.morningDone ?? false,
+        produceMorningDone: reloadedStatuses.find((entry) => normalizeDateKey(entry.date) === normalizeDateKey(currentDate))?.produceMorningDone ?? false
       });
     } catch (error) {
       console.error('[Dashboard] failed to update morning status', { currentDate, field, value, error });
@@ -2015,6 +2060,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const shiftInfo = useMemo(() => {
     const today = buildShiftSummary(sharedShiftRows, currentDate, sharedMorningStatuses, { useExecutionStatus: true });
     const tomorrow = buildShiftSummary(sharedShiftRows, nextDate, sharedMorningStatuses, { useExecutionStatus: false });
+    const todayPlanned = getPlannedShiftLeaders(sharedShiftRows, currentDate);
     const tomorrowPlanned = getPlannedShiftLeaders(sharedShiftRows, nextDate);
     const todayLabel = buildShiftDateLabel(currentDate);
     const tomorrowLabel = buildShiftDateLabel(nextDate);
@@ -2069,6 +2115,14 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     console.log('[Dashboard] shift extracted summary', {
       today: today.summary,
       tomorrow: tomorrow.summary
+    });
+    console.log('[Dashboard] today duty display debug', {
+      todayMorningLeaderRaw: todayPlanned.morningLeaderRaw || today.debug.todayMorningLeaderRaw,
+      todayProduceLeaderRaw: todayPlanned.produceLeaderRaw || today.debug.todayProduceLeaderRaw,
+      shiftedMorningLeader: today.debug.shiftedMorningLeader,
+      shiftedProduceLeader: today.debug.shiftedProduceLeader,
+      displayedMorningLeader: today.debug.displayedMorningLeader,
+      displayedProduceLeader: today.debug.displayedProduceLeader
     });
     console.log('[Dashboard] shift timey raw values', {
       todayTimeyRaw,
