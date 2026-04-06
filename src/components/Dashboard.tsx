@@ -324,8 +324,8 @@ const buildShiftSummary = (
     value: (row.cells[columnInfo.columnIndex] || '').trim()
   }));
 
-  const morningLeaderRow = normalizedRows.find((entry) => entry.label.includes('全体朝礼当番'))?.row || null;
-  const produceLeaderRow = normalizedRows.find((entry) => entry.label.includes('青果朝礼当番'))?.row || null;
+  const morningLeaderRow = normalizedRows.find((entry) => entry.label.trim() === '全体朝礼当番')?.row || null;
+  const produceLeaderRow = normalizedRows.find((entry) => entry.label.trim() === '青果朝礼当番')?.row || null;
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
   const timeyHoursRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('タイミー') && entry.label.includes('時間'));
 
