@@ -1,4 +1,4 @@
-import { ensureGoogleSheetExists, readGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { ensureGoogleSheetExists, getConfiguredSpreadsheetInfo, readGoogleSheetValues } from './_lib/googleServiceAccount.js';
 import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME } from '../sharedSheetNames.js';
 
 const normalizeDriveImageUrl = (url: string) => {
@@ -275,8 +275,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const spreadsheetInfo = getConfiguredSpreadsheetInfo();
     await ensureGoogleSheetExists(config.sheetName);
-    console.log('[shared-read] target sheet:', config.sheetName);
+    console.log('[shared-read] target sheet:', {
+      sheetName: config.sheetName,
+      spreadsheetId: spreadsheetInfo.spreadsheetId,
+      spreadsheetUrl: spreadsheetInfo.spreadsheetUrl
+    });
     const rows = await readGoogleSheetValues(config.sheetName, config.range);
     const items = config.mapRows(rows);
     if (resource === 'advertisement') {
@@ -296,6 +301,8 @@ export default async function handler(req: any, res: any) {
     console.log('[shared-read] item count:', items.length);
     console.log('[shared-read] unique date count:', uniqueDates.length);
     res.status(200).json({
+      spreadsheetId: spreadsheetInfo.spreadsheetId,
+      spreadsheetUrl: spreadsheetInfo.spreadsheetUrl,
       sheetName: config.sheetName,
       items
     });

@@ -22,6 +22,14 @@ const getRequiredEnv = (name: string) => {
   return value;
 };
 
+export const getConfiguredSpreadsheetInfo = () => {
+  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  return {
+    spreadsheetId,
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`
+  };
+};
+
 const getPrivateKey = () => getRequiredEnv('GOOGLE_PRIVATE_KEY').replace(/\\n/g, '\n');
 const getServiceAccountEmail = () => getRequiredEnv('GOOGLE_SERVICE_ACCOUNT_EMAIL');
 const getServiceAccountProjectId = () => {
@@ -127,13 +135,14 @@ export const getGoogleAccessToken = async () => {
 };
 
 export const readGoogleSheetValues = async (sheetName: string, a1Range: string) => {
-  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const { spreadsheetId, spreadsheetUrl } = getConfiguredSpreadsheetInfo();
   const accessToken = await getGoogleAccessToken();
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS`;
 
   console.log('[googleServiceAccount] read sheet values', {
     spreadsheetId,
+    spreadsheetUrl,
     sheetName,
     range
   });
@@ -159,6 +168,7 @@ export const readGoogleSheetValues = async (sheetName: string, a1Range: string) 
   const data = await response.json() as { values?: string[][] };
   console.log('[googleServiceAccount] read succeeded', {
     spreadsheetId,
+    spreadsheetUrl,
     sheetName,
     range,
     rowCount: data.values?.length || 0

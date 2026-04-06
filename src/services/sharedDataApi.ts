@@ -2,6 +2,8 @@ export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibra
 export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'morningStatus';
 
 type SharedReadResponse<T> = {
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
   sheetName: string;
   items: T[];
 };
@@ -132,6 +134,13 @@ export const fetchSharedReadResource = async <T>(
     }
 
     const items = (payload as SharedReadResponse<T>).items || [];
+    if (resource === 'shift') {
+      console.log('[sharedDataApi] shift source info', {
+        spreadsheetId: (payload as SharedReadResponse<T>)?.spreadsheetId || '',
+        spreadsheetUrl: (payload as SharedReadResponse<T>)?.spreadsheetUrl || '',
+        sheetName: (payload as SharedReadResponse<T>)?.sheetName || ''
+      });
+    }
     // advertisement の場合は side フィールドの到達確認ログを出す
     if (resource === 'advertisement') {
       console.log('[sharedDataApi] advertisement items received from API', {
