@@ -2525,15 +2525,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 )}
               </div>
             ))}
-          <div style={{ background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: '12px', padding: '12px 14px', display: 'grid', gap: '6px' }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#1d4ed8' }}>明日の当番</div>
-            <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
-              明日の朝礼当番：{shiftInfo.tomorrow.morningLeader || '未設定'}
-            </div>
-            <div style={{ color: '#334155', fontSize: '0.88rem', lineHeight: 1.6, fontWeight: 700 }}>
-              明日の青果朝礼当番：{shiftInfo.tomorrow.produceLeader || '未設定'}
-            </div>
-          </div>
         </div>
       </div>
 
