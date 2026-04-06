@@ -327,10 +327,7 @@ const buildShiftSummary = (
   }));
 
   const morningLeaderRow = rows.find((row) => row.rowNumber === 13) || null;
-  const produceLeaderLabelRow = rows.find((row) => row.rowNumber === 15) || null;
-  const produceLeaderRow = produceLeaderLabelRow
-    ? rows.find((row) => row.rowNumber === 16) || null
-    : null;
+  const produceLeaderRow = rows.find((row) => row.rowNumber === 15) || null;
   const morningRowIndex = morningLeaderRow ? rows.findIndex((row) => row === morningLeaderRow) : -1;
   const produceRowIndex = produceLeaderRow ? rows.findIndex((row) => row === produceLeaderRow) : -1;
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
@@ -397,8 +394,6 @@ const buildShiftSummary = (
     debug.displayedProduceLeader = summary.produceLeader;
     console.log('[Dashboard] produce leader display', {
       targetDate,
-      labelRowNumber: produceLeaderLabelRow?.rowNumber ?? null,
-      labelRowName: produceLeaderLabelRow?.name || '',
       sourceRowNumber: produceLeaderRow?.rowNumber ?? null,
       sourceRowName: produceLeaderRow?.name || '',
       produceMorningLeaderRowValue,
