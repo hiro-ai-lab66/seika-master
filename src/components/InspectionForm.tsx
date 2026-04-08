@@ -241,6 +241,15 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             bestFruits: [],
         };
     });
+
+    useEffect(() => {
+        console.log('[InspectionForm] 予算調査: 点検画面初期化時の値', {
+            date: currentDate,
+            masterBudgetFromState: dailyBudgets.find(b => b.date === currentDate)?.totalBudget,
+            formTotalBudget: form.totalBudget
+        });
+    }, [currentDate, form.totalBudget, dailyBudgets]);
+
     const [promotionItemInput, setPromotionItemInput] = useState(form.promotionItem || '');
     const [promotionTargetSalesInput, setPromotionTargetSalesInput] = useState(formatThousandInput(form.promotionTargetSales));
     const [promotionActual12SalesInput, setPromotionActual12SalesInput] = useState(formatThousandInput(form.promotionActual12Sales));

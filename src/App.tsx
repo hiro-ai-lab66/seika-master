@@ -122,7 +122,7 @@ const mergeDailyBudgetsFromInspections = (existingBudgets: DailyBudget[], inspec
   });
 
   const mergedBudgets = Array.from(budgetMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-  console.log('[App] merged daily budgets from shared_check', mergedBudgets.slice(-5).map((budget) => ({
+  console.log('[App] 予算調査: shared_checkから予算を上書きマージしました', mergedBudgets.slice(-5).map((budget) => ({
     date: budget.date,
     totalBudget: budget.totalBudget
   })));

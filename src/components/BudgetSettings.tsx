@@ -222,17 +222,25 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
         });
       }
 
+      // 追加：調査用のログおよびアラート用の変数
+      let debugLog = '[BudgetSettings] 予算CSV取り込み調査:\n';
+
       parsedBudgets.forEach(({ date, budget }) => {
+        debugLog += `・${date} | CSV元データ: ${budget}円 (または入力値そのまま)\n`;
         const budgetIndex = currentMonthBudgets.findIndex(b => b.date === date);
         if (budgetIndex !== -1) {
+          const finalTotalBudget = Math.floor(budget / 1000) * 1000;
+          debugLog += `  → state保存値(1000円単位切り捨て): ${finalTotalBudget}円\n`;
           currentMonthBudgets[budgetIndex] = {
             ...currentMonthBudgets[budgetIndex],
-            totalBudget: Math.floor(budget / 1000) * 1000
+            totalBudget: finalTotalBudget
           };
           newModifiedDates.add(date);
           updateCount++;
         }
       });
+
+      console.log(debugLog);
 
       // CSV取込後、当日分が含まれていれば shared 予算入力欄にも反映（共有保存時に 0 上書きされるのを防ぐ）
       const todayParsed = parsedBudgets.find(p => p.date === todayDate);
@@ -249,7 +257,7 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
       if (updateCount > 0) {
         setLocalBudgets([...currentMonthBudgets]);
         setModifiedDates(newModifiedDates);
-        alert(`${updateCount}件の予算を読み込みました。\n黄色くハイライトされた箇所を確認し、よろしければ最後に「保存する」ボタンを押してください。`);
+        alert(`【調査ログ出力済】コンソールを確認してください。\n${updateCount}件の予算を読み込みました。\n黄色くハイライトされた箇所を確認し、よろしければ最後に「この月の予算を保存する」ボタンを押してください。`);
       } else {
         alert('読み込めるデータが見つかりませんでした。\n形式例: 1, 350000 (1日の予算が35万の場合)');
       }
