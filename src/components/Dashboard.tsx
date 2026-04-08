@@ -23,15 +23,6 @@ type FocusItem = {
   tone: 'danger' | 'warn' | 'info' | 'success';
 };
 
-type AdvertisementCardGroup = {
-  key: string;
-  title: string;
-  startDate: string;
-  endDate: string;
-  omote?: SharedAdvertisementEntry;
-  ura?: SharedAdvertisementEntry;
-};
-
 type AdvertisementTask = {
   text: string;
   priority: number;
@@ -428,22 +419,8 @@ const getAdvertisementFace = (item: SharedAdvertisementEntry): 'omote' | 'ura' |
   return 'single';
 };
 
-const getAdvertisementBaseTitle = (title: string) => {
-  const trimmed = title.trim();
-  if (!trimmed) return '無題の広告';
-  const normalized = trimmed
-    .replace(/\s*（表）|\s*（裏）|\s*\(表\)|\s*\(裏\)/g, '')
-    .replace(/\s*[表裏]$/, '')
-    .trim();
-  return normalized || trimmed || '無題の広告';
-};
 
-const getAdvertisementGroupKey = (item: SharedAdvertisementEntry) => {
-  const baseTitle = getAdvertisementBaseTitle(item.title || '');
-  const startDate = normalizeFlexibleDateKey(item.startDate || '');
-  const endDate = normalizeFlexibleDateKey(item.endDate || '');
-  return `${baseTitle}__${startDate}__${endDate}`;
-};
+
 
 const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
 const normalizeDateKey = (value: string) => {
@@ -645,14 +622,19 @@ const buildDepartmentTrendComment = (departmentLabel: '野菜' | '果物', items
     return `${departmentLabel}は前日データがないため、定番のフェイス確保と鮮度感の維持を優先してください。`;
   }
 
+  const topItem = items[0];
   const totalSales = items.reduce((sum, item) => sum + item.salesAmt, 0);
   const totalQty = items.reduce((sum, item) => sum + item.salesQty, 0);
   const topShare = totalSales > 0 ? items[0].salesAmt / totalSales : 0;
   const topTwoShare = totalSales > 0 ? (items[0].salesAmt + (items[1]?.salesAmt || 0)) / totalSales : 0;
-  const yoyAvailableItems = items.filter((item) => typeof item.salesYoY === 'number');
+  const yoyAvailableItems = items.filter((item) => item.salesYoY !== null);
   const yoyStrongCount = yoyAvailableItems.filter((item) => (item.salesYoY || 0) >= 100).length;
   const yoyWeakCount = yoyAvailableItems.filter((item) => (item.salesYoY || 0) < 100).length;
   const leadNames = formatRankingNames(items);
+
+  if (topItem.salesQty >= 20) {
+    return `${departmentLabel}は${topItem.name}の数字が順調です。品切れさせずさらなる上積みを図りましょう。`;
+  }
 
   if (topShare >= 0.38 || topTwoShare >= 0.62) {
     return `${departmentLabel}は${leadNames}に売上が集まっています。上位商品の前出しと平台の量感を朝から揃えてください。`;
@@ -694,28 +676,24 @@ const buildOverallTrendComment = (
 };
 
 const AdvertisementCard: React.FC<{
-  group: AdvertisementCardGroup;
-  onOpenImage: (imageUrl: string, title: string) => void;
+  item: SharedAdvertisementEntry;
   weather: string;
   tempBand: string;
   currentGap: number | null;
   currentCustomers: number;
   avgSpend: number | null;
   lossAmount: number | null | undefined;
-}> = ({ group, onOpenImage, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount }) => {
-  const hasSideToggle = Boolean(group.omote && group.ura);
-  const [activeSide, setActiveSide] = useState<'表' | '裏'>(() => (group.omote ? '表' : '裏'));
+  onOpenImage: (imageUrl: string, title: string) => void;
+}> = ({ item, onOpenImage, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount }) => {
   const [copyMessage, setCopyMessage] = useState('');
   const [imageSrc, setImageSrc] = useState('');
   const [imageCandidates, setImageCandidates] = useState<string[]>([]);
   const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
   const [imageAccessError, setImageAccessError] = useState(false);
-  const displayData = activeSide === '表'
-    ? (group.omote || group.ura)
-    : (group.ura || group.omote);
+  const displayData = item;
   const tasks = useMemo(() => {
     if (!displayData) return [] as AdvertisementTask[];
-    const sourceText = `${group.title} ${displayData.memo || ''}`;
+    const sourceText = `${displayData.title} ${displayData.memo || ''}`;
     const suggestions: AdvertisementTask[] = [];
 
     if (sourceText.includes('野菜')) {
@@ -765,16 +743,12 @@ const AdvertisementCard: React.FC<{
     return suggestions
       .sort((a, b) => b.priority - a.priority)
       .slice(0, 3);
-  }, [displayData, group.title, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount]);
+  }, [displayData, item.title, weather, tempBand, currentGap, currentCustomers, avgSpend, lossAmount]);
   const briefingLines = useMemo(
     () => tasks.map((task) => `・${task.text.split('→')[1]?.trim() || task.text}`).slice(0, 3),
     [tasks]
   );
   const briefingText = useMemo(() => briefingLines.join('\n'), [briefingLines]);
-
-  useEffect(() => {
-    setActiveSide(group.omote ? '表' : '裏');
-  }, [group.omote, group.ura, group.key]);
 
   useEffect(() => {
     if (!displayData?.imageUrl) {
@@ -818,7 +792,7 @@ const AdvertisementCard: React.FC<{
     try {
       if (navigator.share) {
         await navigator.share({
-          title: `${group.title} 朝礼用まとめ`,
+          title: `${displayData.title} 朝礼用まとめ`,
           text: briefingText
         });
         setCopyMessage('共有しました');
@@ -849,7 +823,7 @@ const AdvertisementCard: React.FC<{
     >
       <button
         type="button"
-        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(displayData.imageUrl, 1600), `${group.title} ${activeSide}`)}
+        onClick={() => onOpenImage(buildGoogleDriveImageDisplayUrl(displayData.imageUrl, 1600), displayData.title)}
         style={{
           display: 'grid',
           gridTemplateColumns: '88px 1fr',
@@ -896,13 +870,10 @@ const AdvertisementCard: React.FC<{
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-            <div style={{ color: '#0f172a', fontWeight: 800 }}>{group.title}</div>
-            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4f46e5', background: '#e0e7ff', borderRadius: '999px', padding: '3px 8px' }}>
-              {activeSide}
-            </span>
+            <div style={{ color: '#0f172a', fontWeight: 800 }}>{displayData.title}</div>
           </div>
           <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
-            {group.startDate} - {group.endDate}
+            {displayData.startDate} - {displayData.endDate}
           </div>
           {displayData.memo && (
             <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '6px', lineHeight: 1.5 }}>
@@ -911,27 +882,6 @@ const AdvertisementCard: React.FC<{
           )}
         </div>
       </button>
-
-      {hasSideToggle && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button
-            type="button"
-            className={activeSide === '表' ? 'button-primary' : 'button-secondary'}
-            style={{ width: 'auto', padding: '8px 12px' }}
-            onClick={() => setActiveSide('表')}
-          >
-            表
-          </button>
-          <button
-            type="button"
-            className={activeSide === '裏' ? 'button-primary' : 'button-secondary'}
-            style={{ width: 'auto', padding: '8px 12px' }}
-            onClick={() => setActiveSide('裏')}
-          >
-            裏
-          </button>
-        </div>
-      )}
 
       <div style={{ background: '#ecfdf5', border: '1px solid #86efac', borderRadius: '12px', padding: '10px 12px' }}>
         <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#047857', marginBottom: '8px' }}>🔥 今日やること</div>
@@ -987,6 +937,7 @@ const AdvertisementCard: React.FC<{
 };
 
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, refreshKey = 0 }) => {
+  const [selectedAdvertisementSide, setSelectedAdvertisementSide] = useState<'表' | '裏'>('表');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [advertisements, setAdvertisements] = useState<SharedAdvertisementEntry[]>(() => loadCachedAdvertisements());
@@ -1687,83 +1638,18 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       sourceUrl: item.imageUrl,
       displayUrl: buildGoogleDriveImageDisplayUrl(item.imageUrl, 800)
     })));
-    const groupedMap = new Map<string, AdvertisementCardGroup>();
-    filteredRecords.forEach((item) => {
-      const sideRaw = item.side || '';
-      const normalizedSide = normalizeAdvertisementSide(sideRaw);
-      const baseTitle = getAdvertisementBaseTitle(item.title || '');
+    const sideFilteredRecords = filteredRecords.filter((item) => {
       const face = getAdvertisementFace(item);
-      const groupKey = getAdvertisementGroupKey(item);
-      const existing = groupedMap.get(groupKey) || {
-        key: groupKey,
-        title: baseTitle,
-        startDate: item.startDate,
-        endDate: item.endDate
-      };
-
-      // ── side 正規化ログ（強化版）──
-      console.log('[Dashboard] advertisement side normalization', {
-        title: item.title,
-        sideRaw,
-        sideRawCharCodes: Array.from(sideRaw).map((c) => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`),
-        normalizedSide,
-        face
-      });
-
-      const beforeOmote = Boolean(existing.omote);
-      const beforeUra = Boolean(existing.ura);
-
-      if (face === 'ura') {
-        existing.ura = item;
-      } else if (face === 'omote') {
-        existing.omote = item;
+      if (selectedAdvertisementSide === '表') {
+        return face === 'omote' || face === 'single';
       } else {
-        // face === 'single'：side 列が空で title 判定もできない場合
-        // 1行目を omote、2行目以降を ura として扱い、切り替えを有効にする
-        if (!existing.omote) {
-          existing.omote = item;
-        } else if (!existing.ura) {
-          existing.ura = item;
-        }
+        return face === 'ura';
       }
-
-      console.log('[Dashboard] advertisement grouping result', {
-        title: item.title,
-        groupKey,
-        face,
-        normalizedSide,
-        beforeOmote,
-        beforeUra,
-        afterOmote: Boolean(existing.omote),
-        afterUra: Boolean(existing.ura)
-      });
-
-      groupedMap.set(groupKey, existing);
     });
-    const groupedAdvertisements = Array.from(groupedMap.values()).slice(0, 3);
-    console.log('[Dashboard] advertisement grouped records', groupedAdvertisements.map((group) => ({
-      key: group.key,
-      title: group.title,
-      startDate: group.startDate,
-      endDate: group.endDate,
-      omote: group.omote ? {
-        id: group.omote.id,
-        title: group.omote.title,
-        side: group.omote.side
-      } : null,
-      ura: group.ura ? {
-        id: group.ura.id,
-        title: group.ura.title,
-        side: group.ura.side
-      } : null
-    })));
-    console.log('[Dashboard] advertisement grouped side summary', groupedAdvertisements.map((group) => ({
-      title: group.title,
-      hasOmote: Boolean(group.omote),
-      hasUra: Boolean(group.ura)
-    })));
-    return groupedAdvertisements;
-  }, [advertisements, currentDate]);
+
+    return sideFilteredRecords;
+  }, [advertisements, currentDate, selectedAdvertisementSide]);
+  
   const displayedAdvertisements = todayAdvertisements;
 
   const shiftInfo = useMemo(() => {
@@ -2089,9 +1975,29 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         </div>
 
         <div style={{ ...cardStyle, borderColor: '#c7d2fe' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-            <Megaphone size={18} color="#4f46e5" />
-            <h3 style={sectionTitleStyle}>本日の広告</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Megaphone size={18} color="#4f46e5" />
+              <h3 style={sectionTitleStyle}>本日の広告</h3>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className={selectedAdvertisementSide === '表' ? 'button-primary' : 'button-secondary'}
+                style={{ width: 'auto', padding: '6px 12px', fontSize: '0.8rem' }}
+                onClick={() => setSelectedAdvertisementSide('表')}
+              >
+                表
+              </button>
+              <button
+                type="button"
+                className={selectedAdvertisementSide === '裏' ? 'button-primary' : 'button-secondary'}
+                style={{ width: 'auto', padding: '6px 12px', fontSize: '0.8rem' }}
+                onClick={() => setSelectedAdvertisementSide('裏')}
+              >
+                裏
+              </button>
+            </div>
           </div>
           <div style={{ display: 'grid', gap: '10px' }}>
             {displayedAdvertisements.length === 0 ? (
@@ -2099,10 +2005,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
                 {advertisementError ? `広告取得エラー: ${advertisementError}` : '本日有効な広告はありません。'}
               </div>
             ) : (
-              displayedAdvertisements.map((group) => (
+              displayedAdvertisements.map((item) => (
                 <AdvertisementCard
-                  key={group.key}
-                  group={group}
+                  key={item.id}
+                  item={item}
                   weather={weather}
                   tempBand={tempBand}
                   currentGap={currentGap}
