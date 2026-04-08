@@ -108,9 +108,26 @@ const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): I
 const mergeDailyBudgetsFromInspections = (existingBudgets: DailyBudget[], inspections: InspectionEntry[]) => {
   const budgetMap = new Map(existingBudgets.map((budget) => [budget.date, budget]));
 
+  // マージ前の状態をログ出力（一部抜粋）
+  console.log('[App] 予算マージ処理開始: マージ前のローカル予算(既存値)', Array.from(budgetMap.values()).filter(b => b.totalBudget > 0).slice(-5).map(b => ({
+    date: b.date,
+    localBudget: b.totalBudget
+  })));
+
   inspections.forEach((entry) => {
     if (!entry.date || !entry.totalBudget || entry.totalBudget <= 0) return;
     const existing = budgetMap.get(entry.date);
+
+    // CSV > 手入力 > shared_check の優先順位を担保: ローカルに予算が存在すれば shared_check では上書きしない
+    if (existing && existing.totalBudget > 0) {
+      console.log('[App] 予算マージスキップ: CSV/手入力のローカル予算を優先', {
+        date: entry.date,
+        localBudget: existing.totalBudget,
+        sharedBudgetToDiscard: entry.totalBudget
+      });
+      return;
+    }
+
     const nextBudget: DailyBudget = {
       date: entry.date,
       dayOfWeek: existing?.dayOfWeek || entry.dayOfWeek || getDayOfWeek(entry.date),
@@ -122,7 +139,9 @@ const mergeDailyBudgetsFromInspections = (existingBudgets: DailyBudget[], inspec
   });
 
   const mergedBudgets = Array.from(budgetMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-  console.log('[App] 予算調査: shared_checkから予算を上書きマージしました', mergedBudgets.slice(-5).map((budget) => ({
+  
+  // マージ後の状態をログ出力（一部抜粋）
+  console.log('[App] 予算マージ処理完了: マージ後の予算', mergedBudgets.filter(b => b.totalBudget > 0).slice(-5).map((budget) => ({
     date: budget.date,
     totalBudget: budget.totalBudget
   })));
