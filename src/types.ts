@@ -21,6 +21,10 @@ export interface BestItem {
     salesYoY?: number;  // 売上数昨比
     salesAmt?: number;  // 売上高
     category?: '野菜' | '果物';
+    // 新規追加: 売場エリア分析用データ
+    areaCode?: string;         // エリア番号 (例: '1-10', '入口', '特設')
+    linearLength?: number;     // 尺数 (例: 2, 3)
+    daysCategory?: '通し' | '特売'; // 日数区分
 }
 
 /** 日次売上レコード（1商品1日分） */

@@ -1260,20 +1260,29 @@ function App() {
   );
 }
 
+import { analyzeSellfloorAreas } from './utils/sellfloorAnalyzer';
+
 const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, currentDate: string, onSaveChirashi?: (image: string | null, date: string | null) => void }) => {
   const targetEntry = state.inspections.find(i => i.date === currentDate);
 
   const bestVeg = targetEntry?.bestVegetables?.[0];
   const bestFruit = targetEntry?.bestFruits?.[0];
 
+  const areaAnalysis = analyzeSellfloorAreas(
+      targetEntry?.bestVegetables || [],
+      targetEntry?.bestFruits || []
+  );
+
   const generateInitialAdvice = () => {
     if (!targetEntry) return "指定された日付の点検データがまだ入力されていません。点検入力を完了させると、より具体的な分析が可能です。";
-    let advice = "実績を分析しました。";
-    if (bestVeg || bestFruit) {
-      advice += `特に、${bestVeg ? `野菜の「${bestVeg.name}」` : ""}${bestVeg && bestFruit ? "と" : ""}${bestFruit ? `果物の「${bestFruit.name}」` : ""}が非常に好調です。`;
-      advice += "完売の恐れがあるため、明日の発注量を調整し、売れ筋商品のPOPを強化しましょう。";
-    } else {
-      advice += "売れ筋の単品データがまだ反映されていません。CSVをアップロードして分析を始めましょう。";
+    let advice = `実績と売場エリア（全 ${areaAnalysis.trends.strong.length + areaAnalysis.trends.weak.length + areaAnalysis.trends.rising.length} 品目）を分析しました。\n\n`;
+    if (areaAnalysis.judgement) {
+        advice += `【AI基本判断】\n${areaAnalysis.judgement}\n\n`;
+    }
+    if (areaAnalysis.suggestions.length > 0) {
+        advice += `【改善提案】\n${areaAnalysis.suggestions.slice(0, 2).map(s => '・' + s).join('\n')}`;
+    } else if (bestVeg || bestFruit) {
+        advice += `好調商品：${bestVeg ? `野菜「${bestVeg.name}」` : ""}${bestVeg && bestFruit ? "、" : ""}${bestFruit ? `果物「${bestFruit.name}」` : ""}\n完売に注意しましょう。`;
     }
     return advice;
   };
@@ -1449,14 +1458,31 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
       </div>
 
       {targetEntry && (bestVeg || bestFruit) && (
-        <div className="best-summary-mini">
-          <div className="summary-item">
-            <span className="label">野菜No.1:</span>
-            <span className="value">{bestVeg ? `${bestVeg.name} (¥${bestVeg.sales.toLocaleString()})` : "---"}</span>
+        <div className="analysis-board" style={{ display: 'grid', gap: '12px', marginBottom: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#1e3a8a' }}>
+              <Sparkles size={16} /> 改善アクション
+            </div>
+            {areaAnalysis.suggestions.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85rem', color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {areaAnalysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            ) : (
+                <div style={{ fontSize: '0.85rem', color: '#64748b' }}>適正な配置・尺数です。</div>
+            )}
           </div>
-          <div className="summary-item">
-            <span className="label">果物No.1:</span>
-            <span className="value">{bestFruit ? `${bestFruit.name} (¥${bestFruit.sales.toLocaleString()})` : "---"}</span>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#0f766e' }}>
+              <TrendingUp size={16} /> 発注・連動提案
+            </div>
+            {areaAnalysis.orders.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85rem', color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {areaAnalysis.orders.map((o, i) => <li key={i}>{o}</li>)}
+              </ul>
+            ) : (
+                <div style={{ fontSize: '0.85rem', color: '#64748b' }}>現状維持で問題ありません。</div>
+            )}
           </div>
         </div>
       )}

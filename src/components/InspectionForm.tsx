@@ -1378,7 +1378,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             };
         }));
     }, [veggieItems, fruitItems]);
-    const renderBestTable = (items: BestItem[], title: string, icon: string) => {
+    const renderBestTable = (items: BestItem[], title: string, icon: string, onChange?: (idx: number, field: keyof BestItem, value: any) => void) => {
         const displayTitle = title;
         return (
         <div className="best-table-block">
@@ -1397,6 +1397,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             <th>売上数</th>
                             <th>売上数昨比</th>
                             <th>売上高</th>
+                            <th>エリア(強さ1-5)</th>
+                            <th>尺数</th>
+                            <th>区分</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1417,6 +1420,36 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     <td className="col-num">{formatNum(item.salesQty)}</td>
                                     <td className={`col-num ${yoy !== undefined && yoy < 80 ? 'yoy-warn' : yoy !== undefined && yoy >= 110 ? 'yoy-good' : ''}`}>{formatNum(yoy, true)}</td>
                                     <td className="col-num">{formatNum(item.salesAmt, false, true)}</td>
+                                    <td className="col-input">
+                                        <input 
+                                            type="text" 
+                                            placeholder="入口" 
+                                            value={item.areaCode || ''} 
+                                            onChange={(e) => onChange && onChange(idx, 'areaCode', e.target.value)} 
+                                            style={{ width: '100%', padding: '4px', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                                        />
+                                    </td>
+                                    <td className="col-input">
+                                        <input 
+                                            type="number" 
+                                            min="0" step="0.5" 
+                                            placeholder="0" 
+                                            value={item.linearLength || ''} 
+                                            onChange={(e) => onChange && onChange(idx, 'linearLength', e.target.value ? Number(e.target.value) : undefined)} 
+                                            style={{ width: '100%', padding: '4px', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                                        />
+                                    </td>
+                                    <td className="col-input">
+                                        <select 
+                                            value={item.daysCategory || ''} 
+                                            onChange={(e) => onChange && onChange(idx, 'daysCategory', e.target.value || undefined)}
+                                            style={{ width: '100%', padding: '4px', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                                        >
+                                            <option value="">-</option>
+                                            <option value="通し">通し</option>
+                                            <option value="特売">特売</option>
+                                        </select>
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -2239,12 +2272,24 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                             {/* 野菜ベスト40 */}
                             {veggieItems.length > 0 && (
-                                renderBestTable(veggieItems, '野菜ベスト40', '🥬')
+                                renderBestTable(veggieItems, '野菜ベスト40', '🥬', (idx, field, value) => {
+                                    const updatedItem = veggieItems[idx];
+                                    setAnalysisVeggies(prev => prev.map(v => 
+                                        (v.name === updatedItem.name && v.code === updatedItem.code)
+                                        ? { ...v, [field]: value } : v
+                                    ));
+                                })
                             )}
 
                             {/* 果物ベスト30 */}
                             {fruitItems.length > 0 && (
-                                renderBestTable(fruitItems, '果物ベスト30', '🍎')
+                                renderBestTable(fruitItems, '果物ベスト30', '🍎', (idx, field, value) => {
+                                    const updatedItem = fruitItems[idx];
+                                    setAnalysisFruits(prev => prev.map(v => 
+                                        (v.name === updatedItem.name && v.code === updatedItem.code)
+                                        ? { ...v, [field]: value } : v
+                                    ));
+                                })
                             )}
                         </div>
                     </div>
