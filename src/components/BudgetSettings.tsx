@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import type { AppState, DailyBudget } from '../types';
 import { getDayOfWeek, getLocalTodayDateString } from '../utils/calculations';
 import { Calendar, ChevronLeft, ChevronRight, Save, Upload } from 'lucide-react';
-import { fetchSharedBudgetForDate, getSharedBudgetSheetName, upsertSharedBudget } from '../services/googleSheetsBudgetService';
+import { fetchSharedBudgetForDate, getSharedBudgetSheetName, upsertSharedBudget, upsertSharedBudgetMonth } from '../services/googleSheetsBudgetService';
+import { invalidateSharedReadResource } from '../services/sharedDataApi';
 
 interface Props {
   state: AppState;
@@ -46,6 +47,8 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
   const [sharedBudgetError, setSharedBudgetError] = useState('');
   const [isSharedBudgetLoading, setIsSharedBudgetLoading] = useState(false);
   const [isSharedBudgetSaving, setIsSharedBudgetSaving] = useState(false);
+  const [isSavingToShared, setIsSavingToShared] = useState(false);
+  const [sharedSaveResult, setSharedSaveResult] = useState<string | null>(null);
 
   const loadSharedBudget = async () => {
     setIsSharedBudgetLoading(true);
@@ -336,7 +339,7 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const todayBudgetInLocal = localBudgets.find(b => b.date === todayDate);
     console.log('[BudgetSettings] handleSave 開始: localBudgets の内容', {
       todayDate,
@@ -356,9 +359,68 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
       thisMonthBudgets: thisMonthBudgets.map(b => ({ date: b.date, totalBudget: b.totalBudget }))
     });
 
+    // 1. ローカル state に保存
     onSave([...otherMonthBudgets, ...thisMonthBudgets]);
     setModifiedDates(new Set());
-    alert('予算を保存しました');
+
+    // 2. shared_budget シートに月全日分を一括書き込み
+    const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
+    // 全日分（0円の日も含む）のエントリを生成
+    const allDayEntries = localBudgets.map(b => ({
+      date: b.date,
+      salesTarget: b.totalBudget,
+      grossProfitTarget: 0
+    }));
+
+    const author = sharedBudgetAuthor.trim() ||
+      (typeof window !== 'undefined' ? window.localStorage.getItem('seika_budget_author') || '' : '');
+
+    console.log('[BudgetSettings] handleSave: shared_budget 月一括保存', {
+      yearMonth,
+      entryCount: allDayEntries.length,
+      nonZeroCount: allDayEntries.filter(e => e.salesTarget > 0).length,
+      sample: allDayEntries.slice(0, 5)
+    });
+
+    setIsSavingToShared(true);
+    setSharedSaveResult(null);
+    let saveResultMessage = '';
+    try {
+      const result = await upsertSharedBudgetMonth(yearMonth, allDayEntries, author);
+      // キャッシュを無効化して次回取得時に最新データを取得
+      invalidateSharedReadResource('budget');
+      console.log('[BudgetSettings] handleSave: shared_budget 月一括保存 完了', result);
+      console.log('[BudgetSettings] handleSave: shared_budget 対象月保存検証', {
+        yearMonth,
+        savedCount: result.savedCount,
+        monthRowCount: result.diagnostics.monthRowCount,
+        uniqueDateCount: result.diagnostics.uniqueDateCount,
+        expectedDayCount: result.diagnostics.expectedDayCount,
+        isContinuousFromStartToEnd: result.diagnostics.isContinuousFromStartToEnd,
+        firstDate: result.diagnostics.firstDate,
+        lastDate: result.diagnostics.lastDate,
+        missingDates: result.diagnostics.missingDates,
+        duplicateDates: result.diagnostics.duplicateDates
+      });
+      saveResultMessage = `✅ shared_budget に ${result.savedCount}日分を保存しました（${yearMonth}）`;
+      setSharedSaveResult(saveResultMessage);
+      // 保存成功後に shared_budget を再取得して表示を更新
+      await loadSharedBudget();
+    } catch (error) {
+      console.error('[BudgetSettings] handleSave: shared_budget 保存失敗', error);
+      saveResultMessage = `⚠️ ローカル保存は完了しましたが、shared_budget への書き込みに失敗しました: ${
+        error instanceof Error ? error.message : '不明なエラー'
+      }`;
+      setSharedSaveResult(saveResultMessage);
+    } finally {
+      setIsSavingToShared(false);
+    }
+
+    alert(
+      saveResultMessage
+        ? `予算を保存しました\n${saveResultMessage}`
+        : `予算をローカルに保存しました。共有保存の結果を上部で確認してください。`
+    );
   };
 
   const handleSharedBudgetSave = async () => {
@@ -565,9 +627,18 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
       </div>
 
       <div className="sticky-action">
-        <button className="button-primary save-button" onClick={handleSave}>
+        {sharedSaveResult && (
+          <div className={`shared-save-result ${sharedSaveResult.startsWith('✅') ? 'is-success' : 'is-error'}`}>
+            {sharedSaveResult}
+          </div>
+        )}
+        <button
+          className="button-primary save-button"
+          onClick={() => void handleSave()}
+          disabled={isSavingToShared}
+        >
           <Save size={20} />
-          <span>この月の予算を保存する</span>
+          <span>{isSavingToShared ? 'shared_budget に保存中...' : 'この月の予算を保存する'}</span>
         </button>
       </div>
 
@@ -650,6 +721,23 @@ export const BudgetSettings: React.FC<Props> = ({ state, onSave, currentDate, on
           color: #b91c1c;
           font-size: 0.85rem;
           font-weight: 700;
+        }
+        .shared-save-result {
+          padding: 10px 14px;
+          border-radius: 10px;
+          font-size: 0.85rem;
+          font-weight: 700;
+          margin-bottom: 8px;
+        }
+        .shared-save-result.is-success {
+          background: #ecfdf5;
+          border: 1px solid #a7f3d0;
+          color: #047857;
+        }
+        .shared-save-result.is-error {
+          background: #fff1f2;
+          border: 1px solid #fecdd3;
+          color: #9f1239;
         }
         .shared-budget-save {
           width: 100%;

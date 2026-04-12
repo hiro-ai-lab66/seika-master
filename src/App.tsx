@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
 import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
-import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry } from './types';
+import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry, PopItem } from './types';
 import { getDayOfWeek, getLocalTodayDateString } from './utils/calculations';
 import './App.css';
 import { Dashboard } from './components/Dashboard';
@@ -14,7 +14,7 @@ import { DailySalesView } from './pages/DailySalesView';
 import { SellfloorRecordForm } from './pages/SellfloorRecordForm';
 import { SellfloorRecordList } from './pages/SellfloorRecordList';
 import { SellfloorRecordDetail } from './pages/SellfloorRecordDetail';
-import { PopLibraryList } from './pages/PopibraryList';
+import { PoplibraryList } from './pages/PopibraryList';
 import { PopDetail } from './pages/PopDetail';
 import { PopLibraryForm } from './pages/PopLibraryForm';
 import { MarketInfoList } from './pages/MarketInfoList';
@@ -1106,10 +1106,10 @@ function App() {
                     onBack={() => setPopibraryView('list')}
                   />;
         }
-        return <PopLibraryList 
+        return <PoplibraryList 
                  savedPops={state.popData || []} 
                  sellfloorRecords={state.sellfloorRecords || []}
-                 onSelectPop={(pop) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
+                 onSelectPop={(pop: PopItem) => { setSelectedPop(pop); setPopibraryView('detail'); }} 
                  onAddPop={() => {
                    setEditingPop(null);
                    setPopibraryView('form');

@@ -3,6 +3,17 @@ import { fetchSharedReadResource, postSharedWriteAction } from './sharedDataApi'
 
 const BUDGET_SHEET_NAME = 'shared_budget';
 
+export type SharedBudgetMonthDiagnostics = {
+    monthRowCount: number;
+    uniqueDateCount: number;
+    expectedDayCount: number;
+    isContinuousFromStartToEnd: boolean;
+    missingDates: string[];
+    duplicateDates: string[];
+    firstDate: string | null;
+    lastDate: string | null;
+};
+
 /**
  * Excel シリアル値または各種フォーマットの日付文字列を YYYY-MM-DD に正規化する。
  * シリアル値: 40000〜60000 の純数字 -> Date 変換
@@ -55,6 +66,30 @@ export const upsertSharedBudget = async (
 ): Promise<SharedBudgetEntry> => {
     const normalizedEntry = { ...entry, date: normalizeDate(entry.date) };
     return postSharedWriteAction<SharedBudgetEntry>('budget', 'upsert', { entry: normalizedEntry });
+};
+
+/**
+ * 月間予算を一括で shared_budget シートに書き込む。
+ * 対象月（YYYY-MM）の既存行をすべて削除し、全日分のエントリを再書き込みする。
+ * @param yearMonth "YYYY-MM" 形式
+ * @param entries 全日分のエントリ配列（totalBudget=0 の日も含める）
+ * @param author 作成者名
+ */
+export const upsertSharedBudgetMonth = async (
+    yearMonth: string,
+    entries: Array<{ date: string; salesTarget: number; grossProfitTarget: number }>,
+    author: string
+): Promise<{ ok: boolean; savedCount: number; totalRowCount: number; diagnostics: SharedBudgetMonthDiagnostics }> => {
+    const normalizedEntries = entries.map((e) => ({
+        date: normalizeDate(e.date),
+        salesTarget: e.salesTarget,
+        grossProfitTarget: e.grossProfitTarget,
+        author
+    }));
+    return postSharedWriteAction('budget', 'upsertMonth', {
+        yearMonth,
+        entries: normalizedEntries
+    });
 };
 
 export const getSharedBudgetSheetName = () => resolvedBudgetSheetNameCache || BUDGET_SHEET_NAME;

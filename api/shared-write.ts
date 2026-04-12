@@ -141,6 +141,35 @@ const normalizeBudgetDate = (raw: string): string => {
   return trimmed;
 };
 
+const buildBudgetMonthDiagnostics = (yearMonth: string, rows: string[][]) => {
+  const [yearText, monthText] = yearMonth.split('-');
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const expectedDates = Array.from(
+    { length: daysInMonth },
+    (_, index) => `${yearMonth}-${String(index + 1).padStart(2, '0')}`
+  );
+  const monthDates = rows
+    .map((row) => normalizeBudgetDate(row[1] || ''))
+    .filter((date) => date.startsWith(`${yearMonth}-`))
+    .sort((a, b) => a.localeCompare(b));
+  const uniqueDates = Array.from(new Set(monthDates));
+  const missingDates = expectedDates.filter((date) => !uniqueDates.includes(date));
+  const duplicateDates = uniqueDates.filter((date) => monthDates.filter((savedDate) => savedDate === date).length > 1);
+
+  return {
+    monthRowCount: monthDates.length,
+    uniqueDateCount: uniqueDates.length,
+    expectedDayCount: daysInMonth,
+    isContinuousFromStartToEnd: missingDates.length === 0,
+    missingDates,
+    duplicateDates,
+    firstDate: uniqueDates[0] || null,
+    lastDate: uniqueDates[uniqueDates.length - 1] || null
+  };
+};
+
 const normalizeDailySalesDate = (raw: string): string => {
   const trimmed = (raw || '').trim().replace(/\//g, '-');
   const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -541,6 +570,83 @@ async function handleBudgetUpsert(payload: any) {
   return { id: nextId, ...entry, date: normalizedDate, updatedAt };
 }
 
+/**
+ * 月一括書き込みハンドラー
+ * payload: { yearMonth: "YYYY-MM", entries: [{ date, salesTarget, grossProfitTarget, author }] }
+ * 対象月の既存行をすべて除外し、全日分を一括で再書き込みする。
+ */
+async function handleBudgetUpsertMonth(payload: any) {
+  const { yearMonth, entries } = payload as {
+    yearMonth: string;
+    entries: Array<{ date: string; salesTarget: number; grossProfitTarget: number; author: string }>;
+  };
+
+  if (!yearMonth || !Array.isArray(entries)) {
+    throw new Error('yearMonth と entries は必須です');
+  }
+
+  const sheet = SHEETS.budget;
+  await ensureHeader(sheet.name, sheet.header);
+  const existing = await readParsedRows(sheet.name, sheet.width);
+  const updatedAt = nowIso();
+
+  // 対象月以外の既存行を保持
+  const otherMonthRows = existing.filter((row) => {
+    const normalized = normalizeBudgetDate(row[1] || '');
+    return !normalized.startsWith(yearMonth);
+  });
+
+  // 対象月の最大IDを算出（全体の最大IDを使用して衝突しないようにする）
+  let nextId = existing.reduce((max, row) => Math.max(max, Number(row[0] || '0') || 0), 0) + 1;
+
+  // 対象月の新規行を生成（全日分）
+  const newMonthRows: string[][] = entries.map((entry) => {
+    const row = [
+      String(nextId++),
+      normalizeBudgetDate(entry.date),
+      String(entry.salesTarget),
+      String(entry.grossProfitTarget),
+      entry.author || '',
+      updatedAt
+    ];
+    return row;
+  });
+
+  // 他月 + 新しい対象月行 を結合して書き込み
+  const allRows = [...otherMonthRows, ...newMonthRows].sort((a, b) =>
+    (a[1] || '').localeCompare(b[1] || '')
+  );
+
+  await replaceRows(sheet.name, sheet.width, allRows);
+  const diagnostics = buildBudgetMonthDiagnostics(yearMonth, allRows);
+
+  console.log('[shared-write] handleBudgetUpsertMonth completed', {
+    yearMonth,
+    otherMonthRowCount: otherMonthRows.length,
+    newMonthRowCount: newMonthRows.length,
+    totalRowCount: allRows.length,
+    monthRowCount: diagnostics.monthRowCount,
+    expectedDayCount: diagnostics.expectedDayCount,
+    uniqueDateCount: diagnostics.uniqueDateCount,
+    isContinuousFromStartToEnd: diagnostics.isContinuousFromStartToEnd,
+    firstDate: diagnostics.firstDate,
+    lastDate: diagnostics.lastDate,
+    missingDates: diagnostics.missingDates,
+    duplicateDates: diagnostics.duplicateDates,
+    entrySample: entries.slice(0, 3).map((e) => ({ date: e.date, salesTarget: e.salesTarget }))
+  });
+
+  return {
+    ok: true,
+    yearMonth,
+    savedCount: newMonthRows.length,
+    totalRowCount: allRows.length,
+    diagnostics
+  };
+}
+
+
+
 async function handleDailyNotesUpsert(payload: any) {
   const { entry } = payload;
   const sheet = SHEETS.dailyNotes;
@@ -643,6 +749,7 @@ const handlers: Record<string, (payload: any) => Promise<any>> = {
   'sellfloor:update': (payload) => handleSellfloorUpsert(payload, 'update'),
   'sellfloor:delete': handleSellfloorDelete,
   'budget:upsert': handleBudgetUpsert,
+  'budget:upsertMonth': handleBudgetUpsertMonth,
   'dailyNotes:upsert': handleDailyNotesUpsert,
   'dailySales:upsertForDateDepartment': handleDailySalesUpsert,
   'dailySales:enrichByDate': handleDailySalesEnrich,
