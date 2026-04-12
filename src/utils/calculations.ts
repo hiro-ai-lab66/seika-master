@@ -46,10 +46,15 @@ export const calculateLossRate = (lossAmount: number, actualFinal: number): numb
 
 /**
  * 曜日を取得
+ * NOTE: new Date("YYYY-MM-DD") はUTC解釈になりAndroidでは日付が1日ずれる場合があるため、
+ * 年・月・日を数値で直接渡してローカル時刻でDateを生成する。
  */
 export const getDayOfWeek = (dateString: string): string => {
     const days = ['日', '月', '火', '水', '木', '金', '土'];
-    const date = new Date(dateString);
+    const match = dateString?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return '';
+    // タイムゾーンに依存しないローカル日付生成
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
     return days[date.getDay()];
 };
 

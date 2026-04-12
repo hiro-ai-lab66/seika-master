@@ -4,7 +4,7 @@ import type { PopItem, SellfloorRecord } from '../types';
 import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageFallbackUrl, buildGoogleDriveImageOpenUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 import { ImageZoomModal } from '../components/ImageZoomModal';
 
-interface PopLibraryListProps {
+interface PoplibraryListProps {
   onSelectPop: (pop: PopItem) => void;
   onAddPop: () => void;
   savedPops?: PopItem[];
@@ -17,7 +17,7 @@ interface PopLibraryListProps {
   needsSheetsLogin?: boolean;
 }
 
-export const PopLibraryList: React.FC<PopLibraryListProps> = ({
+export const PoplibraryList: React.FC<PoplibraryListProps> = ({
   onSelectPop,
   onAddPop,
   savedPops = [],
@@ -48,7 +48,7 @@ export const PopLibraryList: React.FC<PopLibraryListProps> = ({
   });
 
   useEffect(() => {
-    console.log('[PopLibraryList] saved pops received', {
+    console.log('[PopibraryList] saved pops received', {
       rowCount: savedPops.length,
       samplePops: savedPops.slice(0, 10).map((pop) => ({
         id: pop.id,
@@ -79,7 +79,7 @@ export const PopLibraryList: React.FC<PopLibraryListProps> = ({
     <div className="page-container" style={{ paddingBottom: '90px', maxWidth: '920px', margin: '0 auto' }}>
       <div className="page-header" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h2 style={{ margin: 0 }}>Pop Library</h2>
+          <h2 style={{ margin: 0 }}>POPibrary</h2>
           <span className="date-badge-outline">{filteredPops.length}件</span>
         </div>
         <button
@@ -197,7 +197,7 @@ const PopCard: React.FC<{ pop: PopItem; onSelectPop: (pop: PopItem) => void; onZ
   const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
   const openUrl = buildGoogleDriveImageOpenUrl(originalUrl);
 
-  console.log('[PopLibraryList] card urls', {
+  console.log('[PopibraryList] card urls', {
     originalUrl,
     fileId,
     displayUrl,
@@ -267,7 +267,7 @@ const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => 
       const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
       const fallbackUrl = buildGoogleDriveImageFallbackUrl(originalUrl);
       const candidates = buildGoogleDriveImageCandidates(originalUrl, 800);
-      console.log('[PopLibraryList] thumbnail src', {
+      console.log('[PopibraryList] thumbnail src', {
         originalUrl,
         normalizedUrl,
         fileId,
@@ -346,7 +346,7 @@ const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => 
           alt={pop.title}
           referrerPolicy="no-referrer"
           onError={(event) => {
-            console.error('[PopLibraryList] thumbnail load failed', {
+            console.error('[PopibraryList] thumbnail load failed', {
               originalUrl: pop.thumbUrl,
               candidates: fallbackCandidates,
               attemptedSrc: thumbnailSrc,
@@ -356,7 +356,7 @@ const PopCardImage: React.FC<{ pop: PopItem; onZoomImage: (imageUrl: string) => 
 
             const nextCandidate = fallbackCandidates[currentCandidateIndex + 1];
             if (nextCandidate && nextCandidate !== thumbnailSrc) {
-              console.log('[PopLibraryList] fallback to next candidate', {
+              console.log('[PopibraryList] fallback to next candidate', {
                 originalUrl: pop.thumbUrl,
                 nextCandidate,
               });

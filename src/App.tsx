@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
 import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
-import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry } from './types';
+import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry } from './types';
 import { getDayOfWeek, getLocalTodayDateString } from './utils/calculations';
 import './App.css';
 import { Dashboard } from './components/Dashboard';
@@ -28,6 +28,8 @@ import { isSheetsConfigured } from './services/googleSheetsInventoryService';
 import { appendSharedPopLibraryItem, deleteSharedPopLibraryItem, fetchSharedPopLibraryItems, getSharedPopLibrarySheetName, updateSharedPopLibraryItem } from './services/googleSheetsPopibraryService';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow } from './services/googleSheetsCheckService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './services/storageService';
+import { fetchSharedReadResource } from './services/sharedDataApi';
+
 
 const STORAGE_KEY = 'seika_master_data_v2';
 const MARKET_REDIRECT_KEY = 'seika_market_redirect';
@@ -529,6 +531,21 @@ function App() {
     setIsInspectionSharedLoading(true);
     setInspectionSharedError(null);
     try {
+      // --- デバッグ: LocalStorage の状態確認（Android問題調査用） ---
+      const lsRaw = localStorage.getItem('seika_master_data_v2') || '';
+      const lsParsed = lsRaw ? (() => { try { return JSON.parse(lsRaw); } catch { return null; } })() : null;
+      const lsBudgets: DailyBudget[] = lsParsed?.dailyBudgets || [];
+      console.log('[App][DEBUG] LocalStorage 状態確認', {
+        reason,
+        lsRawLength: lsRaw.length,
+        lsBudgetsCount: lsBudgets.length,
+        lsBudgetsWithValues: lsBudgets.filter((b: DailyBudget) => b.totalBudget > 0).map((b: DailyBudget) => ({
+          date: b.date,
+          totalBudget: b.totalBudget
+        })),
+        userAgent: navigator.userAgent
+      });
+
       const sharedRows = await fetchSharedCheckRows();
       console.log('[App] inspection history fetch context', {
         reason,
@@ -553,11 +570,58 @@ function App() {
         uniqueDateCount: new Set(nextInspections.map((entry) => entry.date)).size,
         firstDates: nextInspections.slice(0, 5).map((entry) => entry.date)
       });
-      setState((prev) => ({
-        ...prev,
-        inspections: nextInspections,
-        dailyBudgets: mergeDailyBudgetsFromInspections(prev.dailyBudgets || [], nextInspections)
-      }));
+
+      // --- shared_budget シートから全日分の予算を取得してマージ ---
+      // Android等でLocalStorageが揮発してCSV予算が消えた場合のフォールバック
+      let sharedBudgetEntries: SharedBudgetEntry[] = [];
+      try {
+        sharedBudgetEntries = await fetchSharedReadResource<SharedBudgetEntry>('budget');
+        console.log('[App] shared_budget 全件取得完了', {
+          count: sharedBudgetEntries.length,
+          entries: sharedBudgetEntries.map((e) => ({ date: e.date, salesTarget: e.salesTarget }))
+        });
+      } catch (budgetError) {
+        console.warn('[App] shared_budget 取得失敗（フォールバック続行）', budgetError);
+      }
+
+      setState((prev) => {
+        // shared_budget エントリを DailyBudget 形式に変換
+        const sharedBudgetMapped: DailyBudget[] = sharedBudgetEntries
+          .filter((e) => e.date && e.salesTarget > 0)
+          .map((e) => ({
+            date: e.date,
+            dayOfWeek: getDayOfWeek(e.date),
+            totalBudget: e.salesTarget,
+            veggieBudget: 0,
+            fruitBudget: 0
+          }));
+
+        // 既存ローカル予算 → shared_budget → shared_check の優先順位でマージ
+        // まず shared_budget をベースに、ローカルCSV予算で上書き（CSVを最優先）
+        const budgetMap = new Map<string, DailyBudget>();
+        // 1. shared_budget を下敷き
+        sharedBudgetMapped.forEach((b) => budgetMap.set(b.date, b));
+        // 2. ローカル予算（CSV取込/手入力）で上書き（最優先）
+        (prev.dailyBudgets || []).forEach((b) => {
+          if (b.totalBudget > 0) budgetMap.set(b.date, b);
+        });
+
+        const mergedWithSharedBudget = Array.from(budgetMap.values());
+
+        console.log('[App][DEBUG] shared_budget マージ後', {
+          sharedBudgetMappedCount: sharedBudgetMapped.length,
+          localBudgetCount: (prev.dailyBudgets || []).filter(b => b.totalBudget > 0).length,
+          mergedCount: mergedWithSharedBudget.filter(b => b.totalBudget > 0).length,
+          sample: mergedWithSharedBudget.filter(b => b.totalBudget > 0).slice(0, 5).map(b => ({ date: b.date, totalBudget: b.totalBudget }))
+        });
+
+        return {
+          ...prev,
+          inspections: nextInspections,
+          dailyBudgets: mergeDailyBudgetsFromInspections(mergedWithSharedBudget, nextInspections)
+        };
+      });
+
       setInspectionHistoryRowCount(sharedRows.length);
       setInspectionHistoryDateCount(new Set(nextInspections.map((entry) => entry.date)).size);
       setInspectionHistoryLastUpdated(new Date().toISOString());
