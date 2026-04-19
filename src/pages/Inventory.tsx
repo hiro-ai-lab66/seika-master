@@ -222,6 +222,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
     }, [items]);
     const doneCount = useMemo(() => items.filter(isDone).length, [items]);
     const totalCount = useMemo(() => items.filter((item) => item.name.trim() !== '').length, [items]);
+    const isAllDone = totalCount > 0 && doneCount === totalCount;
     const suggestions = suggestionsByDepartment[department];
     const previousInventory = previousInventoryByDepartment[department];
 
@@ -636,6 +637,15 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                     color: #185FA5;
                     font-weight: 500;
                 }
+                .inventory-phase1 .inventory-count {
+                    margin: 0 0 6px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #475569;
+                }
+                .inventory-phase1 .inventory-count.complete {
+                    color: #15803d;
+                }
                 .inventory-phase1 .input-base {
                     width: 100%;
                     height: 28px;
@@ -779,7 +789,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                 <div>
                     <h2 style={{ marginBottom: 4 }}>棚卸し入力</h2>
                     <div style={{ color: '#64748b', fontSize: '0.9rem' }}>
-                        {currentDate} / {department} / {inventoryType === 'mid' ? '15日' : '月末'} / 完了 {doneCount}件 / 全 {totalCount}件 / 金額は円単位
+                        {currentDate} / {department} / {inventoryType === 'mid' ? '15日' : '月末'} / 金額は円単位
                     </div>
                 </div>
             </div>
@@ -857,6 +867,10 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                     )}
                 </div>
             )}
+
+            <div className={`inventory-count ${isAllDone ? 'complete' : ''}`}>
+                完了 {doneCount}件 / 全 {totalCount}件
+            </div>
 
             <div className="table-wrap">
                 <div className="table-header" aria-hidden="true">
