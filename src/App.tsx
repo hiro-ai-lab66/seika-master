@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
 import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
-import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry, PopItem } from './types';
+import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry, SharedSalesEntry, PopItem } from './types';
 import { getDayOfWeek, getLocalTodayDateString } from './utils/calculations';
+import { createHistoryData } from './utils/calculateHistory';
 import './App.css';
 import { Dashboard } from './components/Dashboard';
 import { InspectionForm } from './components/InspectionForm';
@@ -29,6 +30,9 @@ import { appendSharedPopLibraryItem, deleteSharedPopLibraryItem, fetchSharedPopL
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow } from './services/googleSheetsCheckService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from './services/storageService';
 import { fetchSharedReadResource } from './services/sharedDataApi';
+import { getSharedBudgetSheetName } from './services/googleSheetsBudgetService';
+import { getSharedSalesSheetName } from './services/googleSheetsSalesService';
+import type { RawBudgetRow, RawCheckRow, RawSalesRow } from './types/history';
 
 
 const STORAGE_KEY = 'seika_master_data_v2';
@@ -57,14 +61,47 @@ const parseSharedCheckNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const normalizeCheckText = (value: string) => value.replace(/\s+/g, '').trim();
+
+const normalizeHistoryDateKey = (value: string) => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+
+  if (/^\d{5,6}$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    if (serial >= 40000 && serial <= 60000) {
+      const epoch = new Date(1899, 11, 30);
+      const date = new Date(epoch.getTime() + serial * 86400000);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+  }
+
+  const normalized = trimmed.replace(/\//g, '-');
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+
+  return normalized;
+};
+
+const normalizeCheckTime = (value: string) => {
+  const normalized = normalizeCheckText(value).toLowerCase();
+  if (normalized === 'final' || normalized === '最終' || normalized === '最終計') return 'final';
+  if (normalized === '17:00' || normalized === '17時' || normalized === '17時点') return '17:00';
+  if (normalized === '12:00' || normalized === '12時' || normalized === '12時点') return '12:00';
+  return normalized;
+};
+
 const isFinalConfirmationRow = (item: string) => item === '最終値確定';
 
 const hasConfirmedFinalRows = (rows: SharedCheckRow[]) => rows.some((row) => {
-  if (row.time !== 'final') return false;
+  if (normalizeCheckTime(row.time) !== 'final') return false;
   if (isFinalConfirmationRow(row.item)) {
     return row.content === 'true';
   }
-  return row.item === '最終実績' || row.item === '店計売上' || row.item === '構成比';
+  const normalizedItem = normalizeCheckText(row.item);
+  return normalizedItem === '最終実績' || normalizedItem === '最終売上' || normalizedItem === '店計売上' || normalizedItem === '構成比';
 });
 
 const createEmptyInspectionEntry = (date: string, existing?: InspectionEntry): InspectionEntry => ({
@@ -150,91 +187,176 @@ const mergeDailyBudgetsFromInspections = (existingBudgets: DailyBudget[], inspec
   return mergedBudgets;
 };
 
+type NormalizedSharedCheckRow = SharedCheckRow & {
+  normalizedItem: string;
+  normalizedTime: string;
+};
+
+type SharedSalesByDate = {
+  date: string;
+  storeSalesFinal: number | null;
+  customersFinal: number | null;
+};
+
+type SharedBudgetByDate = {
+  date: string;
+  totalBudget: number;
+};
+
+const normalizeSharedCheckRows = (rows: SharedCheckRow[]): NormalizedSharedCheckRow[] =>
+  rows.map((row) => ({
+    ...row,
+    normalizedItem: normalizeCheckText(row.item),
+    normalizedTime: normalizeCheckTime(row.time)
+  }));
+
+const pickSharedCheckContent = (
+  rows: NormalizedSharedCheckRow[],
+  candidates: Array<{ item: string; time?: 'final' | '17:00' | '12:00' }>
+) => {
+  for (const candidate of candidates) {
+    const normalizedItem = normalizeCheckText(candidate.item);
+    const matched = rows.find((row) =>
+      row.normalizedItem === normalizedItem &&
+      (!candidate.time || row.normalizedTime === candidate.time) &&
+      row.content
+    );
+    if (matched?.content) return matched.content;
+  }
+
+  return '';
+};
+
+const buildSharedSalesMapByDate = (salesEntries: SharedSalesEntry[]) => {
+  const salesMap = new Map<string, SharedSalesByDate>();
+
+  salesEntries.forEach((entry) => {
+    const normalizedDate = normalizeHistoryDateKey(entry.date);
+    if (!normalizedDate) return;
+
+    const current = salesMap.get(normalizedDate) || {
+      date: normalizedDate,
+      storeSalesFinal: null,
+      customersFinal: null
+    };
+
+    if (entry.sales > 0) {
+      current.storeSalesFinal = entry.sales;
+    }
+    if (entry.customers !== null && entry.customers !== undefined) {
+      current.customersFinal = entry.customers;
+    }
+
+    salesMap.set(normalizedDate, current);
+  });
+
+  return salesMap;
+};
+
+const buildSharedBudgetMapByDate = (budgetEntries: SharedBudgetEntry[]) => {
+  const budgetMap = new Map<string, SharedBudgetByDate>();
+
+  budgetEntries.forEach((entry) => {
+    const normalizedDate = normalizeHistoryDateKey(entry.date);
+    if (!normalizedDate) return;
+    if (entry.salesTarget <= 0) return;
+
+    budgetMap.set(normalizedDate, {
+      date: normalizedDate,
+      totalBudget: entry.salesTarget
+    });
+  });
+
+  return budgetMap;
+};
+
 const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
   const groupedRows = new Map<string, SharedCheckRow[]>();
 
   rows.forEach((row) => {
-    if (!row.date) return;
-    const dateRows = groupedRows.get(row.date) || [];
-    dateRows.push(row);
-    groupedRows.set(row.date, dateRows);
+    const normalizedDate = normalizeHistoryDateKey(row.date);
+    if (!normalizedDate) return;
+    const dateRows = groupedRows.get(normalizedDate) || [];
+    dateRows.push({
+      ...row,
+      date: normalizedDate
+    });
+    groupedRows.set(normalizedDate, dateRows);
   });
 
   const grouped = new Map<string, InspectionEntry>();
 
   groupedRows.forEach((dateRows, date) => {
     const current = createEmptyInspectionEntry(date);
-    const isFinalConfirmed = hasConfirmedFinalRows(dateRows);
+    const normalizedRows = normalizeSharedCheckRows(dateRows);
+    const isFinalConfirmed = hasConfirmedFinalRows(normalizedRows);
 
     current.isFinalConfirmed = isFinalConfirmed;
-    dateRows.forEach((row) => {
-    switch (row.item) {
-      case '本日の売上予算':
-        current.totalBudget = parseSharedCheckAmount(row.content) || 0;
-        break;
-      case '12時実績':
-        current.actual12 = parseSharedCheckAmount(row.content);
-        break;
-      case '12時消化率':
-        current.rate12 = parseSharedCheckNumber(row.content);
-        break;
-      case '12時客数':
-        current.customers12 = parseSharedCheckNumber(row.content);
-        break;
-      case '17時実績':
-        current.actual17 = parseSharedCheckAmount(row.content);
-        break;
-      case '17時消化率':
-        current.rate17 = parseSharedCheckNumber(row.content);
-        break;
-      case '17時客数':
-        current.customers17 = parseSharedCheckNumber(row.content);
-        break;
-      case '最終実績':
-        current.actualFinal = parseSharedCheckAmount(row.content);
-        break;
-      case '店計売上':
-        current.storeSalesFinal = parseSharedCheckAmount(row.content);
-        break;
-      case '構成比':
-        current.compositionRatio = parseSharedCheckNumber(row.content);
-        break;
-      case '最終客数':
-      case '客数':
-        if (isFinalConfirmed) {
-          current.customersFinal = parseSharedCheckNumber(row.content);
-        }
-        break;
-      case 'ロス額':
-        if (isFinalConfirmed) {
-          current.lossAmount = parseSharedCheckAmount(row.content);
-        }
-        break;
-      case '最終値確定':
-        current.isFinalConfirmed = row.content === 'true';
-        break;
-      case '売り込み品':
-        current.promotionItem = row.content || '';
-        break;
-      case '売上目標':
-        current.promotionTargetSales = parseSharedCheckAmount(row.content) || 0;
-        break;
-      case '12時時点売上':
-        current.promotionActual12Sales = parseSharedCheckAmount(row.content) || 0;
-        break;
-      case '17時時点売上':
-        current.promotionActual17Sales = parseSharedCheckAmount(row.content) || 0;
-        break;
-      case '12時気づき':
-        current.notes12 = row.content || '';
-        break;
-      case '17時気づき':
-        current.notes17 = row.content || '';
-        break;
-      default:
-        break;
+    current.totalBudget = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [
+      { item: '本日の売上予算' },
+      { item: '売上予算' },
+      { item: '予算' }
+    ])) || 0;
+    current.actual12 = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [
+      { item: '12時実績', time: '12:00' },
+      { item: '12時売上', time: '12:00' },
+      { item: '売上', time: '12:00' }
+    ]));
+    current.rate12 = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '12時消化率', time: '12:00' },
+      { item: '12時予算比', time: '12:00' }
+    ]));
+    current.customers12 = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '12時客数', time: '12:00' },
+      { item: '客数', time: '12:00' }
+    ]));
+    current.actual17 = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [
+      { item: '17時実績', time: '17:00' },
+      { item: '17時売上', time: '17:00' },
+      { item: '売上', time: '17:00' }
+    ]));
+    current.rate17 = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '17時消化率', time: '17:00' },
+      { item: '17時予算比', time: '17:00' }
+    ]));
+    current.customers17 = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '17時客数', time: '17:00' },
+      { item: '客数', time: '17:00' }
+    ]));
+    current.actualFinal = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [
+      { item: '最終実績', time: 'final' },
+      { item: '最終売上', time: 'final' },
+      { item: '売上', time: 'final' }
+    ]));
+    current.storeSalesFinal = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [
+      { item: '店計売上', time: 'final' },
+      { item: '店舗売上実績', time: 'final' }
+    ]));
+    current.compositionRatio = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '構成比', time: 'final' }
+    ]));
+    current.customersFinal = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '最終客数', time: 'final' },
+      { item: '客数', time: 'final' }
+    ]));
+    current.lossAmount = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [
+      { item: 'ロス額', time: 'final' }
+    ]));
+    current.budgetRatio = parseSharedCheckNumber(pickSharedCheckContent(normalizedRows, [
+      { item: '予算比', time: 'final' },
+      { item: '消化率', time: 'final' }
+    ]));
+    current.promotionItem = pickSharedCheckContent(normalizedRows, [{ item: '売り込み品' }]) || '';
+    current.promotionTargetSales = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [{ item: '売上目標' }])) || 0;
+    current.promotionActual12Sales = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [{ item: '12時時点売上' }])) || 0;
+    current.promotionActual17Sales = parseSharedCheckAmount(pickSharedCheckContent(normalizedRows, [{ item: '17時時点売上' }])) || 0;
+    current.notes12 = pickSharedCheckContent(normalizedRows, [{ item: '12時気づき' }]) || '';
+    current.notes17 = pickSharedCheckContent(normalizedRows, [{ item: '17時気づき' }]) || '';
+
+    const finalConfirmationValue = pickSharedCheckContent(normalizedRows, [{ item: '最終値確定', time: 'final' }]);
+    if (finalConfirmationValue) {
+      current.isFinalConfirmed = finalConfirmationValue === 'true';
     }
-    });
     grouped.set(date, current);
   });
   const sortedEntries = Array.from(grouped.values()).sort((a, b) => b.date.localeCompare(a.date));
@@ -246,6 +368,68 @@ const buildInspectionEntriesFromSharedRows = (rows: SharedCheckRow[]) => {
     actualFinal: entry.actualFinal
   })));
   return sortedEntries;
+};
+
+const mergeInspectionEntriesWithSharedSales = (inspections: InspectionEntry[], salesEntries: SharedSalesEntry[]) => {
+  const inspectionMap = new Map(inspections.map((entry) => [entry.date, entry]));
+  const salesMap = buildSharedSalesMapByDate(salesEntries);
+
+  salesMap.forEach((salesEntry, normalizedDate) => {
+    const existing = inspectionMap.get(normalizedDate);
+    const base = existing ? { ...existing } : createEmptyInspectionEntry(normalizedDate);
+
+    const hasSharedCheckStoreSales = base.storeSalesFinal !== null && base.storeSalesFinal !== undefined;
+    const sharedSalesMatchesFinalActual =
+      salesEntry.storeSalesFinal !== null &&
+      salesEntry.storeSalesFinal !== undefined &&
+      base.actualFinal !== null &&
+      base.actualFinal !== undefined &&
+      salesEntry.storeSalesFinal === base.actualFinal;
+
+    if (
+      !hasSharedCheckStoreSales &&
+      salesEntry.storeSalesFinal !== null &&
+      salesEntry.storeSalesFinal !== undefined &&
+      !sharedSalesMatchesFinalActual
+    ) {
+      base.storeSalesFinal = salesEntry.storeSalesFinal;
+    }
+    if (salesEntry.customersFinal !== null && salesEntry.customersFinal !== undefined) {
+      base.customersFinal = salesEntry.customersFinal;
+    }
+    if (
+      salesEntry.storeSalesFinal !== null && salesEntry.storeSalesFinal !== undefined ||
+      salesEntry.customersFinal !== null && salesEntry.customersFinal !== undefined
+    ) {
+      base.isFinalConfirmed = true;
+    }
+
+    if (sharedSalesMatchesFinalActual) {
+      console.warn('[App][History] ignored shared_sales store sales because it matched final produce sales', {
+        date: normalizedDate,
+        sharedSales: salesEntry.storeSalesFinal,
+        actualFinal: base.actualFinal
+      });
+    }
+
+    inspectionMap.set(normalizedDate, base);
+  });
+
+  return Array.from(inspectionMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+};
+
+const mergeInspectionEntriesWithSharedBudget = (inspections: InspectionEntry[], budgetEntries: SharedBudgetEntry[]) => {
+  const inspectionMap = new Map(inspections.map((entry) => [entry.date, entry]));
+  const budgetMap = buildSharedBudgetMapByDate(budgetEntries);
+
+  budgetMap.forEach((budgetEntry, normalizedDate) => {
+    const existing = inspectionMap.get(normalizedDate);
+    const base = existing ? { ...existing } : createEmptyInspectionEntry(normalizedDate);
+    base.totalBudget = budgetEntry.totalBudget;
+    inspectionMap.set(normalizedDate, base);
+  });
+
+  return Array.from(inspectionMap.values()).sort((a, b) => b.date.localeCompare(a.date));
 };
 
 const mergeSellfloorRecords = (localRecords: SellfloorRecord[], sharedRecords: SellfloorRecord[]) => {
@@ -531,6 +715,7 @@ function App() {
     setIsInspectionSharedLoading(true);
     setInspectionSharedError(null);
     try {
+      const shouldForceFetch = reason === 'manual';
       // --- デバッグ: LocalStorage の状態確認（Android問題調査用） ---
       const lsRaw = localStorage.getItem('seika_master_data_v2') || '';
       const lsParsed = lsRaw ? (() => { try { return JSON.parse(lsRaw); } catch { return null; } })() : null;
@@ -546,19 +731,100 @@ function App() {
         userAgent: navigator.userAgent
       });
 
-      const sharedRows = await fetchSharedCheckRows();
+      console.log('[App][History] source targets', {
+        reason,
+        force: shouldForceFetch,
+        resources: {
+          check: { resource: 'check', sheetName: getSharedCheckSheetName() },
+          budget: { resource: 'budget', sheetName: getSharedBudgetSheetName() },
+          sales: { resource: 'sales', sheetName: getSharedSalesSheetName() }
+        }
+      });
+
+      const [sharedRowsRaw, sharedBudgetResultRaw, sharedSalesResultRaw] = await Promise.all([
+        fetchSharedCheckRows({ force: shouldForceFetch }),
+        fetchSharedReadResource<SharedBudgetEntry>('budget', { force: shouldForceFetch }).catch((budgetError) => {
+          console.warn('[App] shared_budget 取得失敗（フォールバック続行）', budgetError);
+          return [] as SharedBudgetEntry[];
+        }),
+        fetchSharedReadResource<SharedSalesEntry>('sales', { force: shouldForceFetch }).catch((salesError) => {
+          console.warn('[App] shared_sales 取得失敗（フォールバック続行）', salesError);
+          return [] as SharedSalesEntry[];
+        })
+      ]);
+      const sharedRows = sharedRowsRaw
+        .map((row) => ({ ...row, date: normalizeHistoryDateKey(row.date) }))
+        .filter((row) => row.date);
+      const sharedBudgetResult = sharedBudgetResultRaw
+        .map((entry) => ({ ...entry, date: normalizeHistoryDateKey(entry.date) }));
+      const sharedSalesResult = sharedSalesResultRaw
+        .map((entry) => ({ ...entry, date: normalizeHistoryDateKey(entry.date) }));
       console.log('[App] inspection history fetch context', {
         reason,
         currentDate,
         rowCount: sharedRows.length,
+        rawRowCount: sharedRowsRaw.length,
         sampleRows: sharedRows.slice(0, 5)
       });
       console.log('[App] loaded shared_check rows for history', {
         reason,
         rowCount: sharedRows.length,
+        rawRowCount: sharedRowsRaw.length,
         sheetName: getSharedCheckSheetName()
       });
-      const nextInspections = buildInspectionEntriesFromSharedRows(sharedRows);
+      console.log('[App][History] fetched source counts', {
+        check: {
+          resource: 'check',
+          sheetName: getSharedCheckSheetName(),
+          rawCount: sharedRowsRaw.length,
+          normalizedCount: sharedRows.length,
+          uniqueDates: new Set(sharedRows.map((row) => row.date)).size,
+          sampleDates: sharedRows.slice(0, 5).map((row) => row.date)
+        },
+        budget: {
+          resource: 'budget',
+          sheetName: getSharedBudgetSheetName(),
+          rawCount: sharedBudgetResultRaw.length,
+          normalizedCount: sharedBudgetResult.length,
+          positiveCount: sharedBudgetResult.filter((entry) => entry.salesTarget > 0).length,
+          uniqueDates: new Set(sharedBudgetResult.map((entry) => entry.date).filter(Boolean)).size,
+          sampleDates: sharedBudgetResult.slice(0, 5).map((entry) => entry.date)
+        },
+        sales: {
+          resource: 'sales',
+          sheetName: getSharedSalesSheetName(),
+          rawCount: sharedSalesResultRaw.length,
+          normalizedCount: sharedSalesResult.length,
+          uniqueDates: new Set(sharedSalesResult.map((entry) => entry.date).filter(Boolean)).size,
+          sampleDates: sharedSalesResult.slice(0, 5).map((entry) => entry.date)
+        }
+      });
+      console.log('[App][History] date key format check', {
+        currentDate,
+        checkFormats: Array.from(new Set(sharedRowsRaw.slice(0, 10).map((row) => `${row.date} -> ${normalizeHistoryDateKey(row.date)}`))),
+        budgetFormats: Array.from(new Set(sharedBudgetResultRaw.slice(0, 10).map((entry) => `${entry.date} -> ${normalizeHistoryDateKey(entry.date)}`))),
+        salesFormats: Array.from(new Set(sharedSalesResultRaw.slice(0, 10).map((entry) => `${entry.date} -> ${normalizeHistoryDateKey(entry.date)}`)))
+      });
+      const checkInspections = buildInspectionEntriesFromSharedRows(sharedRows);
+      const inspectionsWithSales = mergeInspectionEntriesWithSharedSales(checkInspections, sharedSalesResult);
+      const nextInspections = mergeInspectionEntriesWithSharedBudget(inspectionsWithSales, sharedBudgetResult);
+      console.log('[App][History] pipeline counts', {
+        fetched: {
+          checkRows: sharedRows.length,
+          budgetRows: sharedBudgetResult.length,
+          salesRows: sharedSalesResult.length
+        },
+        normalized: {
+          checkDates: new Set(sharedRows.map((row) => row.date)).size,
+          budgetDates: new Set(sharedBudgetResult.map((entry) => entry.date).filter(Boolean)).size,
+          salesDates: new Set(sharedSalesResult.map((entry) => entry.date).filter(Boolean)).size
+        },
+        merged: {
+          fromCheck: checkInspections.length,
+          afterSalesMerge: inspectionsWithSales.length,
+          afterBudgetMerge: nextInspections.length
+        }
+      });
       const todaysBudget = nextInspections.find((entry) => entry.date === currentDate)?.totalBudget || 0;
       console.log('[App] extracted budget from shared_check', {
         currentDate,
@@ -573,16 +839,15 @@ function App() {
 
       // --- shared_budget シートから全日分の予算を取得してマージ ---
       // Android等でLocalStorageが揮発してCSV予算が消えた場合のフォールバック
-      let sharedBudgetEntries: SharedBudgetEntry[] = [];
-      try {
-        sharedBudgetEntries = await fetchSharedReadResource<SharedBudgetEntry>('budget');
-        console.log('[App] shared_budget 全件取得完了', {
-          count: sharedBudgetEntries.length,
-          entries: sharedBudgetEntries.map((e) => ({ date: e.date, salesTarget: e.salesTarget }))
-        });
-      } catch (budgetError) {
-        console.warn('[App] shared_budget 取得失敗（フォールバック続行）', budgetError);
-      }
+      const sharedBudgetEntries: SharedBudgetEntry[] = sharedBudgetResult;
+      console.log('[App] shared_budget 全件取得完了', {
+        count: sharedBudgetEntries.length,
+        entries: sharedBudgetEntries.map((e) => ({ date: e.date, salesTarget: e.salesTarget }))
+      });
+      console.log('[App] shared_sales 全件取得完了', {
+        count: sharedSalesResult.length,
+        entries: sharedSalesResult.slice(0, 20).map((e) => ({ date: e.date, sales: e.sales, customers: e.customers }))
+      });
 
       setState((prev) => {
         // shared_budget エントリを DailyBudget 形式に変換
@@ -607,6 +872,7 @@ function App() {
         });
 
         const mergedWithSharedBudget = Array.from(budgetMap.values());
+        const finalBudgets = mergeDailyBudgetsFromInspections(mergedWithSharedBudget, nextInspections);
 
         console.log('[App][DEBUG] shared_budget マージ後', {
           sharedBudgetMappedCount: sharedBudgetMapped.length,
@@ -614,11 +880,18 @@ function App() {
           mergedCount: mergedWithSharedBudget.filter(b => b.totalBudget > 0).length,
           sample: mergedWithSharedBudget.filter(b => b.totalBudget > 0).slice(0, 5).map(b => ({ date: b.date, totalBudget: b.totalBudget }))
         });
+        console.log('[App][History] final merge summary', {
+          inspectionCount: nextInspections.length,
+          budgetCountBeforeInspectionMerge: mergedWithSharedBudget.length,
+          budgetCountAfterInspectionMerge: finalBudgets.length,
+          inspectionDatesPreview: nextInspections.slice(0, 5).map((entry) => entry.date),
+          budgetDatesPreview: finalBudgets.filter((entry) => entry.totalBudget > 0).slice(0, 5).map((entry) => entry.date)
+        });
 
         return {
           ...prev,
           inspections: nextInspections,
-          dailyBudgets: mergeDailyBudgetsFromInspections(mergedWithSharedBudget, nextInspections)
+          dailyBudgets: finalBudgets
         };
       });
 
@@ -2107,29 +2380,39 @@ const HistorySheet = ({
   currentDate: string;
 }) => {
   const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today'>('all');
-  const availableMonths = Array.from(new Set(inspections.map((entry) => entry.date.slice(0, 7)))).sort((a, b) => b.localeCompare(a));
+  const availableMonths = Array.from(new Set(
+    dailyBudgets
+      .map((entry) => normalizeHistoryDateKey(entry.date).slice(0, 7))
+      .filter(Boolean)
+  )).sort((a, b) => b.localeCompare(a));
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const filteredInspections = inspections.filter((entry) => {
+    const normalizedEntryDate = normalizeHistoryDateKey(entry.date);
     if (dateFilterMode === 'today') {
-      return entry.date === currentDate;
+      return normalizedEntryDate === currentDate;
     }
     if (selectedDate) {
-      return entry.date === selectedDate;
+      return normalizedEntryDate === selectedDate;
     }
     if (selectedMonth === 'all') {
-      const today = new Date();
-      const currentMonthPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-      return entry.date.startsWith(currentMonthPrefix);
+      const currentMonthPrefix = currentDate.slice(0, 7);
+      return normalizedEntryDate.startsWith(currentMonthPrefix);
     }
     
-    return entry.date.startsWith(selectedMonth);
-  });
+    return normalizedEntryDate.startsWith(selectedMonth);
+  }).map((entry) => ({
+    ...entry,
+    date: normalizeHistoryDateKey(entry.date)
+  }));
   const sorted = [...filteredInspections].sort((a, b) => a.date.localeCompare(b.date));
-  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
   const fmtK = (n: number | null | undefined) => {
     if (n === null || n === undefined) return '-';
     return Math.round(n / 1000).toLocaleString();
+  };
+  const fmtKOneDecimal = (n: number | null | undefined) => {
+    if (n === null || n === undefined) return '-';
+    return (n / 1000).toFixed(1);
   };
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString('ja-JP') : '未取得';
   const displayScopeLabel = dateFilterMode === 'today'
@@ -2139,7 +2422,6 @@ const HistorySheet = ({
       : selectedMonth !== 'all'
         ? `月指定 (${selectedMonth})`
         : '今月';
-  const displayRowCount = sorted.length;
 
   useEffect(() => {
     if (dateFilterMode === 'today') {
@@ -2151,6 +2433,47 @@ const HistorySheet = ({
     }
   }, [dateFilterMode, selectedDate]);
 
+  const historyChecks: RawCheckRow[] = sorted.map((entry) => ({
+    id: entry.id,
+    date: entry.date,
+    actual12: entry.actual12,
+    actual17: entry.actual17,
+    actualFinal: entry.actualFinal,
+    lossAmount: entry.lossAmount,
+    budgetRatio: entry.budgetRatio
+  }));
+  const historySales: RawSalesRow[] = sorted.map((entry) => ({
+    date: entry.date,
+    storeSalesFinal: entry.storeSalesFinal,
+    customersFinal: entry.customersFinal
+  }));
+  const historyBudgets: RawBudgetRow[] = dailyBudgets
+    .filter((budget) => {
+      const normalizedBudgetDate = normalizeHistoryDateKey(budget.date);
+      if (dateFilterMode === 'today') {
+        return normalizedBudgetDate === currentDate;
+      }
+      if (selectedDate) {
+        return normalizedBudgetDate === selectedDate;
+      }
+      if (selectedMonth === 'all') {
+        return normalizedBudgetDate.startsWith(currentDate.slice(0, 7));
+      }
+
+      return normalizedBudgetDate.startsWith(selectedMonth);
+    })
+    .map((budget) => ({
+      date: budget.date,
+      budget: budget.totalBudget > 0 ? budget.totalBudget : null
+    }));
+  const { rows, totalSales, totalBudget, totalRatio } = createHistoryData({
+    budgets: historyBudgets,
+    checks: historyChecks,
+    sales: historySales,
+    currentDate
+  });
+  const displayRowCount = rows.length;
+
   console.log('[HistorySheet] render summary', {
     totalInspectionCount: inspections.length,
     filteredCount: filteredInspections.length,
@@ -2159,45 +2482,19 @@ const HistorySheet = ({
     displayRowCount,
     currentDate,
     dateFilterMode,
-    topDates: sorted.slice(0, 5).map((entry) => entry.date)
+    selectedMonth,
+    selectedDate,
+    topDates: rows.slice(0, 5).map((entry) => entry.date)
   });
-
-  let cumSales = 0;
-  let cumBudget = 0;
-
-  const rows = sorted.map(i => {
-    const budgetEntry = dailyBudgets.find(b => b.date === i.date);
-    const budget = budgetEntry?.totalBudget || i.totalBudget || 0;
-    const finalSales = i.actualFinal ?? i.actual17 ?? i.actual12 ?? 0;
-    const diff = budget > 0 ? finalSales - budget : null;
-    cumSales += finalSales;
-    cumBudget += budget;
-    const cumRatio = cumBudget > 0 ? Math.round((cumSales / cumBudget) * 1000) / 10 : null;
-    const cumDiff = cumSales - cumBudget;
-    const d = new Date(i.date + 'T00:00:00');
-    const dow = dayNames[d.getDay()];
-    const day = `${parseInt(i.date.split('-')[1])}/${parseInt(i.date.split('-')[2])}`;
-    
-    const customers = i.isFinalConfirmed ? i.customersFinal : (i.customers17 ?? i.customers12);
-    const avgSpend = (customers && finalSales > 0) ? Math.round(finalSales / customers) : null;
-    const ratio = budget > 0 ? Math.round((finalSales / budget) * 1000) / 10 : null;
-    const isToday = i.date === currentDate;
-
-    return {
-      id: i.id, day, dow, budget,
-      actual12: i.actual12, actual17: i.actual17, actualFinal: i.actualFinal,
-      customers: customers ?? null,
-      avgSpend,
-      ratio,
-      lossAmount: i.lossAmount,
-      isToday,
-      diff, cumSales, cumBudget, cumRatio, cumDiff
-    };
+  console.log('[HistorySheet] filter diagnostics', {
+    currentDate,
+    selectedMonth,
+    selectedDate,
+    dateFilterMode,
+    currentMonthPrefix: currentDate.slice(0, 7),
+    totalDates: inspections.slice(0, 10).map((entry) => entry.date),
+    filteredDates: filteredInspections.slice(0, 10).map((entry) => entry.date)
   });
-
-  const totalSales = cumSales;
-  const totalBudget = cumBudget;
-  const totalRatio = totalBudget > 0 ? Math.round((totalSales / totalBudget) * 1000) / 10 : null;
 
   return (
     <div className="page-container">
@@ -2319,11 +2616,12 @@ const HistorySheet = ({
               <th>12時実績</th>
               <th>17時実績</th>
               <th>最終実績</th>
-              <th>客数</th>
+              <th>店舗売上実績</th>
+              <th>最終客数</th>
               <th>客単価</th>
-              <th>消化率</th>
+              <th>予算比</th>
               <th>ロス額</th>
-              <th>差異</th>
+              <th>累計差異</th>
               <th>累計比</th>
             </tr>
           </thead>
@@ -2335,17 +2633,18 @@ const HistorySheet = ({
                 <td className="ht-num">{fmtK(r.actual12)}</td>
                 <td className="ht-num">{fmtK(r.actual17)}</td>
                 <td className="ht-num ht-bold">{fmtK(r.actualFinal)}</td>
+                <td className="ht-num">{fmtK(r.storeSalesFinal)}</td>
                 <td className="ht-num">{r.customers !== null ? `${r.customers.toLocaleString()}名` : '-'}</td>
                 <td className="ht-num">{r.avgSpend !== null ? `¥${r.avgSpend.toLocaleString()}` : '-'}</td>
                 <td className={`ht-num ${r.ratio !== null ? (r.ratio >= 100 ? 'ht-good' : r.ratio >= 95 ? 'ht-notice' : 'ht-warn') : ''}`}>{r.ratio !== null ? `${r.ratio}%` : '-'}</td>
-                <td className="ht-num">{r.lossAmount !== null ? fmtK(r.lossAmount) : '-'}</td>
+                <td className="ht-num">{fmtKOneDecimal(r.lossAmount)}</td>
                 <td className={`ht-num ${r.diff !== null ? (r.diff >= 0 ? 'ht-good' : 'ht-warn') : ''}`}>{r.diff !== null ? fmtK(r.diff) : '-'}</td>
                 <td className={`ht-num ${r.cumRatio !== null ? (r.cumRatio >= 100 ? 'ht-good' : r.cumRatio >= 95 ? 'ht-notice' : 'ht-warn') : ''}`}>{r.cumRatio !== null ? `${r.cumRatio}%` : '-'}</td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={11} style={{ textAlign: 'center', padding: '18px 12px', color: '#64748b' }}>
+                <td colSpan={13} style={{ textAlign: 'center', padding: '18px 12px', color: '#64748b' }}>
                   条件に一致する履歴がありません。
                 </td>
               </tr>

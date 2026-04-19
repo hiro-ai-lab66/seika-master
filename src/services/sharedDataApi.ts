@@ -1,4 +1,4 @@
-export type SharedReadResource = 'check' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift' | 'morningStatus';
+export type SharedReadResource = 'check' | 'sales' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift' | 'morningStatus';
 export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'morningStatus';
 
 type SharedReadResponse<T> = {
@@ -8,8 +8,45 @@ type SharedReadResponse<T> = {
   items: T[];
 };
 
-const API_PATH = '/api/shared-read';
-const WRITE_API_PATH = '/api/shared-write';
+const extractSharedReadItems = <T>(payload: unknown): T[] => {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  const directItems = (payload as { items?: unknown }).items;
+  if (Array.isArray(directItems)) {
+    return directItems as T[];
+  }
+
+  const resultItems = (payload as { result?: { items?: unknown } }).result?.items;
+  if (Array.isArray(resultItems)) {
+    return resultItems as T[];
+  }
+
+  const dataItems = (payload as { data?: { items?: unknown } }).data?.items;
+  if (Array.isArray(dataItems)) {
+    return dataItems as T[];
+  }
+
+  return [];
+};
+
+const normalizeBasePath = (basePath: string) => {
+  if (!basePath || basePath === '/') return '';
+  return basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+};
+
+const buildApiPath = (endpoint: '/api/shared-read' | '/api/shared-write') => {
+  const baseUrl = normalizeBasePath(import.meta.env.BASE_URL || '/');
+  return `${baseUrl}${endpoint}`;
+};
+
+const API_PATH = buildApiPath('/api/shared-read');
+const WRITE_API_PATH = buildApiPath('/api/shared-write');
 const DEFAULT_READ_TTL_MS = 30_000;
 
 type SharedReadOptions = {
@@ -29,6 +66,8 @@ const getInvalidatedReadResources = (resource: SharedWriteResource): SharedReadR
   switch (resource) {
     case 'check':
       return ['check'];
+    case 'sales':
+      return ['sales'];
     case 'notice':
       return ['notice'];
     case 'popibrary':
@@ -133,7 +172,7 @@ export const fetchSharedReadResource = async <T>(
       throw new Error(errorMessage);
     }
 
-    const items = (payload as SharedReadResponse<T>).items || [];
+    const items = extractSharedReadItems<T>(payload);
     if (resource === 'shift') {
       console.log('[sharedDataApi] shift source info', {
         spreadsheetId: (payload as SharedReadResponse<T>)?.spreadsheetId || '',

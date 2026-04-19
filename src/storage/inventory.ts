@@ -1,10 +1,10 @@
 import type { InventoryItem } from '../types';
 
-const STORAGE_KEY = 'seika_inventory_v1';
+export const INVENTORY_STORAGE_KEY = 'seika_inventory_phase1_draft_v1';
 
 export const loadInventory = (): InventoryItem[] => {
     try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(INVENTORY_STORAGE_KEY);
         if (saved) {
             return JSON.parse(saved);
         }
@@ -16,8 +16,16 @@ export const loadInventory = (): InventoryItem[] => {
 
 export const saveInventory = (items: InventoryItem[]): void => {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(items));
     } catch (e) {
         console.error('Failed to save inventory to localStorage:', e);
+    }
+};
+
+export const clearInventoryDraft = (): void => {
+    try {
+        localStorage.removeItem(INVENTORY_STORAGE_KEY);
+    } catch (e) {
+        console.error('Failed to clear inventory draft from localStorage:', e);
     }
 };

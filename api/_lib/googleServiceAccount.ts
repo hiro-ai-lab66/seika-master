@@ -1,4 +1,50 @@
 import { createSign } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const apiEnvPath = path.resolve(moduleDir, '../../.env');
+
+const stripWrappingQuotes = (value: string) => {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith('\'') && value.endsWith('\''))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+};
+
+const loadApiEnv = () => {
+  if (process.env.__SEIKA_API_ENV_LOADED === '1') {
+    return;
+  }
+
+  if (existsSync(apiEnvPath) && typeof process.loadEnvFile === 'function') {
+    process.loadEnvFile(apiEnvPath);
+  } else if (existsSync(apiEnvPath)) {
+    const envSource = readFileSync(apiEnvPath, 'utf8');
+    for (const line of envSource.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const separatorIndex = trimmed.indexOf('=');
+      if (separatorIndex <= 0) continue;
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const rawValue = trimmed.slice(separatorIndex + 1).trim();
+      if (!key || process.env[key] !== undefined) continue;
+      process.env[key] = stripWrappingQuotes(rawValue);
+    }
+  }
+
+  process.env.__SEIKA_API_ENV_LOADED = '1';
+};
+
+loadApiEnv();
+console.log('[googleServiceAccount] env bootstrap', {
+  envPath: apiEnvPath,
+  googleSheetId: process.env.GOOGLE_SHEET_ID ?? null
+});
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -22,11 +68,32 @@ const getRequiredEnv = (name: string) => {
   return value;
 };
 
+const getSpreadsheetId = () => {
+  const explicit = process.env.GOOGLE_SHEET_ID?.trim();
+  if (explicit) {
+    return {
+      spreadsheetId: explicit,
+      source: 'GOOGLE_SHEET_ID'
+    } as const;
+  }
+
+  const fallback = process.env.VITE_SHARED_SHEET_ID?.trim();
+  if (fallback) {
+    return {
+      spreadsheetId: fallback,
+      source: 'VITE_SHARED_SHEET_ID'
+    } as const;
+  }
+
+  throw new Error('GOOGLE_SHEET_ID または VITE_SHARED_SHEET_ID が未設定です');
+};
+
 export const getConfiguredSpreadsheetInfo = () => {
-  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const { spreadsheetId, source } = getSpreadsheetId();
   return {
     spreadsheetId,
-    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    spreadsheetIdSource: source
   };
 };
 
@@ -97,7 +164,7 @@ export const getGoogleAccessToken = async () => {
     privateKeyConfigured: Boolean(process.env.GOOGLE_PRIVATE_KEY),
     privateKeyHasEscapedNewlines: Boolean(process.env.GOOGLE_PRIVATE_KEY?.includes('\\n')),
     privateKeyLineCount: getPrivateKey().split('\n').length,
-    spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    spreadsheetId: getConfiguredSpreadsheetInfo().spreadsheetId,
     scope: GOOGLE_API_SCOPES
   });
 
@@ -222,7 +289,7 @@ const writeValues = async (
 };
 
 export const readGoogleSpreadsheetMetadata = async () => {
-  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const accessToken = await getGoogleAccessToken();
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title`;
 
@@ -245,17 +312,31 @@ export const readGoogleSpreadsheetMetadata = async () => {
   return response.json() as Promise<{ sheets?: Array<{ properties?: { title?: string } }> }>;
 };
 
-export const ensureGoogleSheetExists = async (sheetName: string) => {
+export const listGoogleSheetTitles = async () => {
   const metadata = await readGoogleSpreadsheetMetadata();
-  const existingNames = (metadata.sheets || [])
+  return (metadata.sheets || [])
     .map((sheet) => sheet.properties?.title || '')
     .filter(Boolean);
+};
+
+export const assertGoogleSheetExists = async (sheetName: string) => {
+  const existingNames = await listGoogleSheetTitles();
+
+  if (existingNames.includes(sheetName)) {
+    return existingNames;
+  }
+
+  throw new Error(`シート "${sheetName}" が見つかりません。現在の接続先に存在するシート: ${existingNames.join(', ') || '(なし)'}`);
+};
+
+export const ensureGoogleSheetExists = async (sheetName: string) => {
+  const existingNames = await listGoogleSheetTitles();
 
   if (existingNames.includes(sheetName)) {
     return;
   }
 
-  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const accessToken = await getGoogleAccessToken();
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}:batchUpdate`;
   const response = await fetch(url, {
@@ -295,14 +376,14 @@ export const ensureGoogleSheetExists = async (sheetName: string) => {
 };
 
 export const writeGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
-  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
   await writeValues('PUT', url, values);
 };
 
 export const appendGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
-  const spreadsheetId = getRequiredEnv('GOOGLE_SHEET_ID');
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   await writeValues('POST', url, values);
@@ -312,6 +393,12 @@ export const formatServerError = (error: unknown) => serializeError(error);
 export const getGoogleServiceAccountSummary = () => ({
   serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '',
   serviceAccountProjectId: getServiceAccountProjectId(),
-  spreadsheetId: process.env.GOOGLE_SHEET_ID?.trim() || '',
+  spreadsheetId: (() => {
+    try {
+      return getConfiguredSpreadsheetInfo().spreadsheetId;
+    } catch {
+      return '';
+    }
+  })(),
   driveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() || ''
 });

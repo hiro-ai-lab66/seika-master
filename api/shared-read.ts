@@ -1,5 +1,5 @@
-import { ensureGoogleSheetExists, getConfiguredSpreadsheetInfo, readGoogleSheetValues } from './_lib/googleServiceAccount.js';
-import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME } from '../sharedSheetNames.js';
+import { assertGoogleSheetExists, getConfiguredSpreadsheetInfo, readGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { SHARED_BUDGET_SHEET_NAME, SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME, SHARED_SALES_SHEET_NAME } from '../sharedSheetNames.js';
 
 const normalizeDriveImageUrl = (url: string) => {
   if (!url) return '';
@@ -19,6 +19,221 @@ const buildErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : '共有データの取得に失敗しました';
 
 const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => cell?.toString().trim()));
+
+const normalizeText = (value: string) => (value || '').replace(/\s+/g, '').trim();
+
+const normalizeSheetDate = (value: string) => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+
+  if (/^\d{5,6}$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    if (serial >= 40000 && serial <= 60000) {
+      const epoch = new Date(1899, 11, 30);
+      const date = new Date(epoch.getTime() + serial * 86400000);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+  }
+
+  const normalized = trimmed.replace(/\//g, '-');
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+
+  return normalized;
+};
+
+const parseNumericValue = (value: string) => {
+  const normalized = (value || '').replace(/,/g, '').trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseAmountValue = (value: string, options?: { assumeThousandUnit?: boolean }) => {
+  const parsed = parseNumericValue(value);
+  if (parsed === null) return null;
+  if (options?.assumeThousandUnit && Math.abs(parsed) < 100000) {
+    return Math.round(parsed * 1000);
+  }
+  return parsed;
+};
+
+const getVerticalItemAndContent = (row: string[], itemCandidates: string[]) => {
+  const normalizedCandidates = itemCandidates.map((candidate) => normalizeText(candidate));
+  const directPatterns = [
+    { itemIndex: 2, contentIndex: 3, dateIndex: 0 },
+    { itemIndex: 1, contentIndex: 2, dateIndex: 0 },
+    { itemIndex: 1, contentIndex: 3, dateIndex: 0 }
+  ];
+
+  for (const pattern of directPatterns) {
+    const item = row[pattern.itemIndex] || '';
+    if (!normalizedCandidates.includes(normalizeText(item))) continue;
+    return {
+      date: normalizeSheetDate(row[pattern.dateIndex] || ''),
+      item,
+      content: row[pattern.contentIndex] || '',
+      updatedAt: row[row.length - 1] || '',
+      author: row[Math.max(pattern.contentIndex + 1, 4)] || ''
+    };
+  }
+
+  for (let index = 0; index < row.length; index += 1) {
+    const cell = row[index] || '';
+    if (!normalizedCandidates.includes(normalizeText(cell))) continue;
+    const date = normalizeSheetDate(row[0] || row[1] || '');
+    if (!date) continue;
+    return {
+      date,
+      item: cell,
+      content: row[index + 1] || '',
+      updatedAt: row[row.length - 1] || '',
+      author: row[Math.min(index + 2, row.length - 1)] || ''
+    };
+  }
+
+  return null;
+};
+
+const mapWideSalesRows = (rows: string[][]) =>
+  parseRows(rows)
+    .map((row, index) => ({
+      id: Number(row[0] || '0'),
+      rowNumber: index + 2,
+      date: normalizeSheetDate(row[1] || ''),
+      sales: Number(row[2] || '0') || 0,
+      customers: row[3] ? Number(row[3]) || 0 : null,
+      author: row[4] || '',
+      updatedAt: row[5] || ''
+    }))
+    .sort((a, b) => {
+      const updatedCompare = (b.updatedAt || '').localeCompare(a.updatedAt || '');
+      if (updatedCompare !== 0) return updatedCompare;
+      return b.id - a.id;
+    });
+
+const mapVerticalSalesRows = (rows: string[][]) => {
+  const salesByDate = new Map<string, {
+    date: string;
+    sales: number;
+    customers: number | null;
+    author: string;
+    updatedAt: string;
+  }>();
+
+  parseRows(rows).forEach((row) => {
+    const parsed = getVerticalItemAndContent(row, ['店計売上', '店舗売上', '店舗売上実績', '最終客数', '客数']);
+    if (!parsed?.date) return;
+
+    const entry = salesByDate.get(parsed.date) || {
+      date: parsed.date,
+      sales: 0,
+      customers: null,
+      author: parsed.author || '',
+      updatedAt: parsed.updatedAt || ''
+    };
+    const normalizedItem = normalizeText(parsed.item);
+
+    if (['店計売上', '店舗売上', '店舗売上実績'].includes(normalizedItem)) {
+      const salesValue = parseAmountValue(parsed.content, { assumeThousandUnit: true });
+      if (salesValue !== null) entry.sales = salesValue;
+    }
+    if (['最終客数', '客数'].includes(normalizedItem)) {
+      const customersValue = parseNumericValue(parsed.content);
+      if (customersValue !== null) entry.customers = customersValue;
+    }
+
+    if (parsed.updatedAt && parsed.updatedAt >= entry.updatedAt) {
+      entry.updatedAt = parsed.updatedAt;
+      entry.author = parsed.author || entry.author;
+    }
+
+    salesByDate.set(parsed.date, entry);
+  });
+
+  return Array.from(salesByDate.values())
+    .map((entry, index) => ({
+      id: index + 1,
+      rowNumber: index + 2,
+      ...entry
+    }))
+    .sort((a, b) => {
+      const updatedCompare = (b.updatedAt || '').localeCompare(a.updatedAt || '');
+      if (updatedCompare !== 0) return updatedCompare;
+      return b.date.localeCompare(a.date);
+    });
+};
+
+const mapWideBudgetRows = (rows: string[][]) =>
+  parseRows(rows).map((row, index) => ({
+    id: Number(row[0] || '0'),
+    rowNumber: index + 2,
+    date: normalizeSheetDate(row[1] || ''),
+    salesTarget: Number(row[2] || '0') || 0,
+    grossProfitTarget: Number(row[3] || '0') || 0,
+    author: row[4] || '',
+    updatedAt: row[5] || ''
+  }));
+
+const mapVerticalBudgetRows = (rows: string[][]) => {
+  const budgetByDate = new Map<string, {
+    date: string;
+    salesTarget: number;
+    grossProfitTarget: number;
+    author: string;
+    updatedAt: string;
+  }>();
+
+  parseRows(rows).forEach((row) => {
+    const parsed = getVerticalItemAndContent(row, ['売上目標', '売上予算', '本日の売上予算', '予算', '粗利目標']);
+    if (!parsed?.date) return;
+
+    const entry = budgetByDate.get(parsed.date) || {
+      date: parsed.date,
+      salesTarget: 0,
+      grossProfitTarget: 0,
+      author: parsed.author || '',
+      updatedAt: parsed.updatedAt || ''
+    };
+    const normalizedItem = normalizeText(parsed.item);
+    const numericValue = parseAmountValue(parsed.content, { assumeThousandUnit: true });
+    if (numericValue === null) return;
+
+    if (['売上目標', '売上予算', '本日の売上予算', '予算'].includes(normalizedItem)) {
+      entry.salesTarget = numericValue;
+    }
+    if (normalizedItem === '粗利目標') {
+      entry.grossProfitTarget = numericValue;
+    }
+
+    if (parsed.updatedAt && parsed.updatedAt >= entry.updatedAt) {
+      entry.updatedAt = parsed.updatedAt;
+      entry.author = parsed.author || entry.author;
+    }
+
+    budgetByDate.set(parsed.date, entry);
+  });
+
+  return Array.from(budgetByDate.values())
+    .map((entry, index) => ({
+      id: index + 1,
+      rowNumber: index + 2,
+      ...entry
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+};
+
+const isWideSalesRow = (row: string[]) =>
+  /^\d+$/.test((row[0] || '').trim()) &&
+  Boolean(normalizeSheetDate(row[1] || '')) &&
+  parseNumericValue(row[2] || '') !== null;
+
+const isWideBudgetRow = (row: string[]) =>
+  /^\d+$/.test((row[0] || '').trim()) &&
+  Boolean(normalizeSheetDate(row[1] || '')) &&
+  parseNumericValue(row[2] || '') !== null;
 
 const ADVERTISEMENT_COLUMN_INDEX = {
   id: 0,
@@ -46,6 +261,16 @@ const resourceConfigs = {
         owner: row[5] || '',
         time: row[6] || ''
       }))
+  },
+  sales: {
+    sheetName: SHARED_SALES_SHEET_NAME,
+    range: 'A2:F',
+    mapRows: (rows: string[][]) => {
+      const filteredRows = parseRows(rows);
+      return filteredRows.every(isWideSalesRow)
+        ? mapWideSalesRows(filteredRows)
+        : mapVerticalSalesRows(filteredRows);
+    }
   },
   notice: {
     sheetName: SHARED_NOTICE_SHEET_NAME,
@@ -173,18 +398,14 @@ const resourceConfigs = {
         .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
   },
   budget: {
-    sheetName: 'shared_budget',
+    sheetName: SHARED_BUDGET_SHEET_NAME,
     range: 'A2:F',
-    mapRows: (rows: string[][]) =>
-      parseRows(rows).map((row, index) => ({
-        id: Number(row[0] || '0'),
-        rowNumber: index + 2,
-        date: row[1] || '',
-        salesTarget: Number(row[2] || '0') || 0,
-        grossProfitTarget: Number(row[3] || '0') || 0,
-        author: row[4] || '',
-        updatedAt: row[5] || ''
-      }))
+    mapRows: (rows: string[][]) => {
+      const filteredRows = parseRows(rows);
+      return filteredRows.every(isWideBudgetRow)
+        ? mapWideBudgetRows(filteredRows)
+        : mapVerticalBudgetRows(filteredRows);
+    }
   },
   dailyNotes: {
     sheetName: 'shared_daily_notes',
@@ -276,14 +497,29 @@ export default async function handler(req: any, res: any) {
 
   try {
     const spreadsheetInfo = getConfiguredSpreadsheetInfo();
-    await ensureGoogleSheetExists(config.sheetName);
+    const availableSheetNames = await assertGoogleSheetExists(config.sheetName);
     console.log('[shared-read] target sheet:', {
+      resource,
       sheetName: config.sheetName,
       spreadsheetId: spreadsheetInfo.spreadsheetId,
-      spreadsheetUrl: spreadsheetInfo.spreadsheetUrl
+      spreadsheetUrl: spreadsheetInfo.spreadsheetUrl,
+      spreadsheetIdSource: spreadsheetInfo.spreadsheetIdSource,
+      availableSheetNames
     });
     const rows = await readGoogleSheetValues(config.sheetName, config.range);
+    console.log('[shared-read] raw rows fetched', {
+      resource,
+      sheetName: config.sheetName,
+      rawRowCount: rows.length,
+      rawPreview: rows.slice(0, 3)
+    });
     const items = config.mapRows(rows);
+    console.log('[shared-read] parsed rows mapped', {
+      resource,
+      sheetName: config.sheetName,
+      parsedItemCount: items.length,
+      parsedPreview: (items as Array<Record<string, unknown>>).slice(0, 3)
+    });
     if (resource === 'advertisement') {
       console.log('[shared-read] advertisement response payload', {
         count: items.length,
@@ -303,7 +539,15 @@ export default async function handler(req: any, res: any) {
     res.status(200).json({
       spreadsheetId: spreadsheetInfo.spreadsheetId,
       spreadsheetUrl: spreadsheetInfo.spreadsheetUrl,
+      spreadsheetIdSource: spreadsheetInfo.spreadsheetIdSource,
       sheetName: config.sheetName,
+      availableSheetNames,
+      diagnostics: {
+        resource,
+        rawRowCount: rows.length,
+        parsedItemCount: items.length,
+        uniqueDateCount: uniqueDates.length
+      },
       items
     });
   } catch (error) {

@@ -1,11 +1,15 @@
-import type { InventoryItem, InventoryType, Product } from '../types';
+import type { InventoryDepartment, InventoryItem, InventoryType, Product } from '../types';
 import { loadGisScript } from './gmailService';
+import { SHARED_DAILY_SALES_SHEET_NAME } from '../../sharedSheetNames';
 
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SPREADSHEET_ID = (import.meta as any).env?.VITE_SHARED_SHEET_ID?.trim() || '';
 const REQUESTED_SHEET_NAME =
     (import.meta as any).env?.VITE_INVENTORY_SHEET_TAB?.trim() ||
     'inventory';
+const INVENTORY_PHASE1_SHEET_NAME =
+    (import.meta as any).env?.VITE_INVENTORY_PHASE1_SHEET_TAB?.trim() ||
+    'inventory_phase1';
 const STORE_NAME = (import.meta as any).env?.VITE_STORE_NAME?.trim() || '古沢店';
 const SHEETS_SCOPE = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -15,6 +19,19 @@ const TOKEN_STORAGE_KEY = 'seika_sheets_access_token';
 const TOKEN_EXPIRY_STORAGE_KEY = 'seika_sheets_access_token_expiry';
 const MIGRATION_KEY = 'seika_inventory_sheet_migrated_v1';
 const HEADER_ROW = ['日付', '店舗', '品目', '規格', '数量', '単価', '売価'];
+const INVENTORY_PHASE1_HEADER_ROW = [
+    'date',
+    'department',
+    'inventoryType',
+    'itemId',
+    'name',
+    'qty',
+    'unit',
+    'cost',
+    'price',
+    'status',
+    'updatedAt'
+];
 
 type TokenResponse = {
     access_token?: string;
@@ -29,9 +46,31 @@ export type SharedInventoryRow = {
     store: string;
     item: string;
     spec: string;
-    quantity: number;
-    unitPrice: number;
-    sellingPrice: number;
+    quantity: number | null;
+    unitPrice: number | null;
+    sellingPrice: number | null;
+};
+
+type InventoryPhase1SaveParams = {
+    date: string;
+    department: InventoryDepartment;
+    inventoryType: InventoryType;
+};
+
+export type InventoryPhase1Row = InventoryPhase1SaveParams & {
+    itemId: string;
+    name: string;
+    qty: number | null;
+    unit: string;
+    cost: number | null;
+    price: number | null;
+    status: InventoryItem['status'];
+    updatedAt: string;
+};
+
+export type DailySalesSuggestion = {
+    name: string;
+    salesQty: number;
 };
 
 let tokenClient: any = null;
@@ -53,6 +92,8 @@ const getValuesUrl = (range: string) =>
     `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeRange(range)}`;
 const getSpreadsheetMetadataUrl = () =>
     `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties.title`;
+const getSpreadsheetBatchUpdateUrl = () =>
+    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`;
 
 const buildSheetsError = async (response: Response, fallbackMessage: string) => {
     const detail = await response.text().catch(() => '');
@@ -100,10 +141,27 @@ const parseSpec = (spec: string): { inventoryType: InventoryType; unit?: string 
 const buildRowKey = (row: Pick<SharedInventoryRow, 'date' | 'store' | 'item' | 'spec'>) =>
     `${row.date}__${row.store}__${row.item}__${row.spec}`;
 
-const toNumber = (value: string | undefined) => {
-    const numeric = Number((value || '').replace(/,/g, '').trim());
+const toNullableNumber = (value: string | undefined) => {
+    const normalized = (value || '').replace(/,/g, '').trim();
+    if (normalized === '') return null;
+    const numeric = Number(normalized);
     return Number.isFinite(numeric) ? numeric : 0;
 };
+
+const numberToSheetValue = (value: number | null) => value === null ? '' : String(value);
+
+const getPhase1ItemStatus = (item: InventoryItem): InventoryItem['status'] => {
+    if (item.status) return item.status;
+    const hasQty = item.qty !== null;
+    const hasCost = item.cost !== null;
+    const hasPrice = item.price !== null;
+    if (!hasQty && !hasCost && !hasPrice) return 'unentered';
+    if (hasQty && hasCost && hasPrice) return 'done';
+    return 'partial';
+};
+
+const isSavablePhase1Item = (item: InventoryItem) =>
+    item.qty !== null || item.cost !== null || item.price !== null;
 
 const clearStoredAccessToken = () => {
     accessToken = null;
@@ -221,6 +279,31 @@ const fetchSpreadsheetSheetTitles = async (): Promise<string[]> => {
         .filter((title: string | undefined) => Boolean(title));
 };
 
+const createSheet = async (title: string) => {
+    logSheetsRequest('create sheet', title, title);
+    const response = await authorizedSheetsFetch(getSpreadsheetBatchUpdateUrl(), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            requests: [
+                {
+                    addSheet: {
+                        properties: {
+                            title
+                        }
+                    }
+                }
+            ]
+        })
+    });
+
+    if (!response.ok) {
+        throw await buildSheetsError(response, `Google Sheets のシート作成に失敗しました [${title}]`);
+    }
+};
+
 const resolveInventorySheetName = async (): Promise<string> => {
     if (resolvedSheetNameCache) {
         return resolvedSheetNameCache;
@@ -235,8 +318,7 @@ const resolveInventorySheetName = async (): Promise<string> => {
         const candidates = Array.from(new Set([
             REQUESTED_SHEET_NAME,
             'inventory',
-            'inv',
-            'shared_inventory'
+            'inv'
         ].filter(Boolean)));
 
         const exactMatch = candidates.find((candidate) => availableSheetNames.includes(candidate));
@@ -343,6 +425,121 @@ const ensureHeaderRow = async () => {
     }
 };
 
+const ensurePhase1SheetAndHeader = async () => {
+    const availableSheetNames = await fetchSpreadsheetSheetTitles();
+    if (!availableSheetNames.includes(INVENTORY_PHASE1_SHEET_NAME)) {
+        await createSheet(INVENTORY_PHASE1_SHEET_NAME);
+    }
+
+    const headerRange = buildSheetRange(INVENTORY_PHASE1_SHEET_NAME, 'A1:K1');
+    const result = await fetchSheetValues(headerRange);
+    const header = result.values?.[0] || [];
+    const hasValidHeader = INVENTORY_PHASE1_HEADER_ROW.every((label, index) => header[index] === label);
+    if (!hasValidHeader) {
+        await updateSheetValues(headerRange, [INVENTORY_PHASE1_HEADER_ROW]);
+    }
+};
+
+const phase1RowMatches = (row: InventoryPhase1Row, params: InventoryPhase1SaveParams) =>
+    row.date === params.date &&
+    row.department === params.department &&
+    row.inventoryType === params.inventoryType;
+
+const parsePhase1Row = (row: string[], index: number): InventoryPhase1Row => ({
+    date: row[0] || '',
+    department: (row[1] || '野菜') as InventoryDepartment,
+    inventoryType: (row[2] || 'monthend') as InventoryType,
+    itemId: row[3] || `row:${index + 2}`,
+    name: row[4] || '',
+    qty: toNullableNumber(row[5]),
+    unit: row[6] || '個',
+    cost: toNullableNumber(row[7]),
+    price: toNullableNumber(row[8]),
+    status: (row[9] || 'partial') as InventoryItem['status'],
+    updatedAt: row[10] || ''
+});
+
+const phase1RowToValues = (row: InventoryPhase1Row): string[] => [
+    row.date,
+    row.department,
+    row.inventoryType,
+    row.itemId,
+    row.name,
+    numberToSheetValue(row.qty),
+    row.unit,
+    numberToSheetValue(row.cost),
+    numberToSheetValue(row.price),
+    row.status || '',
+    row.updatedAt
+];
+
+const itemToPhase1Row = (item: InventoryItem, params: InventoryPhase1SaveParams): InventoryPhase1Row => ({
+    date: params.date,
+    department: params.department,
+    inventoryType: params.inventoryType,
+    itemId: item.id,
+    name: item.name.trim(),
+    qty: item.qty,
+    unit: item.unit || '個',
+    cost: item.cost,
+    price: item.price,
+    status: getPhase1ItemStatus(item),
+    updatedAt: item.updatedAt || new Date().toISOString()
+});
+
+const listPhase1Rows = async (): Promise<InventoryPhase1Row[]> => {
+    const result = await fetchSheetValues(buildSheetRange(INVENTORY_PHASE1_SHEET_NAME, 'A2:K'));
+    const rows = result.values || [];
+    return rows
+        .filter((row: string[]) => row.some((cell) => cell?.toString().trim()))
+        .map(parsePhase1Row);
+};
+
+const normalizeSheetDate = (value: string) => {
+    const trimmed = (value || '').trim().replace(/\//g, '-');
+    const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (match) {
+        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+    }
+    return trimmed;
+};
+
+export const fetchSharedDailySalesByDate = async (
+    date: string,
+    department: InventoryDepartment
+): Promise<DailySalesSuggestion[]> => {
+    const normalizedDate = normalizeSheetDate(date);
+    const result = await fetchSheetValues(buildSheetRange(SHARED_DAILY_SALES_SHEET_NAME, 'A2:G'));
+    const rows = result.values || [];
+    return rows
+        .filter((row: string[]) =>
+            normalizeSheetDate(row[0] || '') === normalizedDate &&
+            (row[6] === '果物' ? '果物' : '野菜') === department &&
+            String(row[2] || '').trim() !== ''
+        )
+        .map((row: string[]) => ({
+            name: String(row[2] || '').trim(),
+            salesQty: Number(String(row[3] || '0').replace(/,/g, '').trim()) || 0
+        }));
+};
+
+export const fetchPreviousInventory = async (department: InventoryDepartment): Promise<InventoryPhase1Row[]> => {
+    const rows = await listPhase1Rows();
+    return rows
+        .filter((row) => row.department === department && row.name.trim() !== '')
+        .sort((a, b) => b.date.localeCompare(a.date));
+};
+
+export const resolveUnit = (
+    name: string,
+    previousInventory: Pick<InventoryPhase1Row, 'name' | 'unit' | 'date'>[]
+): string => {
+    const match = previousInventory
+        .filter((row) => row.name === name && row.unit)
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+    return match?.unit ?? '';
+};
+
 const listRows = async (): Promise<SharedInventoryRow[]> => {
     await ensureHeaderRow();
     const sheetName = await resolveInventorySheetName();
@@ -357,37 +554,38 @@ const listRows = async (): Promise<SharedInventoryRow[]> => {
             store: row[1] || STORE_NAME,
             item: row[2] || '',
             spec: row[3] || '月末',
-            quantity: toNumber(row[4]),
-            unitPrice: toNumber(row[5]),
-            sellingPrice: toNumber(row[6])
+            quantity: toNullableNumber(row[4]),
+            unitPrice: toNullableNumber(row[5]),
+            sellingPrice: toNullableNumber(row[6])
         }));
 };
 
-const buildInventoryRowValues = (item: InventoryItem): string[] => {
-    const row: SharedInventoryRow = {
-        date: item.date,
-        store: STORE_NAME,
-        item: item.name,
-        spec: buildSpec(item),
-        quantity: item.qty,
-        unitPrice: item.cost || 0,
-        sellingPrice: item.price || 0
-    };
-
-    return [
-        row.date,
-        row.store,
-        row.item,
-        row.spec,
-        String(row.quantity),
-        String(row.unitPrice),
-        String(row.sellingPrice)
-    ];
-};
+// 旧 shared_inventory 互換保存用の行変換。フェーズ1では使用しない。
+// const buildInventoryRowValues = (item: InventoryItem): string[] => {
+//     const row: SharedInventoryRow = {
+//         date: item.date || '',
+//         store: STORE_NAME,
+//         item: item.name,
+//         spec: buildSpec(item),
+//         quantity: item.qty,
+//         unitPrice: item.cost,
+//         sellingPrice: item.price
+//     };
+//
+//     return [
+//         row.date,
+//         row.store,
+//         row.item,
+//         row.spec,
+//         row.quantity === null ? '' : String(row.quantity),
+//         row.unitPrice === null ? '' : String(row.unitPrice),
+//         row.sellingPrice === null ? '' : String(row.sellingPrice)
+//     ];
+// };
 
 export const isSheetsConfigured = (): boolean => Boolean(CLIENT_ID && SPREADSHEET_ID);
 export const getSharedStoreName = (): string => STORE_NAME;
-export const getSharedInventorySheetName = (): string => resolvedSheetNameCache || REQUESTED_SHEET_NAME;
+export const getSharedInventorySheetName = (): string => INVENTORY_PHASE1_SHEET_NAME;
 export const hasSheetsAccessToken = (): boolean => hasValidAccessToken();
 
 export const initSheetsTokenClient = (onTokenResponse: (resp: TokenResponse) => void) => {
@@ -496,22 +694,22 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
 
     for (const item of items) {
         const row: SharedInventoryRow = {
-            date: item.date,
+            date: item.date || '',
             store: STORE_NAME,
             item: item.name,
             spec: buildSpec(item),
             quantity: item.qty,
-            unitPrice: item.cost || 0,
-            sellingPrice: item.price || 0
+            unitPrice: item.cost,
+            sellingPrice: item.price
         };
         const values = [[
             row.date,
             row.store,
             row.item,
             row.spec,
-            String(row.quantity),
-            String(row.unitPrice),
-            String(row.sellingPrice)
+            row.quantity === null ? '' : String(row.quantity),
+            row.unitPrice === null ? '' : String(row.unitPrice),
+            row.sellingPrice === null ? '' : String(row.sellingPrice)
         ]];
         const rowKey = buildRowKey(row);
         const existingRowNumber = existingMap.get(rowKey);
@@ -524,17 +722,49 @@ export const upsertSharedInventoryItems = async (items: InventoryItem[]) => {
     }
 };
 
-export const replaceSharedInventoryItems = async (items: InventoryItem[]) => {
-    await ensureHeaderRow();
-    const existingRows = await listRows();
-    const sheetName = await resolveInventorySheetName();
-    const rowCount = Math.max(existingRows.length, items.length, 1);
-    console.log('[InventorySheets] replace rows', { existingRows: existingRows.length, items: items.length, rowCount });
+// フェーズ1では旧 shared_inventory 互換保存を使わない。
+// 旧実装は参照用に残し、呼び出し先は replaceSharedInventoryPhase1Items に統一する。
+// export const replaceSharedInventoryItems = async (items: InventoryItem[]) => {
+//     await ensureHeaderRow();
+//     const existingRows = await listRows();
+//     const sheetName = await resolveInventorySheetName();
+//     const rowCount = Math.max(existingRows.length, items.length, 1);
+//     console.log('[InventorySheets] replace rows', { existingRows: existingRows.length, items: items.length, rowCount });
+//     const values = Array.from({ length: rowCount }, (_, index) => {
+//         const item = items[index];
+//         return item ? buildInventoryRowValues(item) : ['', '', '', '', '', '', ''];
+//     });
+//     await updateSheetValues(buildSheetRange(sheetName, `A2:G${rowCount + 1}`), values);
+// };
+
+export const replaceSharedInventoryPhase1Items = async (
+    items: InventoryItem[],
+    params: InventoryPhase1SaveParams
+) => {
+    await ensurePhase1SheetAndHeader();
+
+    const existingRows = await listPhase1Rows();
+    const keptRows = existingRows.filter((row) => !phase1RowMatches(row, params));
+    const replacementRows = items
+        .filter(isSavablePhase1Item)
+        .map((item) => itemToPhase1Row(item, params));
+    const nextRows = [...keptRows, ...replacementRows];
+    const rowCount = Math.max(existingRows.length, nextRows.length, 1);
     const values = Array.from({ length: rowCount }, (_, index) => {
-        const item = items[index];
-        return item ? buildInventoryRowValues(item) : ['', '', '', '', '', '', ''];
+        const row = nextRows[index];
+        return row ? phase1RowToValues(row) : ['', '', '', '', '', '', '', '', '', '', ''];
     });
-    await updateSheetValues(buildSheetRange(sheetName, `A2:G${rowCount + 1}`), values);
+
+    console.log('[InventorySheets] replace phase1 rows', {
+        sheetName: INVENTORY_PHASE1_SHEET_NAME,
+        params,
+        existingRows: existingRows.length,
+        replacementRows: replacementRows.length,
+        nextRows: nextRows.length,
+        rowCount
+    });
+
+    await updateSheetValues(buildSheetRange(INVENTORY_PHASE1_SHEET_NAME, `A2:K${rowCount + 1}`), values);
 };
 
 export const shouldMigrateLocalInventory = (): boolean => {
@@ -549,10 +779,9 @@ export const markLocalInventoryMigrated = () => {
 
 export const migrateLocalInventoryOnce = async (items: InventoryItem[]) => {
     if (!shouldMigrateLocalInventory() || items.length === 0) return false;
-    console.log('[InventorySheets] migrating local inventory to sheet:', items.length);
-    await upsertSharedInventoryItems(items);
+    console.log('[InventorySheets] legacy inventory migration skipped for phase1:', items.length);
     markLocalInventoryMigrated();
-    return true;
+    return false;
 };
 
 export const convertSharedRowsToInventoryItems = (
@@ -562,7 +791,7 @@ export const convertSharedRowsToInventoryItems = (
     return rows.map(row => {
         const product = productsByName.get(row.item);
         const parsedSpec = parseSpec(row.spec);
-        const normalizedUnit = parsedSpec.unit || product?.unit;
+        const normalizedUnit = parsedSpec.unit || product?.unit || '個';
         const category = product?.category;
         const area = product?.area;
         const type = product?.type;

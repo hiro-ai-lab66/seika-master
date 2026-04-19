@@ -75,3 +75,7 @@ export default defineConfig([
 - **商品マスター**: 商品を登録・検索・管理可能なマスター機能（ローカル保存対応）
 
 - **棚卸し機能**: 日付ごとの在庫入力と一覧管理機能（商品マスター連携・ローカル保存対応）
+
+## Google Service Account
+
+GoogleサービスアカウントJSONの `client_email` を `GOOGLE_SERVICE_ACCOUNT_EMAIL` に、`private_key` を `GOOGLE_PRIVATE_KEY` に設定します。

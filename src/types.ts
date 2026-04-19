@@ -245,21 +245,27 @@ export type InventoryValueType = 'cost' | 'price';
 
 export type InventoryItem = {
     id: string;
-    date: string;
-    inventoryType?: InventoryType; // 過去のデータ保護のためオプショナル
-    productId: string;
     name: string;
-    qty: number;
-    unit?: string;
+    qty: number | null;
+    unit: string;
+    cost: number | null;
+    price: number | null;
+    source?: 'manual';
+    status?: 'unentered' | 'partial' | 'done';
+    date?: string;
+    inventoryType?: InventoryType;
+    productId?: string;
     category?: string;
     department?: InventoryDepartment;
     area?: 'backyard' | 'fridge';
-    cost?: number;
-    price?: number;
     valueType?: InventoryValueType;
     manual?: boolean;
-    updatedAt: string;
+    updatedAt?: string;
+    isSuggested?: boolean;
+    salesQty?: number;
 };
+
+export type InventoryRow = InventoryItem;
 
 export interface DailyNotesEntry {
     date: string;

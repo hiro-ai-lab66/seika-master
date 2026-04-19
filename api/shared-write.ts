@@ -20,7 +20,7 @@ const normalizeDriveImageUrl = (url: string) => {
 const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => cell?.toString().trim()));
 const buildErrorMessage = (error: unknown) => error instanceof Error ? error.message : '共有データの保存に失敗しました';
 
-const ensureHeader = async (sheetName: string, header: string[]) => {
+const ensureHeader = async (sheetName: string, header: readonly string[]) => {
   await ensureGoogleSheetExists(sheetName);
   const widthLetter = String.fromCharCode('A'.charCodeAt(0) + header.length - 1);
   const existing = await readGoogleSheetValues(sheetName, `A1:${widthLetter}1`);

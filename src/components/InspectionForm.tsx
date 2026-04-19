@@ -33,8 +33,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .replace(/[ー－―]/g, '-')
         .trim();
     const sanitizeThousandInput = (value: string) => normalizeNumericText(value).replace(/[^\d]/g, '');
-    const normalizeLossThousandInput = (value: string) => value.replace(/,/g, '').trim();
-    const isValidLossThousandInput = (value: string) => value === '' || /^\d+(\.\d{0,2})?$/.test(value);
+    const normalizeLossThousandInput = (value: string) => normalizeNumericText(value).replace(/,/g, '');
+    const isValidLossThousandInput = (value: string) => value === '' || /^\d+(\.\d{0,1})?$/.test(value);
     const normalizeRateInput = (value: string) => normalizeNumericText(value).replace(/,/g, '');
     const isValidRateInput = (value: string) => value === '' || /^(\d+(\.\d{0,2})?|\.\d{0,2})$/.test(value);
     const parseThousandInput = (value: string) => {
@@ -62,8 +62,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
     const formatLossThousandInput = (value: number | null | undefined) => {
         if (value === null || value === undefined || value === 0) return '';
-        const thousandValue = value / 1000;
-        return Number.isInteger(thousandValue) ? String(thousandValue) : thousandValue.toFixed(2).replace(/\.?0+$/, '');
+        return (value / 1000).toFixed(1);
     };
     const formatThousandDisplay = (value: number | null | undefined, signed = false) => {
         if (value === null || value === undefined) return '-';
@@ -2143,9 +2142,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 <label>ロス額（千円）</label>
                                 <input
                                     ref={registerFieldRef('lossAmount')}
-                                    type="text"
+                                    type="number"
                                     inputMode="decimal"
-                                    pattern="[0-9]+([.][0-9]+)?"
+                                    step="0.1"
+                                    min="0"
                                     value={lossAmountInput}
                                     onChange={e => handleLossAmountChange(e.target.value)}
                                     onKeyDown={e => handleEnterToNext(e, 'lossAmount')}

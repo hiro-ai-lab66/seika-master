@@ -106,7 +106,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const uploadPayload = await uploadResponse.json() as { id?: string };
+    const uploadPayload = await uploadResponse.json() as { id?: string; parents?: string[] };
     const fileId = uploadPayload.id;
     if (!fileId) {
       res.status(500).json({ error: 'Google Drive のファイルIDを取得できませんでした' });
