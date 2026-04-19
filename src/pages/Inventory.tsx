@@ -184,7 +184,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
     const [activeItemId, setActiveItemId] = useState<string | null>(null);
     const [suggestionsByDepartment, setSuggestionsByDepartment] = useState<SuggestionsByDepartment>(createEmptySuggestionsByDepartment);
     const [previousInventoryByDepartment, setPreviousInventoryByDepartment] = useState<PreviousInventoryByDepartment>(createEmptyPreviousInventoryByDepartment);
-    const [activeSuggestion, setActiveSuggestion] = useState<{ itemId: string; index: number } | null>(null);
+    const [activeSuggestion, setActiveSuggestion] = useState<{ itemId: string; index: number; showAbove: boolean } | null>(null);
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const suggestionLoadKeys = useRef<Set<string>>(new Set());
 
@@ -298,8 +298,17 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
         }));
     };
 
-    const updateItemName = (id: string, value: string) => {
-        setActiveSuggestion(value.trim() ? { itemId: id, index: 0 } : null);
+    const getSuggestionPlacement = (input?: HTMLInputElement | null) => {
+        const rect = input?.getBoundingClientRect();
+        return Boolean(rect && rect.bottom > window.innerHeight * 0.6);
+    };
+
+    const triggerSuggest = (itemId: string, value: string, input?: HTMLInputElement | null) => {
+        setActiveSuggestion(value.trim() ? { itemId, index: 0, showAbove: getSuggestionPlacement(input) } : null);
+    };
+
+    const updateItemName = (id: string, value: string, input?: HTMLInputElement | null) => {
+        triggerSuggest(id, value, input);
         setItemsByDepartment((current) => ({
             ...current,
             [department]: current[department].map((item) => {
@@ -400,7 +409,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
             event.preventDefault();
             setActiveSuggestion((current) => ({
                 itemId,
-                index: Math.min((current?.index ?? 0) + 1, matches.length - 1)
+                index: Math.min((current?.index ?? 0) + 1, matches.length - 1),
+                showAbove: current?.showAbove ?? false
             }));
             return;
         }
@@ -409,7 +419,8 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
             event.preventDefault();
             setActiveSuggestion((current) => ({
                 itemId,
-                index: Math.max((current?.index ?? 0) - 1, 0)
+                index: Math.max((current?.index ?? 0) - 1, 0),
+                showAbove: current?.showAbove ?? false
             }));
             return;
         }
@@ -638,20 +649,24 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                 .inventory-phase1 .name-cell {
                     position: relative;
                     min-width: 0;
-                    z-index: 2;
+                    z-index: 20;
                 }
                 .inventory-phase1 .suggestion-menu {
                     position: absolute;
                     top: calc(100% + 3px);
                     left: 0;
                     right: 0;
-                    z-index: 30;
+                    z-index: 9999;
                     max-height: 260px;
                     overflow-y: auto;
                     border: 1px solid #cbd5e1;
                     border-radius: 6px;
                     background: #ffffff;
                     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+                }
+                .inventory-phase1 .suggestion-menu.above {
+                    top: auto;
+                    bottom: calc(100% + 3px);
                 }
                 .inventory-phase1 .suggestion-option {
                     width: 100%;
@@ -858,6 +873,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                         const matchedSuggestions = getMatchedSuggestions(item.name, suggestions);
                         const isSuggestionOpen = activeSuggestion?.itemId === item.id && matchedSuggestions.length > 0;
                         const selectedSuggestionIndex = Math.min(activeSuggestion?.index ?? 0, matchedSuggestions.length - 1);
+                        const showSuggestionAbove = isSuggestionOpen && activeSuggestion?.showAbove;
 
                         return (
                             <div
@@ -870,12 +886,23 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                                         ref={registerInput(item.id, 'name')}
                                         className="input-base"
                                         value={item.name}
-                                        onChange={(event) => updateItemName(item.id, event.target.value)}
+                                        onChange={(event) => updateItemName(item.id, event.target.value, event.currentTarget)}
+                                        onCompositionEnd={(event) => {
+                                            const value = event.currentTarget.value;
+                                            updateItemName(item.id, value, event.currentTarget);
+                                            if (value.trim().length >= 1) {
+                                                triggerSuggest(item.id, value, event.currentTarget);
+                                            }
+                                        }}
                                         onKeyDown={(event) => handleNameKeyDown(event, item.id, matchedSuggestions)}
-                                        onFocus={() => {
+                                        onFocus={(event) => {
                                             setActiveItemId(item.id);
                                             if (item.name.trim()) {
-                                                setActiveSuggestion({ itemId: item.id, index: 0 });
+                                                setActiveSuggestion({
+                                                    itemId: item.id,
+                                                    index: 0,
+                                                    showAbove: getSuggestionPlacement(event.currentTarget)
+                                                });
                                             }
                                         }}
                                         onBlur={() => closeSuggestionAfterBlur(item.id)}
@@ -884,12 +911,16 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                                         autoComplete="off"
                                     />
                                     {isSuggestionOpen && (
-                                        <div className="suggestion-menu">
+                                        <div className={`suggestion-menu ${showSuggestionAbove ? 'above' : ''}`}>
                                             {matchedSuggestions.map((suggestion, suggestionIndex) => (
                                                 <button
                                                     key={`${suggestion.name}-${suggestionIndex}`}
                                                     type="button"
                                                     className={`suggestion-option ${suggestionIndex === selectedSuggestionIndex ? 'active' : ''}`}
+                                                    onPointerDown={(event) => {
+                                                        event.preventDefault();
+                                                        applySuggestion(item.id, suggestion);
+                                                    }}
                                                     onMouseDown={(event) => {
                                                         event.preventDefault();
                                                         applySuggestion(item.id, suggestion);
