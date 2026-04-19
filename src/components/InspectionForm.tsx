@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import type { InspectionEntry, DailyBudget, BestItem, Product, DailySalesRecord } from '../types';
 import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculations';
-import { Upload, Cloud, RefreshCw } from 'lucide-react';
+import { Upload, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
@@ -184,8 +184,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
     const [sharedError, setSharedError] = useState<string | null>(null);
     const [csvWarning, setCsvWarning] = useState<string | null>(null);
-    const [isSharedSaving, setIsSharedSaving] = useState(false);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [csvUiResetKey, setCsvUiResetKey] = useState(0);
     const bestItemSourceRef = useRef<{
         date: string;
@@ -260,6 +260,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [lossAmountInput, setLossAmountInput] = useState(formatLossThousandInput(form.lossAmount));
     const formRef = useRef<HTMLFormElement>(null);
     const isSubmittingRef = useRef(false);
+    const saveStatusTimerRef = useRef<number | null>(null);
     const veggieCsvInputRef = useRef<HTMLInputElement>(null);
     const fruitCsvInputRef = useRef<HTMLInputElement>(null);
     const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement | null>>({});
@@ -336,6 +337,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (isSubmittingRef.current) return;
         formRef.current?.requestSubmit();
     };
+
+    useEffect(() => {
+        return () => {
+            if (saveStatusTimerRef.current !== null) {
+                window.clearTimeout(saveStatusTimerRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         const updateCalculations = () => {
@@ -1152,6 +1161,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             alert("消化率は0〜100%の範囲で入力してください");
             return;
         }
+        if (saveStatusTimerRef.current !== null) {
+            window.clearTimeout(saveStatusTimerRef.current);
+            saveStatusTimerRef.current = null;
+        }
+        setSaveStatus('saving');
 
         // 解析データを報告データに紐づけて保存
         const normalizedStoreSalesFinal = parseThousandInput(storeSalesInput);
@@ -1285,9 +1299,21 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         }
 
         onSave(entryToSave);
+        if (completionMessage.includes('失敗')) {
+            setSaveStatus('idle');
+        } else {
+            setSaveStatus('saved');
+            saveStatusTimerRef.current = window.setTimeout(() => {
+                setSaveStatus('idle');
+                saveStatusTimerRef.current = null;
+            }, 2000);
+        }
         alert(completionMessage);
         } finally {
             isSubmittingRef.current = false;
+            if (saveStatusTimerRef.current === null) {
+                setSaveStatus('idle');
+            }
         }
     };
 
@@ -1653,22 +1679,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         setLossAmountInput(formatLossThousandInput(form.lossAmount));
     }, [currentDate, existingEntry?.id]);
 
-    const handleSaveToSharedCheck = async () => {
-        setSharedError(null);
-        setSharedStatus(null);
-        setIsSharedSaving(true);
-        try {
-            const rows = buildSharedCheckRows();
-            await upsertSharedCheckRowsForDateTimes(currentDate, [period], rows);
-            setSharedStatus(`Googleシートへ共有保存しました（シート: ${getSharedCheckSheetName()}）`);
-        } catch (error) {
-            console.error('[CheckSheets] save failed', error);
-            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '保存に失敗しました'}`);
-        } finally {
-            setIsSharedSaving(false);
-        }
-    };
-
     const handleReloadSharedCheck = async () => {
         setSharedError(null);
         setSharedStatus(null);
@@ -1726,10 +1736,6 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     <button type="button" className="button-secondary" onClick={handleReloadSharedCheck} disabled={isSharedReloading}>
                         <RefreshCw size={16} className={isSharedReloading ? 'spin' : ''} />
                         共有データ再取得
-                    </button>
-                    <button type="button" className="button-primary" onClick={handleSaveToSharedCheck} disabled={isSharedSaving}>
-                        <Cloud size={16} />
-                        Googleシートに保存
                     </button>
                 </div>
             </div>
@@ -1883,7 +1889,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label>12時時点売上（千円）</label>
+                                    <label>12時売上（千円）</label>
                                     <input
                                         ref={registerFieldRef('promotionActual12Sales')}
                                         type="text"
@@ -1896,30 +1902,23 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     />
                                 </div>
                             </div>
-                            {form.promotionTargetSales ? (
-                                <div className="promo-rate-display">
-                                    消化率: <span className="rate-value">{form.promotionActual12Rate}%</span>
+                            <div className="promo-results-row">
+                                {form.promotionTargetSales ? (
+                                    <div className="promo-rate-display">
+                                        消化率: <span className="rate-value">{form.promotionActual12Rate}%</span>
+                                    </div>
+                                ) : null}
+                                <div className="promo-result-inline">
+                                    <span className="label">予測最終</span>
+                                    <span className="value">{form.forecast12 !== null && form.forecast12 !== undefined ? formatThousandDisplay(form.forecast12) : "---"}</span>
                                 </div>
-                            ) : null}
-                        </div>
-
-                        <div className="live-results-grid">
-                            <div className="result-item">
-                                <div className="label">予測最終</div>
-                                <div className="value">{form.forecast12 !== null && form.forecast12 !== undefined ? formatThousandDisplay(form.forecast12) : "---"}</div>
-                            </div>
-                            <div className="result-item">
-                                <div className="label">予算差額</div>
-                                <div className={`value ${form.diff12 !== null && form.diff12 !== undefined ? (Number(form.diff12) < 0 ? 'negative' : 'positive') : ''}`}>
+                                <div className="promo-result-inline">
+                                    <span className="label">予算差額</span>
+                                    <span className={`value ${form.diff12 !== null && form.diff12 !== undefined ? (Number(form.diff12) < 0 ? 'negative' : 'positive') : ''}`}>
                                     {form.diff12 !== null && form.diff12 !== undefined ? formatThousandDisplay(form.diff12, true) : "---"}
+                                    </span>
                                 </div>
                             </div>
-                            {form.diff12 !== null && form.diff12 !== undefined && Number(form.diff12) < 0 && (
-                                <div className="result-item shortfall">
-                                    <div className="label">不足額</div>
-                                    <div className="value">{formatThousandDisplay(Math.abs(form.diff12))}</div>
-                                </div>
-                            )}
                         </div>
 
                         <div className="notes-group">
@@ -2007,7 +2006,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label>17時時点売上（千円）</label>
+                                    <label>17時売上（千円）</label>
                                     <input
                                         ref={registerFieldRef('promotionActual17Sales')}
                                         type="text"
@@ -2020,30 +2019,23 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     />
                                 </div>
                             </div>
-                            {form.promotionTargetSales ? (
-                                <div className="promo-rate-display">
-                                    消化率: <span className="rate-value">{form.promotionActual17Rate}%</span>
+                            <div className="promo-results-row">
+                                {form.promotionTargetSales ? (
+                                    <div className="promo-rate-display">
+                                        消化率: <span className="rate-value">{form.promotionActual17Rate}%</span>
+                                    </div>
+                                ) : null}
+                                <div className="promo-result-inline">
+                                    <span className="label">予測最終</span>
+                                    <span className="value">{form.forecast17 !== null && form.forecast17 !== undefined ? formatThousandDisplay(form.forecast17) : "---"}</span>
                                 </div>
-                            ) : null}
-                        </div>
-
-                        <div className="live-results-grid">
-                            <div className="result-item">
-                                <div className="label">予測最終</div>
-                                <div className="value">{form.forecast17 !== null && form.forecast17 !== undefined ? formatThousandDisplay(form.forecast17) : "---"}</div>
-                            </div>
-                            <div className="result-item">
-                                <div className="label">予算差額</div>
-                                <div className={`value ${form.diff17 !== null && form.diff17 !== undefined ? (Number(form.diff17) < 0 ? 'negative' : 'positive') : ''}`}>
+                                <div className="promo-result-inline">
+                                    <span className="label">予算差額</span>
+                                    <span className={`value ${form.diff17 !== null && form.diff17 !== undefined ? (Number(form.diff17) < 0 ? 'negative' : 'positive') : ''}`}>
                                     {form.diff17 !== null && form.diff17 !== undefined ? formatThousandDisplay(form.diff17, true) : "---"}
+                                    </span>
                                 </div>
                             </div>
-                            {form.diff17 !== null && form.diff17 !== undefined && Number(form.diff17) < 0 && (
-                                <div className="result-item shortfall">
-                                    <div className="label">不足額</div>
-                                    <div className="value">{formatThousandDisplay(Math.abs(form.diff17))}</div>
-                                </div>
-                            )}
                         </div>
 
                         <div className="notes-group">
@@ -2298,10 +2290,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 <button
                     ref={registerFieldRef('submit')}
                     type="submit"
-                    className="button-primary"
+                    className={`button-primary inspection-save-button ${saveStatus === 'saved' ? 'saved' : ''}`}
+                    disabled={saveStatus === 'saving'}
                     onKeyDown={handleSubmitButtonKeyDown}
                 >
-                    報告を保存する
+                    {saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '✓ 保存しました' : '報告を保存する'}
                 </button>
             </form>
 
@@ -2336,13 +2329,43 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
           border-radius: var(--radius-md);
           font-weight: 700;
           font-size: 0.9rem;
-          display: inline-block;
-          align-self: flex-start;
+          display: inline-flex;
+          align-items: center;
+          min-height: 36px;
         }
         .rate-value {
           font-size: 1.1rem;
           color: var(--accent);
         }
+        .promo-results-row {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+          padding-top: 2px;
+        }
+        .promo-result-inline {
+          min-height: 36px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 10px;
+          border: 1px solid #e2e8f0;
+          border-radius: var(--radius-md);
+          background: #f8fafc;
+          font-weight: 700;
+        }
+        .promo-result-inline .label {
+          font-size: 0.75rem;
+          color: var(--text-muted);
+        }
+        .promo-result-inline .value {
+          font-size: 1rem;
+          color: var(--primary);
+          font-weight: 800;
+        }
+        .promo-result-inline .value.negative { color: var(--error); }
+        .promo-result-inline .value.positive { color: var(--success); }
         .tab-switcher {
           display: flex;
           background: #e2e8f0;
@@ -2408,6 +2431,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         .result-item .value.negative { color: var(--error); }
         .result-item .value.positive { color: var(--success); }
         .shortfall .value { color: var(--error); }
+        .inspection-save-button {
+          background: #166534;
+          color: #ffffff;
+          transition: background 0.2s, opacity 0.2s;
+        }
+        .inspection-save-button.saved {
+          background: #22c55e;
+        }
+        .inspection-save-button:disabled {
+          opacity: 0.85;
+          cursor: wait;
+        }
         .read-only-display {
           background: #f1f5f9;
           padding: var(--space-md);

@@ -27,7 +27,7 @@ const ensureHeader = async (sheetName: string, header: readonly string[]) => {
   const current = existing[0] || [];
   const isValid = header.every((label, index) => current[index] === label);
   if (!isValid) {
-    await writeGoogleSheetValues(sheetName, `A1:${widthLetter}1`, [header]);
+    await writeGoogleSheetValues(sheetName, `A1:${widthLetter}1`, [[...header]]);
   }
 };
 
