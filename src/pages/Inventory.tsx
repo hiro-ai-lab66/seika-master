@@ -186,6 +186,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
     const [previousInventoryByDepartment, setPreviousInventoryByDepartment] = useState<PreviousInventoryByDepartment>(createEmptyPreviousInventoryByDepartment);
     const [activeSuggestion, setActiveSuggestion] = useState<{ itemId: string; index: number; showAbove: boolean } | null>(null);
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    const suggestionPointerStartY = useRef<number | null>(null);
     const suggestionLoadKeys = useRef<Set<string>>(new Set());
 
     const items = itemsByDepartment[department];
@@ -657,8 +658,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                     left: 0;
                     right: 0;
                     z-index: 9999;
-                    max-height: 260px;
-                    overflow-y: auto;
+                    max-height: 200px;
+                    overflow-y: scroll;
+                    -webkit-overflow-scrolling: touch;
                     border: 1px solid #cbd5e1;
                     border-radius: 6px;
                     background: #ffffff;
@@ -670,12 +672,12 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                 }
                 .inventory-phase1 .suggestion-option {
                     width: 100%;
-                    min-height: 34px;
+                    min-height: 44px;
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
                     gap: 6px;
-                    padding: 7px 9px;
+                    padding: 8px 12px;
                     border: none;
                     border-bottom: 0.5px solid #e2e8f0;
                     background: #ffffff;
@@ -918,12 +920,19 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
                                                     type="button"
                                                     className={`suggestion-option ${suggestionIndex === selectedSuggestionIndex ? 'active' : ''}`}
                                                     onPointerDown={(event) => {
-                                                        event.preventDefault();
-                                                        applySuggestion(item.id, suggestion);
+                                                        suggestionPointerStartY.current = event.clientY;
                                                     }}
-                                                    onMouseDown={(event) => {
+                                                    onPointerUp={(event) => {
+                                                        const startY = suggestionPointerStartY.current;
+                                                        suggestionPointerStartY.current = null;
+                                                        if (startY === null) return;
+                                                        if (Math.abs(event.clientY - startY) < 8) {
+                                                            event.preventDefault();
+                                                            applySuggestion(item.id, suggestion);
+                                                        }
+                                                    }}
+                                                    onClick={(event) => {
                                                         event.preventDefault();
-                                                        applySuggestion(item.id, suggestion);
                                                     }}
                                                 >
                                                     <span>{suggestion.name}</span>
