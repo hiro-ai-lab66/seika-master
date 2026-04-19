@@ -504,6 +504,14 @@ const normalizeSheetDate = (value: string) => {
     return trimmed;
 };
 
+const normalizeInventoryDepartment = (value: string | undefined): InventoryDepartment => {
+    const normalized = (value || '').normalize('NFKC').trim();
+    if (normalized.includes('果物') || normalized.includes('フルーツ') || normalized.toLowerCase().includes('fruit')) {
+        return '果物';
+    }
+    return '野菜';
+};
+
 export const fetchSharedDailySalesByDate = async (
     date: string,
     department: InventoryDepartment
@@ -511,16 +519,24 @@ export const fetchSharedDailySalesByDate = async (
     const normalizedDate = normalizeSheetDate(date);
     const result = await fetchSheetValues(buildSheetRange(SHARED_DAILY_SALES_SHEET_NAME, 'A2:G'));
     const rows = result.values || [];
-    return rows
+    const filteredRows = rows
         .filter((row: string[]) =>
             normalizeSheetDate(row[0] || '') === normalizedDate &&
-            (row[6] === '果物' ? '果物' : '野菜') === department &&
+            normalizeInventoryDepartment(row[6]) === department &&
             String(row[2] || '').trim() !== ''
-        )
-        .map((row: string[]) => ({
-            name: String(row[2] || '').trim(),
-            salesQty: Number(String(row[3] || '0').replace(/,/g, '').trim()) || 0
-        }));
+        );
+
+    console.log('[InventorySheets] daily_sales suggestions', {
+        date: normalizedDate,
+        department,
+        rawDepartments: Array.from(new Set(rows.map((row: string[]) => String(row[6] || '')))),
+        matchedRows: filteredRows.length
+    });
+
+    return filteredRows.map((row: string[]) => ({
+        name: String(row[2] || '').trim(),
+        salesQty: Number(String(row[3] || '0').replace(/,/g, '').trim()) || 0
+    }));
 };
 
 export const fetchPreviousInventory = async (department: InventoryDepartment): Promise<InventoryPhase1Row[]> => {

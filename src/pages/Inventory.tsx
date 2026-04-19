@@ -235,11 +235,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentDate }) => {
 
     useEffect(() => {
         const loadKey = `${currentDate}:${department}`;
-        const currentItems = itemsByDepartment[department];
         if (!isSheetsConfigured()) return;
         if (!isSheetsAuthenticated && !hasSheetsAccessToken()) return;
         if (suggestionLoadKeys.current.has(loadKey)) return;
-        if (currentItems.some(hasMeaningfulInput)) return;
 
         let cancelled = false;
         void (async () => {
