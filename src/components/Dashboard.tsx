@@ -1750,6 +1750,73 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
   return (
     <div style={shellStyle}>
+      <style>{`
+        .dashboard-hero-section {
+          background: #1B5E3B;
+          padding: 28px 20px 24px;
+          text-align: center;
+          border-radius: 0;
+          margin: -4px -4px 0;
+        }
+        .dashboard-hero-logo {
+          font-size: 11px;
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.6);
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin: 0 0 8px;
+        }
+        .dashboard-hero-title {
+          font-size: 26px;
+          font-weight: 500;
+          color: #ffffff;
+          letter-spacing: 0.04em;
+          margin: 0 0 8px;
+          line-height: 1.25;
+        }
+        .dashboard-hero-description {
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.75);
+          line-height: 1.6;
+          margin: 0 0 16px;
+        }
+        .dashboard-hero-tags {
+          display: flex;
+          justify-content: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .dashboard-hero-tag {
+          font-size: 11px;
+          padding: 4px 12px;
+          border-radius: 99px;
+          background: rgba(255, 255, 255, 0.15);
+          color: rgba(255, 255, 255, 0.9);
+          border: 0.5px solid rgba(255, 255, 255, 0.25);
+        }
+        @media (min-width: 720px) {
+          .dashboard-hero-section {
+            border-radius: 18px;
+            margin: 0;
+          }
+        }
+      `}</style>
+
+      <section className="dashboard-hero-section" aria-label="青果マスター">
+        <p className="dashboard-hero-logo">Seika Master</p>
+        <h1 className="dashboard-hero-title">青果マスター</h1>
+        <p className="dashboard-hero-description">
+          青果部門の現場業務を<br />
+          スマホ一台でまとめて管理
+        </p>
+        <div className="dashboard-hero-tags">
+          <span className="dashboard-hero-tag">棚卸し</span>
+          <span className="dashboard-hero-tag">点検入力</span>
+          <span className="dashboard-hero-tag">売上管理</span>
+          <span className="dashboard-hero-tag">POP作成</span>
+        </div>
+      </section>
+
       <header style={{ ...cardStyle, padding: '20px', background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)', borderColor: '#bfdbfe' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
