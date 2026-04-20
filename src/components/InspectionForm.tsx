@@ -10,6 +10,7 @@ import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesS
 import { fetchSharedBudgetForDate } from '../services/googleSheetsBudgetService';
 import { deriveOverallWeather, deriveTempBandFromHigh, fetchDailyWeatherSnapshot } from '../services/weatherService';
 import { formatDisplayCodeWithCheckDigit } from '../utils/codeDisplay';
+import { normalizeCode } from '../utils/normalizeCode';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -172,13 +173,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             code: normalizedCode
         };
     };
-    const normalizeCode = (code?: string) => {
+    const normalizeBestDisplayCode = (code?: string) => {
         const digits = String(code).replace(/\D/g, '');
         return String(parseInt(digits, 10));
-    };
-    const isLikelyJanCode = (rawCode?: string) => {
-        const digits = (rawCode || '').replace(/\D/g, '');
-        return digits.length >= 12;
     };
     const [period, setPeriod] = useState<'12:00' | '17:00' | 'final'>('12:00');
     const [sharedStatus, setSharedStatus] = useState<string | null>(null);
@@ -1094,7 +1091,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             .filter(it => it.code && (it.salesQty ?? 0) > 0)
                             .map(it => ({
                                 date: currentDate,
-                                code: isLikelyJanCode(it.code) ? (normalizeJanCode(it.code).code || it.code!) : it.code!,
+                                code: normalizeCode(it.code),
                                 name: it.name,
                                 salesQty: it.salesQty ?? 0,
                                 salesYoY: it.salesYoY,
@@ -1113,6 +1110,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 name: item.name
                             }))
                         });
+                        console.log('[CodeCheck] daily_sales codes:', salesRecords.slice(0, 3).map((record) => ({
+                            name: record.name,
+                            code: record.code
+                        })));
 
                         void (async () => {
                             try {
@@ -1202,7 +1203,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         if (allAnalysisItems.length > 0) {
             const existingProducts = loadProducts();
             const productMap = new Map<string, Product>();
-            existingProducts.forEach(p => { if (p.code) productMap.set(p.code, p); });
+            existingProducts.forEach(p => {
+                const key = normalizeCode(p.code);
+                if (key) productMap.set(key, p);
+            });
             let addedCount = 0;
             let updatedCount = 0;
             let excludedCount = 0;
@@ -1213,7 +1217,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     excludedCount++;
                     return;
                 }
-                const existing = productMap.get(item.code);
+                const normalizedItemCode = normalizeCode(item.code);
+                const existing = productMap.get(normalizedItemCode);
                 if (existing) {
                     // 累計更新
                     existing.totalSalesQty = (existing.totalSalesQty || 0) + (item.salesQty || 0);
@@ -1231,12 +1236,27 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         totalSalesQty: item.salesQty || 0,
                         totalSalesAmt: item.salesAmt || 0,
                     };
-                    productMap.set(item.code, newProduct);
+                    productMap.set(normalizedItemCode, newProduct);
                     addedCount++;
                 }
             });
 
-            saveProducts(Array.from(productMap.values()));
+            const savedProducts = Array.from(productMap.values());
+            saveProducts(savedProducts);
+            const productCodeSamples = allAnalysisItems
+                .filter((item) => item.code && (item.salesQty ?? 0) > 0)
+                .slice(0, 3)
+                .map((item) => {
+                    const normalizedItemCode = normalizeCode(item.code);
+                    const product = savedProducts.find((savedProduct) => normalizeCode(savedProduct.code) === normalizedItemCode);
+                    return {
+                        name: item.name,
+                        dailySalesCode: normalizedItemCode,
+                        productCode: normalizeCode(product?.code),
+                        match: normalizedItemCode === normalizeCode(product?.code)
+                    };
+                });
+            console.log('[CodeCheck] product codes:', productCodeSamples);
 
             setMasterResult({
                 type: '合計',
@@ -1429,7 +1449,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     </thead>
                     <tbody>
                         {items.map((item, idx) => {
-                            const rawCode = normalizeCode(item.code);
+                            const rawCode = normalizeBestDisplayCode(item.code);
                             const yoy = item.salesYoY;
                             const rowClass = yoy !== undefined && yoy < 80 ? 'row-warn' : yoy !== undefined && yoy >= 110 ? 'row-good' : '';
                             const displayCode = formatDisplayCodeWithCheckDigit(rawCode);

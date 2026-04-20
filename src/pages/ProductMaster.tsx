@@ -5,6 +5,7 @@ import type { Product } from '../types';
 import { loadProducts, saveProducts } from '../storage/products';
 import { fetchSharedProducts, replaceProductsInGoogleSheets, syncProductToGoogleSheets } from '../services/googleSheetsProductService';
 import { ensureSharedSheetsSession, isSheetsConfigured } from '../services/googleSheetsInventoryService';
+import { normalizeCode } from '../utils/normalizeCode';
 
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
@@ -254,19 +255,13 @@ export const ProductMaster: React.FC = () => {
                                 return;
                             }
 
-                            // 既存のnormalizeと同じ処理を品番・品名に適用して重複判定を強固にする
-                            const normalizeEq = (str: string) => str.replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
-                                .replace(/[\u30a1-\u30f6]/g, s => String.fromCharCode(s.charCodeAt(0) - 0x60))
-                                .toLowerCase()
-                                .trim();
-
                             // 上書きルール: 同じ品番が存在する場合は上書き。新規品番は追加。
                             // ※品番がない場合は名前で重複チェック（既存仕様に準拠）
                             const existingIndex = newProducts.findIndex(p => {
                                 if (p.code && pCode) {
-                                    return normalizeEq(p.code) === normalizeEq(pCode);
+                                    return normalizeCode(p.code) === normalizeCode(pCode);
                                 }
-                                return normalizeEq(p.name) === normalizeEq(pName);
+                                return normalizeCode(p.name) === normalizeCode(pName);
                             });
 
                             if (existingIndex >= 0) {
@@ -354,7 +349,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
         const newProduct: Product = {
             id: crypto.randomUUID(),
             name: name.trim(),
-            code: code.trim(),
+            code: normalizeCode(code),
             category: category.trim(),
             unit: unit.trim(),
             inventoryTarget: false, // デフォルトで棚卸対象外

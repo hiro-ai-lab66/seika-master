@@ -1,6 +1,7 @@
 import type { InventoryDepartment, InventoryItem, InventoryType, Product } from '../types';
 import { loadGisScript } from './gmailService';
 import { SHARED_DAILY_SALES_SHEET_NAME } from '../../sharedSheetNames';
+import { normalizeCode } from '../utils/normalizeCode';
 
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const SPREADSHEET_ID = (import.meta as any).env?.VITE_SHARED_SHEET_ID?.trim() || '';
@@ -550,8 +551,9 @@ export const resolveUnit = (
     name: string,
     previousInventory: Pick<InventoryPhase1Row, 'name' | 'unit' | 'date'>[]
 ): string => {
+    const normalizedName = normalizeCode(name);
     const match = previousInventory
-        .filter((row) => row.name === name && row.unit)
+        .filter((row) => normalizeCode(row.name) === normalizedName && row.unit)
         .sort((a, b) => b.date.localeCompare(a.date))[0];
     return match?.unit ?? '';
 };
