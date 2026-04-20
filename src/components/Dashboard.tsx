@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
-import { AlertTriangle, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
+import { AlertTriangle, Calendar, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
 import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisementService';
@@ -944,7 +944,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [advertisementError, setAdvertisementError] = useState('');
   const [zoomImageUrl, setZoomImageUrl] = useState('');
   const [zoomImageTitle, setZoomImageTitle] = useState('');
-  const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [briefingStatus, setBriefingStatus] = useState('');
   const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
   const [sharedNotices, setSharedNotices] = useState<SharedNoticeEntry[]>([]);
@@ -1296,7 +1295,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           setSharedShiftRows([]);
         }
 
-        setLastUpdatedAt(new Date().toISOString());
       } catch (error) {
         console.error('[Dashboard] failed to refresh dashboard data', error);
         if (!isMounted) return;
@@ -1817,18 +1815,89 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         </div>
       </section>
 
-      <header style={{ ...cardStyle, padding: '20px', background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)', borderColor: '#bfdbfe' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1d4ed8', letterSpacing: '0.06em' }}>ACTION DASHBOARD</div>
-            <h2 style={{ margin: '4px 0 6px', color: '#0f172a' }}>現場判断用ダッシュボード</h2>
-            <div style={{ color: '#475569', fontSize: '0.92rem' }}>見た瞬間に、今日の動きを決めるための要点だけを表示します。</div>
-            <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '8px' }}>
-              最終更新: {lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '読込待ち'}
+      <header
+        style={{
+          background: '#F2F7F3',
+          padding: '14px 16px 12px',
+          borderBottom: '0.5px solid #C8DDD0'
+        }}
+      >
+        <p
+          style={{
+            fontSize: '15px',
+            fontWeight: 500,
+            color: '#1B5E3B',
+            margin: '0 0 3px'
+          }}
+        >
+          本日の売場サマリー
+        </p>
+        <p
+          style={{
+            fontSize: '11px',
+            color: '#7A9E84',
+            margin: '0 0 10px'
+          }}
+        >
+          日付を選んでデータを確認できます
+        </p>
+
+        <label
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            border: '1px solid #A8CDB8',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            width: '100%',
+            cursor: 'pointer',
+            boxSizing: 'border-box'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '20px',
+                height: '20px',
+                background: '#1B5E3B',
+                borderRadius: '5px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                flexShrink: 0
+              }}
+            >
+              <Calendar size={12} />
+            </div>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 500, color: '#1B5E3B' }}>
+                {currentDate}
+              </div>
+              <div style={{ fontSize: '10px', color: '#7A9E84' }}>
+                タップして日付を変更
+              </div>
             </div>
           </div>
-          <input type="date" className="header-date-picker" value={currentDate} onChange={(e) => onChangeDate(e.target.value)} />
-        </div>
+          <span style={{ fontSize: '16px', color: '#A8CDB8' }}>›</span>
+          <input
+            type="date"
+            value={currentDate}
+            onChange={(e) => onChangeDate(e.target.value)}
+            aria-label="日付を変更"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer'
+            }}
+          />
+        </label>
       </header>
 
       <div style={{ ...cardStyle, background: currentGap !== null && currentGap < 0 ? 'linear-gradient(135deg, #fff1f2 0%, #fff7ed 100%)' : 'linear-gradient(135deg, #ecfeff 0%, #eff6ff 100%)', borderColor: currentGap !== null && currentGap < 0 ? '#fecdd3' : '#bae6fd' }}>
