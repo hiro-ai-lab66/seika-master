@@ -1124,7 +1124,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     records: salesRecords
                                 });
                                 upsertDailySales(currentDate, dept, salesRecords);
-                                updateProductMaster(sortedItems, 'csv-import');
+                                updateProductMaster(sortedItems, 'csv-import', dept);
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
                                 setSharedStatus(`取込完了（${items.length}件）`);
@@ -1148,14 +1148,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         e.target.value = '';
     };
 
-    const updateProductMaster = (items: BestItem[], source: 'csv-import' | 'report-submit') => {
+    const updateProductMaster = (
+        items: BestItem[],
+        source: 'csv-import' | 'report-submit',
+        department?: DailySalesRecord['department']
+    ) => {
         console.log('[InspectionForm][AndroidDebug] updateProductMaster items', {
             source,
+            department,
             total: items.length,
             sample: items.slice(0, 3).map((item) => ({
                 name: item.name,
                 code: item.code,
-                salesQty: item.salesQty
+                salesQty: item.salesQty,
+                category: item.category
             }))
         });
 
@@ -1179,9 +1185,16 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             }
             const normalizedItemCode = normalizeCode(item.code);
             const existing = productMap.get(normalizedItemCode);
+            const itemDepartment = department || item.category;
             if (existing) {
                 existing.totalSalesQty = (existing.totalSalesQty || 0) + (item.salesQty || 0);
                 existing.totalSalesAmt = (existing.totalSalesAmt || 0) + (item.salesAmt || 0);
+                if (!existing.category && itemDepartment) {
+                    existing.category = itemDepartment;
+                }
+                if (!existing.department && itemDepartment) {
+                    existing.department = itemDepartment;
+                }
                 existing.updatedAt = new Date().toISOString();
                 updatedCount++;
             } else {
@@ -1189,6 +1202,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     id: crypto.randomUUID(),
                     name: item.name,
                     code: normalizedItemCode,
+                    category: itemDepartment,
+                    department: itemDepartment,
+                    unit: '',
                     updatedAt: new Date().toISOString(),
                     firstRegistered: new Date().toISOString(),
                     totalSalesQty: item.salesQty || 0,

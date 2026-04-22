@@ -118,6 +118,7 @@ export type Product = {
     name: string;
     kana?: string;
     category?: string;
+    department?: InventoryDepartment;
     unit?: string;
     supplier?: string;
     cost?: number;
