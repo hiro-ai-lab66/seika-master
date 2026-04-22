@@ -7,6 +7,52 @@ import { fetchSharedProducts, replaceProductsInGoogleSheets, syncProductToGoogle
 import { ensureSharedSheetsSession, isSheetsConfigured } from '../services/googleSheetsInventoryService';
 import { normalizeCode } from '../utils/normalizeCode';
 
+const getProductMergeKey = (product: Product, source: 'local' | 'sheets', index: number) => {
+    const codeKey = normalizeCode(product.code);
+    if (codeKey) return codeKey;
+    return `${source}:no-code:${product.id || product.name || index}`;
+};
+
+const mergeProducts = (localProducts: Product[], sharedProducts: Product[]): Product[] => {
+    const productMap = new Map<string, Product>();
+
+    localProducts.forEach((product, index) => {
+        productMap.set(getProductMergeKey(product, 'local', index), product);
+    });
+
+    sharedProducts.forEach((sharedProduct, index) => {
+        const key = getProductMergeKey(sharedProduct, 'sheets', index);
+        const localProduct = productMap.get(key);
+
+        if (!localProduct) {
+            productMap.set(key, sharedProduct);
+            return;
+        }
+
+        productMap.set(key, {
+            ...localProduct,
+            ...sharedProduct,
+            id: localProduct.id || sharedProduct.id,
+            name: sharedProduct.name || localProduct.name,
+            code: normalizeCode(sharedProduct.code) || normalizeCode(localProduct.code),
+            category: sharedProduct.category ?? localProduct.category,
+            type: sharedProduct.type ?? localProduct.type,
+            kana: sharedProduct.kana ?? localProduct.kana,
+            totalSalesQty: localProduct.totalSalesQty ?? sharedProduct.totalSalesQty,
+            totalSalesAmt: localProduct.totalSalesAmt ?? sharedProduct.totalSalesAmt,
+            firstRegistered: localProduct.firstRegistered ?? sharedProduct.firstRegistered,
+            cost: localProduct.cost ?? sharedProduct.cost,
+            price: localProduct.price ?? sharedProduct.price,
+            unit: localProduct.unit ?? sharedProduct.unit,
+            inventoryTarget: localProduct.inventoryTarget ?? sharedProduct.inventoryTarget,
+            area: localProduct.area ?? sharedProduct.area,
+            memo: localProduct.memo ?? sharedProduct.memo,
+        });
+    });
+
+    return Array.from(productMap.values());
+};
+
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
     const [products, setProducts] = useState<Product[]>(() => loadProducts());
@@ -72,9 +118,16 @@ export const ProductMaster: React.FC = () => {
             }
 
             const sharedProducts = await fetchSharedProducts();
+            const localProducts = loadProducts();
+            const mergedProducts = mergeProducts(localProducts, sharedProducts);
+            console.log('[ProductMaster] merged shared products', {
+                local: localProducts.length,
+                shared: sharedProducts.length,
+                merged: mergedProducts.length
+            });
             isHydratingFromSheetsRef.current = true;
-            setProducts(sharedProducts);
-            saveProducts(sharedProducts);
+            setProducts(mergedProducts);
+            saveProducts(mergedProducts);
             setIsSheetsReady(true);
             setNeedsSheetsLogin(false);
             setSharedError(null);
