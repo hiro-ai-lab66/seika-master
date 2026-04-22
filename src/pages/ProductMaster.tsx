@@ -847,73 +847,143 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                             </div>
                         ) : (
                             filteredProducts.map(product => (
-                                <div key={product.id} className="history-card">
-                                    <div className="history-header" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <h4 style={{ margin: 0, fontSize: '1.1rem' }}>{product.name}</h4>
-                                            <select
-                                                value={product.area || 'none'}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    handleToggleInventoryTarget(product.id, val === 'none' ? undefined : val as 'backyard' | 'fridge');
-                                                }}
-                                                style={{
-                                                    fontSize: '0.8rem',
-                                                    padding: '2px 8px',
-                                                    borderRadius: '8px',
-                                                    border: `1px solid ${product.area ? '#86efac' : '#cbd5e1'}`,
-                                                    backgroundColor: product.area ? '#dcfce7' : '#f1f5f9',
-                                                    color: product.area ? '#15803d' : '#64748b',
-                                                    outline: 'none',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                <option value="none">対象外</option>
-                                                <option value="backyard">バックヤード</option>
-                                                <option value="fridge">冷蔵庫</option>
-                                            </select>
+                                <div
+                                    key={product.id}
+                                    className="history-card"
+                                    style={{
+                                        background: 'var(--color-background-primary, var(--surface))',
+                                        border: '0.5px solid var(--color-border-tertiary, #cbd5e1)',
+                                        borderRadius: '10px',
+                                        padding: '10px 14px',
+                                        marginBottom: '6px'
+                                    }}
+                                >
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '8px',
+                                        marginBottom: '6px'
+                                    }}>
+                                        <div style={{
+                                            fontSize: '14px',
+                                            fontWeight: 500,
+                                            color: 'var(--color-text-primary, var(--text-main))',
+                                            flex: 1,
+                                            minWidth: 0,
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {product.name}
                                         </div>
-                                        <button
-                                            onClick={() => handleDeleteProduct(product.id)}
-                                            className="icon-button"
-                                            style={{ color: 'var(--danger)', padding: '4px' }}
-                                            title="削除"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
+                                        <div style={{
+                                            fontSize: '11px',
+                                            color: 'var(--color-text-secondary, var(--text-muted))',
+                                            background: 'var(--color-background-secondary, #f1f5f9)',
+                                            padding: '2px 7px',
+                                            borderRadius: '4px',
+                                            flexShrink: 0,
+                                            fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)'
+                                        }}>
+                                            {product.code || '—'}
+                                        </div>
                                     </div>
 
-                                    <div className="history-details" style={{ marginTop: '0.8rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                        {product.code && (
-                                            <div className="detail-item">
-                                                <span className="label"><Hash size={12} /> コード</span>
-                                                <span className="value">{product.code}</span>
-                                            </div>
-                                        )}
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '5px'
+                                    }}>
                                         {product.category && (
-                                            <div className="detail-item">
-                                                <span className="label"><Tag size={12} /> カテゴリ</span>
-                                                <span className="value">{product.category}</span>
-                                            </div>
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '2px 7px',
+                                                borderRadius: '99px',
+                                                background: 'var(--color-background-secondary, #f1f5f9)',
+                                                color: 'var(--color-text-secondary, var(--text-muted))',
+                                                maxWidth: '72px',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                flexShrink: 1
+                                            }}>
+                                                {product.category}
+                                            </span>
                                         )}
                                         {product.unit && (
-                                            <div className="detail-item">
-                                                <span className="label"><Scale size={12} /> 単位</span>
-                                                <span className="value">{product.unit}</span>
-                                            </div>
-                                        )}
-                                        <div className="detail-item">
-                                            <span className="label">共有状態</span>
-                                            <span className="value">
-                                                {product.syncStatus === 'synced'
-                                                    ? '共有済み'
-                                                    : product.syncStatus === 'failed'
-                                                        ? '未同期'
-                                                        : product.syncStatus === 'pending'
-                                                            ? '同期中'
-                                                            : 'ローカルのみ'}
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '2px 7px',
+                                                borderRadius: '99px',
+                                                background: 'var(--color-background-secondary, #f1f5f9)',
+                                                color: 'var(--color-text-secondary, var(--text-muted))',
+                                                maxWidth: '58px',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                flexShrink: 1
+                                            }}>
+                                                {product.unit}
                                             </span>
-                                        </div>
+                                        )}
+                                        <span style={{
+                                            fontSize: '10px',
+                                            padding: '2px 7px',
+                                            borderRadius: '99px',
+                                            background: product.syncStatus === 'synced' ? '#EAF3DE' : '#FAEEDA',
+                                            color: product.syncStatus === 'synced' ? '#3B6D11' : '#854F0B',
+                                            whiteSpace: 'nowrap',
+                                            flexShrink: 0
+                                        }}>
+                                            {product.syncStatus === 'synced' ? '共有済み' : 'ローカルのみ'}
+                                        </span>
+
+                                        <div style={{ flex: 1, minWidth: '4px' }} />
+
+                                        <select
+                                            value={product.area || 'none'}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                handleToggleInventoryTarget(product.id, val === 'none' ? undefined : val as 'backyard' | 'fridge');
+                                            }}
+                                            style={{
+                                                border: '0.5px solid var(--color-border-tertiary, #cbd5e1)',
+                                                borderRadius: '6px',
+                                                padding: '3px 8px',
+                                                fontSize: '11px',
+                                                color: 'var(--color-text-secondary, var(--text-muted))',
+                                                background: 'var(--color-background-primary, var(--surface))',
+                                                minHeight: '28px',
+                                                minWidth: '92px',
+                                                outline: 'none',
+                                                cursor: 'pointer',
+                                                flexShrink: 0
+                                            }}
+                                        >
+                                            <option value="none">対象外</option>
+                                            <option value="backyard">バックヤード</option>
+                                            <option value="fridge">冷蔵庫</option>
+                                        </select>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteProduct(product.id)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                color: 'var(--color-text-tertiary, var(--text-muted))',
+                                                cursor: 'pointer',
+                                                padding: '2px 4px',
+                                                minHeight: '28px',
+                                                minWidth: '28px',
+                                                borderRadius: '6px'
+                                            }}
+                                            title="削除"
+                                            aria-label={`${product.name}を削除`}
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
                                     </div>
                                 </div>
                             ))
