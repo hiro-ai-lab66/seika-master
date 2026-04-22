@@ -4,6 +4,7 @@ import { calculateForecast, calculateGap, getDayOfWeek } from '../utils/calculat
 import { Upload, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import { loadProducts, saveProducts } from '../storage/products';
+import { upsertDailySales } from '../storage/dailySales';
 import { fetchSharedCheckRows, getSharedCheckSheetName, type SharedCheckRow, upsertSharedCheckRowsForDateTimes } from '../services/googleSheetsCheckService';
 import { enrichSharedDailySalesByDate, fetchSharedDailySalesByDate, upsertSharedDailySalesForDateDepartment } from '../services/googleSheetsDailySalesService';
 import { upsertFinalInspectionSharedSales } from '../services/googleSheetsSalesService';
@@ -1122,6 +1123,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     department: dept,
                                     records: salesRecords
                                 });
+                                upsertDailySales(currentDate, dept, salesRecords);
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
                                 setSharedStatus(`取込完了（${items.length}件）`);
@@ -1200,6 +1202,16 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         // 商品マスターへの登録（報告時のみ・累計更新）
         const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
+        console.log('[InspectionForm][AndroidDebug] allAnalysisItems length', {
+            total: allAnalysisItems.length,
+            vegetables: analysisVeggies.length,
+            fruits: analysisFruits.length,
+            sample: allAnalysisItems.slice(0, 3).map((item) => ({
+                name: item.name,
+                code: item.code,
+                salesQty: item.salesQty
+            }))
+        });
         if (allAnalysisItems.length > 0) {
             const existingProducts = loadProducts();
             const productMap = new Map<string, Product>();
