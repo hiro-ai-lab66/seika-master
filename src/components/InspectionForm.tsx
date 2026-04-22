@@ -1124,6 +1124,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     records: salesRecords
                                 });
                                 upsertDailySales(currentDate, dept, salesRecords);
+                                updateProductMaster(sortedItems, 'csv-import');
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
                                 setSharedStatus(`取込完了（${items.length}件）`);
@@ -1145,6 +1146,84 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         };
         reader.readAsArrayBuffer(file);
         e.target.value = '';
+    };
+
+    const updateProductMaster = (items: BestItem[], source: 'csv-import' | 'report-submit') => {
+        console.log('[InspectionForm][AndroidDebug] updateProductMaster items', {
+            source,
+            total: items.length,
+            sample: items.slice(0, 3).map((item) => ({
+                name: item.name,
+                code: item.code,
+                salesQty: item.salesQty
+            }))
+        });
+
+        if (items.length === 0) return null;
+
+        const existingProducts = loadProducts();
+        const productMap = new Map<string, Product>();
+        existingProducts.forEach(p => {
+            const key = normalizeCode(p.code);
+            if (key) productMap.set(key, p);
+        });
+        let addedCount = 0;
+        let updatedCount = 0;
+        let excludedCount = 0;
+
+        items.forEach(item => {
+            if (!item.code) return;
+            if (item.salesQty === undefined || item.salesQty <= 0) {
+                excludedCount++;
+                return;
+            }
+            const normalizedItemCode = normalizeCode(item.code);
+            const existing = productMap.get(normalizedItemCode);
+            if (existing) {
+                existing.totalSalesQty = (existing.totalSalesQty || 0) + (item.salesQty || 0);
+                existing.totalSalesAmt = (existing.totalSalesAmt || 0) + (item.salesAmt || 0);
+                existing.updatedAt = new Date().toISOString();
+                updatedCount++;
+            } else {
+                const newProduct: Product = {
+                    id: crypto.randomUUID(),
+                    name: item.name,
+                    code: normalizedItemCode,
+                    updatedAt: new Date().toISOString(),
+                    firstRegistered: new Date().toISOString(),
+                    totalSalesQty: item.salesQty || 0,
+                    totalSalesAmt: item.salesAmt || 0,
+                };
+                productMap.set(normalizedItemCode, newProduct);
+                addedCount++;
+            }
+        });
+
+        const savedProducts = Array.from(productMap.values());
+        saveProducts(savedProducts);
+        const productCodeSamples = items
+            .filter((item) => item.code && (item.salesQty ?? 0) > 0)
+            .slice(0, 3)
+            .map((item) => {
+                const normalizedItemCode = normalizeCode(item.code);
+                const product = savedProducts.find((savedProduct) => normalizeCode(savedProduct.code) === normalizedItemCode);
+                return {
+                    name: item.name,
+                    dailySalesCode: normalizedItemCode,
+                    productCode: normalizeCode(product?.code),
+                    match: normalizedItemCode === normalizeCode(product?.code)
+                };
+            });
+        console.log('[CodeCheck] product codes:', productCodeSamples);
+
+        const result = {
+            type: source === 'csv-import' ? 'CSV取込' : '合計',
+            added: addedCount,
+            skipped: updatedCount,
+            excluded: excludedCount,
+        };
+        setMasterResult(result);
+        return result;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1202,81 +1281,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         // 商品マスターへの登録（報告時のみ・累計更新）
         const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
-        console.log('[InspectionForm][AndroidDebug] allAnalysisItems length', {
-            total: allAnalysisItems.length,
-            vegetables: analysisVeggies.length,
-            fruits: analysisFruits.length,
-            sample: allAnalysisItems.slice(0, 3).map((item) => ({
-                name: item.name,
-                code: item.code,
-                salesQty: item.salesQty
-            }))
-        });
-        if (allAnalysisItems.length > 0) {
-            const existingProducts = loadProducts();
-            const productMap = new Map<string, Product>();
-            existingProducts.forEach(p => {
-                const key = normalizeCode(p.code);
-                if (key) productMap.set(key, p);
-            });
-            let addedCount = 0;
-            let updatedCount = 0;
-            let excludedCount = 0;
-
-            allAnalysisItems.forEach(item => {
-                if (!item.code) return;
-                if (item.salesQty === undefined || item.salesQty <= 0) {
-                    excludedCount++;
-                    return;
-                }
-                const normalizedItemCode = normalizeCode(item.code);
-                const existing = productMap.get(normalizedItemCode);
-                if (existing) {
-                    // 累計更新
-                    existing.totalSalesQty = (existing.totalSalesQty || 0) + (item.salesQty || 0);
-                    existing.totalSalesAmt = (existing.totalSalesAmt || 0) + (item.salesAmt || 0);
-                    existing.updatedAt = new Date().toISOString();
-                    updatedCount++;
-                } else {
-                    // 新規登録
-                    const newProduct: Product = {
-                        id: crypto.randomUUID(),
-                        name: item.name,
-                        code: item.code,
-                        updatedAt: new Date().toISOString(),
-                        firstRegistered: new Date().toISOString(),
-                        totalSalesQty: item.salesQty || 0,
-                        totalSalesAmt: item.salesAmt || 0,
-                    };
-                    productMap.set(normalizedItemCode, newProduct);
-                    addedCount++;
-                }
-            });
-
-            const savedProducts = Array.from(productMap.values());
-            saveProducts(savedProducts);
-            const productCodeSamples = allAnalysisItems
-                .filter((item) => item.code && (item.salesQty ?? 0) > 0)
-                .slice(0, 3)
-                .map((item) => {
-                    const normalizedItemCode = normalizeCode(item.code);
-                    const product = savedProducts.find((savedProduct) => normalizeCode(savedProduct.code) === normalizedItemCode);
-                    return {
-                        name: item.name,
-                        dailySalesCode: normalizedItemCode,
-                        productCode: normalizeCode(product?.code),
-                        match: normalizedItemCode === normalizeCode(product?.code)
-                    };
-                });
-            console.log('[CodeCheck] product codes:', productCodeSamples);
-
-            setMasterResult({
-                type: '合計',
-                added: addedCount,
-                skipped: updatedCount,
-                excluded: excludedCount,
-            });
-        }
+        updateProductMaster(allAnalysisItems, 'report-submit');
 
         // AI分析用メタデータをdaily_salesに反映
         try {
