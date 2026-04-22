@@ -476,6 +476,18 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             return true;
         });
 
+        console.log('[ProductMaster] search filter', {
+            searchQuery,
+            displayFilter,
+            total: products.length,
+            filtered: result.length,
+            sample: result.slice(0, 5).map(product => ({
+                name: product.name,
+                code: product.code,
+                category: product.category
+            }))
+        });
+
         return result;
     }, [products, searchQuery, displayFilter]);
 
@@ -764,7 +776,10 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                             <input
                                 type="text"
                                 value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
+                                onChange={e => {
+                                    console.log('[ProductMaster] search input change', e.target.value);
+                                    setSearchQuery(e.target.value);
+                                }}
                                 placeholder="商品名、コード、カテゴリで検索..."
                                 className="input-base"
                             />
