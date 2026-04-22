@@ -53,6 +53,24 @@ const mergeProducts = (localProducts: Product[], sharedProducts: Product[]): Pro
     return Array.from(productMap.values());
 };
 
+type ProductDepartment = '野菜' | '果物';
+
+const resolveProductDepartment = (product: Product): ProductDepartment | '' => {
+    const productWithDepartment = product as Product & { department?: string };
+    const values = [
+        productWithDepartment.department,
+        product.category,
+        product.type
+    ].filter(Boolean);
+
+    const matchedValue = values.find(value => value?.includes('野菜') || value?.includes('果物'));
+    if (!matchedValue) return '';
+
+    if (matchedValue.includes('果物')) return '果物';
+    if (matchedValue.includes('野菜')) return '野菜';
+    return '';
+};
+
 export const ProductMaster: React.FC = () => {
     // 1. 初回レンダー時に loadProducts() を呼び、stateの初期値に設定
     const [products, setProducts] = useState<Product[]>(() => loadProducts());
@@ -511,7 +529,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
 
         const result = products.filter(p => {
             // カテゴリフィルターの適用
-            if (displayFilter !== 'すべて' && p.category !== displayFilter) {
+            if (displayFilter !== 'すべて' && resolveProductDepartment(p) !== displayFilter) {
                 return false;
             }
 
@@ -522,6 +540,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                     (p.name && normalize(p.name).includes(q)) ||
                     (p.code && normalize(p.code).includes(q)) ||
                     (p.category && normalize(p.category).includes(q)) ||
+                    ((p as Product & { department?: string }).department && normalize((p as Product & { department?: string }).department || '').includes(q)) ||
                     (p.kana && normalize(p.kana).includes(q))
                 );
             }
@@ -537,7 +556,9 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             sample: result.slice(0, 5).map(product => ({
                 name: product.name,
                 code: product.code,
-                category: product.category
+                category: product.category,
+                department: (product as Product & { department?: string }).department,
+                resolvedDepartment: resolveProductDepartment(product)
             }))
         });
 
