@@ -878,10 +878,10 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                                             {product.name}
                                         </div>
                                         <div style={{
-                                            fontSize: '11px',
+                                            fontSize: '13px',
                                             color: 'var(--color-text-secondary, var(--text-muted))',
                                             background: 'var(--color-background-secondary, #f1f5f9)',
-                                            padding: '2px 7px',
+                                            padding: '3px 8px',
                                             borderRadius: '4px',
                                             flexShrink: 0,
                                             fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)'
