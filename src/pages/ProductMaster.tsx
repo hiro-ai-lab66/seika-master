@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Package, Search, Plus, Trash2, Tag, Hash, Scale, Box, Upload } from 'lucide-react';
+import { Package, Search, Plus, Trash2, Box, Upload } from 'lucide-react';
 import Papa from 'papaparse';
 import type { Product } from '../types';
 import { loadProducts, saveProducts } from '../storage/products';
@@ -754,54 +754,45 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         </div>
                     </div>
 
-                    <form ref={productFormRef} onSubmit={handleAddProduct} className="inspection-form">
-                        <div className="form-group">
-                            <label>商品名 <span className="required-badge">*</span></label>
-                            <input
-                                type="text"
-                                value={name}
-                                ref={nameInputRef}
-                                onChange={e => setName(e.target.value)}
-                                placeholder="例: キャベツ"
-                                required
-                                className="input-base"
-                            />
-                        </div>
+                    <form ref={productFormRef} onSubmit={handleAddProduct} className="inspection-form product-master-compact-form">
+                        <div className="product-master-form-grid">
+                            <div className="form-group product-master-field product-master-field-full">
+                                <label>商品名 <span className="required-badge">*</span></label>
+                                <input
+                                    type="text"
+                                    value={name}
+                                    ref={nameInputRef}
+                                    onChange={e => setName(e.target.value)}
+                                    placeholder="例: キャベツ"
+                                    required
+                                    className="input-base"
+                                />
+                            </div>
 
-                        <div className="form-row-2">
-                            <div className="form-group">
+                            <div className="form-group product-master-field">
                                 <label>コード</label>
-                                <div className="input-with-icon">
-                                    <Hash size={18} className="input-icon text-muted" />
-                                    <input
-                                        type="text"
-                                        value={code}
-                                        onChange={e => setCode(e.target.value)}
-                                        placeholder="例: 001"
-                                        className="input-base"
-                                    />
-                                </div>
+                                <input
+                                    type="text"
+                                    value={code}
+                                    onChange={e => setCode(e.target.value)}
+                                    placeholder="例: 001"
+                                    className="input-base"
+                                />
                             </div>
 
-                            <div className="form-group">
+                            <div className="form-group product-master-field">
                                 <label>カテゴリ</label>
-                                <div className="input-with-icon">
-                                    <Tag size={18} className="input-icon text-muted" />
-                                    <input
-                                        type="text"
-                                        value={category}
-                                        onChange={e => setCategory(e.target.value)}
-                                        placeholder="例: 野菜"
-                                        className="input-base"
-                                    />
-                                </div>
+                                <input
+                                    type="text"
+                                    value={category}
+                                    onChange={e => setCategory(e.target.value)}
+                                    placeholder="例: 野菜"
+                                    className="input-base"
+                                />
                             </div>
-                        </div>
 
-                        <div className="form-group">
-                            <label>単位</label>
-                            <div className="input-with-icon">
-                                <Scale size={18} className="input-icon text-muted" />
+                            <div className="form-group product-master-field product-master-field-full">
+                                <label>単位</label>
                                 <input
                                     type="text"
                                     value={unit}
@@ -815,7 +806,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                         <button
                             type="submit"
                             className="btn-save"
-                            style={{ marginTop: '1rem', width: '100%' }}
+                            style={{ marginTop: '8px', width: '100%' }}
                             onClick={() => console.log('[ProductMaster] register form button clicked')}
                         >
                             <Plus size={20} />
@@ -1024,6 +1015,43 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
           background: #f8fafc;
           border-radius: var(--radius-md);
           border: 1px dashed #cbd5e1;
+        }
+
+        .product-master-compact-form {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+        }
+
+        .product-master-form-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 8px;
+        }
+
+        .product-master-field {
+          gap: 4px;
+          margin-bottom: 0;
+          min-width: 0;
+        }
+
+        .product-master-field-full {
+          grid-column: 1 / -1;
+        }
+
+        .product-master-field label {
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.25;
+        }
+
+        .product-master-field input,
+        .product-master-field textarea {
+          min-height: 44px;
+          padding: 8px 12px;
+          font-size: 15px;
+          border-width: 1px;
+          border-radius: 8px;
         }
 
         .mobile-add-fab {
