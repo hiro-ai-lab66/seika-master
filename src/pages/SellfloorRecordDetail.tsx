@@ -30,6 +30,8 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [displayImageUrl, setDisplayImageUrl] = useState('');
+  const [imageCandidates, setImageCandidates] = useState<string[]>([]);
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
   const [hasImageError, setHasImageError] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const createdDate = new Date(record.createdAt);
@@ -38,13 +40,17 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
     const originalUrl = record.photoUrl || '';
     const fileId = extractGoogleDriveFileId(originalUrl);
     const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 1600);
+    const nextCandidates = buildGoogleDriveImageCandidates(originalUrl, 1600);
     console.log('[SellfloorRecordDetail] image src', {
       recordId: record.id,
       originalUrl,
       fileId,
       displayUrl,
+      candidates: nextCandidates,
     });
     setDisplayImageUrl(displayUrl);
+    setImageCandidates(nextCandidates);
+    setImageCandidateIndex(0);
     setHasImageError(false);
   }, [record.id, record.photoUrl]);
 
@@ -154,11 +160,20 @@ export const SellfloorRecordDetail: React.FC<SellfloorRecordDetailProps> = ({
               alt="売場写真" 
               referrerPolicy="no-referrer"
               onError={(event) => {
+                const nextCandidate = imageCandidates[imageCandidateIndex + 1];
                 console.error('[SellfloorRecordDetail] image load failed', {
                   recordId: record.id,
                   attemptedSrc: displayImageUrl,
                   currentSrc: event.currentTarget.currentSrc,
+                  nextCandidate,
+                  imageCandidates,
+                  imageCandidateIndex,
                 });
+                if (nextCandidate && nextCandidate !== displayImageUrl) {
+                  setImageCandidateIndex((prev) => prev + 1);
+                  setDisplayImageUrl(nextCandidate);
+                  return;
+                }
                 setHasImageError(true);
               }}
               style={{ width: '100%', maxHeight: '500px', objectFit: 'contain' }}

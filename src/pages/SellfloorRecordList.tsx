@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, MapPin, Camera, Image as ImageIcon, Sparkles, RefreshCw, LogIn, Tag } from 'lucide-react';
 import type { PopItem, SellfloorRecord } from '../types';
-import { buildGoogleDriveImageDisplayUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
+import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildLightweightThumbnail, extractGoogleDriveFileId, isInlineImageDataUrl, isRemoteImageUrl } from '../services/storageService';
 import { ImageZoomModal } from '../components/ImageZoomModal';
 
 interface SellfloorRecordListProps {
@@ -43,14 +43,8 @@ export const SellfloorRecordList: React.FC<SellfloorRecordListProps> = ({
 
   const categories = ['すべて', ...Array.from(new Set(records.map((record) => resolveRecordCategory(record)).filter(Boolean)))];
 
-  const today = new Date();
-  const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-
   const filteredRecords = records.filter(record => {
-    const recordDate = new Date(record.date.replace(/-/g, '/'));
-    
-    return recordDate >= startDate &&
-    (
+    return (
       (record.product || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (record.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (record.comment || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -271,6 +265,8 @@ const AnalyticsCard: React.FC<{ label: string; value: string; detail: string }> 
 
 const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
   const [thumbnailSrc, setThumbnailSrc] = useState('');
+  const [thumbnailCandidates, setThumbnailCandidates] = useState<string[]>([]);
+  const [thumbnailCandidateIndex, setThumbnailCandidateIndex] = useState(0);
   const [hasImageError, setHasImageError] = useState(false);
 
   useEffect(() => {
@@ -280,18 +276,24 @@ const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
       const originalUrl = photoUrl || '';
       const fileId = extractGoogleDriveFileId(originalUrl);
       const displayUrl = buildGoogleDriveImageDisplayUrl(originalUrl, 800);
+      const nextCandidates = buildGoogleDriveImageCandidates(originalUrl, 800);
       console.log('[SellfloorRecordList] thumbnail src', {
         originalUrl,
         fileId,
         displayUrl,
+        candidates: nextCandidates,
       });
 
       if (!displayUrl) {
         setThumbnailSrc('');
+        setThumbnailCandidates([]);
+        setThumbnailCandidateIndex(0);
         setHasImageError(false);
         return;
       }
 
+      setThumbnailCandidates(nextCandidates);
+      setThumbnailCandidateIndex(0);
       setHasImageError(false);
 
       if (isRemoteImageUrl(displayUrl)) {
@@ -331,11 +333,20 @@ const SellfloorThumbnail: React.FC<{ photoUrl: string }> = ({ photoUrl }) => {
       alt="売場写真"
       referrerPolicy="no-referrer"
       onError={(event) => {
+        const nextCandidate = thumbnailCandidates[thumbnailCandidateIndex + 1];
         console.error('[SellfloorRecordList] thumbnail load failed', {
           originalUrl: photoUrl,
           attemptedSrc: thumbnailSrc,
           currentSrc: event.currentTarget.currentSrc,
+          nextCandidate,
+          thumbnailCandidates,
+          thumbnailCandidateIndex,
         });
+        if (nextCandidate && nextCandidate !== thumbnailSrc) {
+          setThumbnailCandidateIndex((prev) => prev + 1);
+          setThumbnailSrc(nextCandidate);
+          return;
+        }
         setHasImageError(true);
       }}
       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
