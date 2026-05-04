@@ -1,13 +1,38 @@
 <!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>seika-master</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- ===== Favicon ===== -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon.png" />
+  <link rel="shortcut icon" href="/icon.png" />
+
+  <!-- ===== Apple / Safari ===== -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="青果マスター" />
+
+  <!-- ===== PWA / Theme ===== -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2e7d32" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- ===== SEO / OGP ===== -->
+  <meta name="description" content="青果マスターは青果部門の売場管理・発注・予算管理をサポートするWebアプリです。" />
+  <meta property="og:title" content="青果マスター" />
+  <meta property="og:description" content="青果部門の売場管理・発注・予算管理をサポート" />
+  <meta property="og:image" content="/icon.png" />
+  <meta property="og:type" content="website" />
+
+  <title>青果マスター</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

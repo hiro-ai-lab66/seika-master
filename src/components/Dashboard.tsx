@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
+import type { AppState, DailySalesRecord, MarketInfo, SharedAdvertisementEntry, SharedDailyNotesEntry, SharedNoticeEntry, SharedShiftMasterRow } from '../types';
 import { AlertTriangle, Calendar, Megaphone, RefreshCw, Sparkles, Target, ThermometerSun } from 'lucide-react';
 import { generateAiAdvice } from '../utils/aiAdvice';
 import { loadDailySales } from '../storage/dailySales';
@@ -7,6 +7,7 @@ import { fetchSharedAdvertisements } from '../services/googleSheetsAdvertisement
 import { buildGoogleDriveImageCandidates, buildGoogleDriveImageDisplayUrl, buildGoogleDriveImageFallbackUrl } from '../services/storageService';
 import { ImageZoomModal } from './ImageZoomModal';
 import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleSheetsCheckService';
+import { fetchSharedDailyNotes } from '../services/googleSheetsDailyNotesService';
 import { fetchSharedNotices } from '../services/googleSheetsNoticeService';
 import { fetchSharedShiftRows } from '../services/googleSheetsShiftService';
 
@@ -437,6 +438,17 @@ const normalizeDateKey = (value: string) => {
   return normalized;
 };
 
+const getDayDiff = (baseDate: string, targetDate: string) => {
+  const baseMatch = normalizeDateKey(baseDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const targetMatch = normalizeDateKey(targetDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!baseMatch || !targetMatch) return null;
+
+  const base = new Date(Number(baseMatch[1]), Number(baseMatch[2]) - 1, Number(baseMatch[3]));
+  const target = new Date(Number(targetMatch[1]), Number(targetMatch[2]) - 1, Number(targetMatch[3]));
+  const diffMs = base.getTime() - target.getTime();
+  return Math.floor(diffMs / 86400000);
+};
+
 const normalizeDepartmentLabel = (value: string) => normalizeCheckText(value).toLowerCase();
 const isVegetableDepartment = (value: string) => {
   const normalized = normalizeDepartmentLabel(value);
@@ -566,6 +578,14 @@ const parseNoticeSections = (text: string): NoticeSection[] => {
   const uniqueLines = Array.from(
     new Map(lines.map((line) => [line.normalized, line])).values()
   );
+
+  if (uniqueLines.length === 1) {
+    return [{
+      heading: '連絡 1',
+      bullets: [],
+      paragraphs: [uniqueLines[0].raw]
+    }];
+  }
 
   const normalizedTitle = uniqueLines[0]?.normalized || '';
   const bodyLines = uniqueLines
@@ -937,6 +957,10 @@ const AdvertisementCard: React.FC<{
 };
 
 export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, refreshKey = 0 }) => {
+  const currentUser =
+    (typeof window !== 'undefined' && window.localStorage.getItem('seika_notice_user')) ||
+    (import.meta as any).env?.VITE_NOTICE_USER?.trim() ||
+    'hiro';
   const [selectedAdvertisementSide, setSelectedAdvertisementSide] = useState<'表' | '裏'>('表');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
@@ -946,6 +970,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [zoomImageTitle, setZoomImageTitle] = useState('');
   const [briefingStatus, setBriefingStatus] = useState('');
   const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
+  const [sharedDailyNotes, setSharedDailyNotes] = useState<SharedDailyNotesEntry[]>([]);
   const [sharedNotices, setSharedNotices] = useState<SharedNoticeEntry[]>([]);
   const [sharedShiftRows, setSharedShiftRows] = useState<SharedShiftMasterRow[]>([]);
   const [inspectionMeta, setInspectionMeta] = useState<InspectionMeta>({
@@ -964,6 +989,31 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const todayBudgetEntry = state.dailyBudgets.find((b) => b.date === currentDate);
   const todayInspection = state.inspections.find((i) => i.date === currentDate);
   const todayNote = state.dailyNotes?.find((entry) => entry.date === currentDate);
+  const effectiveTodayNote = useMemo(() => {
+    if (todayNote) return todayNote;
+
+    const normalizedCurrentDate = normalizeDateKey(currentDate);
+    const fallbackSharedEntry = [...sharedDailyNotes]
+      .sort((a, b) => normalizeDateKey(b.date).localeCompare(normalizeDateKey(a.date)))
+      .find((entry) => {
+        const normalizedEntryDate = normalizeDateKey(entry.date);
+        if (!normalizedEntryDate || normalizedEntryDate > normalizedCurrentDate) return false;
+        const diffDays = getDayDiff(normalizedCurrentDate, normalizedEntryDate);
+        return diffDays !== null && diffDays <= 10;
+      });
+
+    if (fallbackSharedEntry) {
+      console.log('[Dashboard] daily note fallback', {
+        currentDate,
+        fallbackDate: fallbackSharedEntry.date,
+        diffDays: getDayDiff(normalizedCurrentDate, normalizeDateKey(fallbackSharedEntry.date)),
+        hasAnnouncements: Boolean(fallbackSharedEntry.announcements),
+        hasInspectionNotes: Boolean(fallbackSharedEntry.inspectionNotes)
+      });
+    }
+
+    return fallbackSharedEntry;
+  }, [currentDate, sharedDailyNotes, todayNote]);
   const latestMarket = useMemo(() => sortMarkets(state.marketHistory || [])[0], [state.marketHistory]);
   // localStorage変更を検知してdaily_salesを再読み込みするためのカウンター
   const [dailySalesVersion, setDailySalesVersion] = useState(0);
@@ -1098,9 +1148,10 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const loadDashboardData = async () => {
       try {
         console.log('[Dashboard] starting advertisement fetch');
-        const [advertisementResult, inspectionResult, noticeResult, shiftResult] = await Promise.allSettled([
+        const [advertisementResult, inspectionResult, dailyNotesResult, noticeResult, shiftResult] = await Promise.allSettled([
           fetchAdvertisementsWithRetry(),
           fetchSharedCheckRows(),
+          fetchSharedDailyNotes(),
           fetchSharedNotices(),
           fetchSharedShiftRows()
         ]);
@@ -1268,6 +1319,18 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           });
         }
 
+        if (dailyNotesResult.status === 'fulfilled') {
+          setSharedDailyNotes(dailyNotesResult.value);
+          console.log('[Dashboard] loaded shared daily notes', {
+            currentDate,
+            dailyNoteCount: dailyNotesResult.value.length,
+            dates: Array.from(new Set(dailyNotesResult.value.map((item) => item.date))).slice(0, 10)
+          });
+        } else {
+          console.error('[Dashboard] failed to load shared daily notes', dailyNotesResult.reason);
+          setSharedDailyNotes([]);
+        }
+
         if (noticeResult.status === 'fulfilled') {
           setSharedNotices(noticeResult.value);
           console.log('[Dashboard] loaded shared notices', {
@@ -1319,6 +1382,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           lowTemp: ''
         });
         setSharedCheckRows([]);
+        setSharedDailyNotes([]);
         setSharedNotices([]);
         setSharedShiftRows([]);
       }
@@ -1462,38 +1526,42 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
 
   const importantNotices = useMemo(() => {
     const normalizedCurrentDate = normalizeDateKey(currentDate);
-    const sortedSharedNotices = [...sharedNotices].sort((a, b) => {
+    const visibleSharedNotices = sharedNotices.filter((notice) => notice.priority || !notice.readUsers.includes(currentUser));
+    const sortedSharedNotices = [...visibleSharedNotices].sort((a, b) => {
       const dateCompare = normalizeDateKey(b.date).localeCompare(normalizeDateKey(a.date));
       if (dateCompare !== 0) return dateCompare;
       if (a.priority !== b.priority) return a.priority ? -1 : 1;
+      const createdCompare = (b.createdAt || '').localeCompare(a.createdAt || '');
+      if (createdCompare !== 0) return createdCompare;
       return (b.updatedAt || '').localeCompare(a.updatedAt || '');
     });
-    const matchedNoticeDate = sortedSharedNotices
-      .map((notice) => normalizeDateKey(notice.date))
-      .find((date) => date && date <= normalizedCurrentDate);
-    const fallbackNoticeDate = matchedNoticeDate || (sortedSharedNotices[0] ? normalizeDateKey(sortedSharedNotices[0].date) : '');
-    const selectedSharedNotices = sortedSharedNotices
-      .filter((notice) => normalizeDateKey(notice.date) === fallbackNoticeDate)
-      .sort((a, b) => {
-        if (a.priority !== b.priority) return a.priority ? -1 : 1;
-        return (b.updatedAt || '').localeCompare(a.updatedAt || '');
-      });
+    const selectedSharedNotice = sortedSharedNotices.find((notice) => {
+      const normalizedNoticeDate = normalizeDateKey(notice.date);
+      if (!normalizedNoticeDate || normalizedNoticeDate > normalizedCurrentDate) return false;
+      const diffDays = getDayDiff(normalizedCurrentDate, normalizedNoticeDate);
+      return diffDays !== null && diffDays <= 10;
+    });
 
     console.log('[Dashboard] important notice fallback', {
       currentDate,
       normalizedCurrentDate,
       sharedNoticeCount: sharedNotices.length,
-      fallbackNoticeDate,
-      selectedSharedNoticeCount: selectedSharedNotices.length
+      visibleSharedNoticeCount: visibleSharedNotices.length,
+      selectedSharedNotice: selectedSharedNotice ? {
+        id: selectedSharedNotice.id,
+        rawDate: selectedSharedNotice.date,
+        normalizedDate: normalizeDateKey(selectedSharedNotice.date),
+        priority: selectedSharedNotice.priority,
+        isRead: selectedSharedNotice.readUsers.includes(currentUser),
+        contentLength: selectedSharedNotice.content.length
+      } : null
     });
 
     const list: string[] = [];
-    selectedSharedNotices.forEach((notice) => list.push(notice.content));
-    if (todayNote?.announcements) list.push(todayNote.announcements);
-    (latestMarket?.analysis.notices || []).slice(0, 2).forEach((notice) => list.push(notice));
-    if (todayNote?.inspectionNotes) list.push(todayNote.inspectionNotes);
-    return Array.from(new Set(list.filter(Boolean))).slice(0, 3);
-  }, [currentDate, sharedNotices, todayNote, latestMarket]);
+    if (selectedSharedNotice?.content) list.push(selectedSharedNotice.content);
+    if (list.length === 0 && effectiveTodayNote?.announcements) list.push(effectiveTodayNote.announcements);
+    return Array.from(new Set(list.filter(Boolean))).slice(0, 1);
+  }, [currentDate, currentUser, sharedNotices, effectiveTodayNote]);
 
   const formattedImportantNotices = useMemo(
     () => importantNotices.map((notice, index) => ({
