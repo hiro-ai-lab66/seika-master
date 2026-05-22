@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Palette, Printer, Plus, Download, AlertCircle, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Plus, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry, SharedSalesEntry, PopItem } from './types';
 import { getDayOfWeek, getLocalTodayDateString } from './utils/calculations';
 import { createHistoryData } from './utils/calculateHistory';
@@ -8,7 +8,6 @@ import './App.css';
 import { Dashboard } from './components/Dashboard';
 import { InspectionForm } from './components/InspectionForm';
 import { BudgetSettings } from './components/BudgetSettings';
-import { generatePopImage } from './services/aiService';
 import { ProductMaster } from './pages/ProductMaster';
 import { Inventory } from './pages/Inventory';
 import { DailySalesView } from './pages/DailySalesView';
@@ -1631,158 +1630,18 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
   const [chirashiImageUrlInput, setChirashiImageUrlInput] = useState('');
   const normalizedChirashiImage = normalizeDriveImageUrl(state.chirashiImage || '');
 
-  // POP Design State
-  const [popDesign, setPopDesign] = useState<{
-    title: string;
-    price: string;
-    copy: string;
-    theme: 'fresh' | 'seasonal' | 'sale';
-    size: 'A4' | 'B5' | 'ハガキ';
-    isVisible: boolean;
-    imageUrl: string | null;
-    isGenerating: boolean;
-    error: 'key_missing' | 'network_error' | null;
-    orientation: 'portrait' | 'landscape';
-  }>({
-    title: bestVeg?.name || '本日のおすすめ',
-    price: '価格交渉中',
-    copy: '鮮度抜群！今が旬の味をお届けします。',
-    theme: 'fresh',
-    size: 'A4',
-    isVisible: false,
-    imageUrl: null,
-    isGenerating: false,
-    error: null,
-    orientation: 'portrait'
-  });
-
   const handleSendMessage = (customText?: string) => {
     const text = (customText || inputText).trim();
     if (!text) return;
 
-    setPopDesign(prev => ({ ...prev, error: null })); // Reset error
     setMessages(prev => [...prev, { role: 'user', text }]);
     if (!customText) setInputText('');
 
-    // Handle Image Generation and Dialogue
     setTimeout(async () => {
-      if (text.includes('ポップ') || text.includes('POP') || text.includes('作って') || text.includes('依頼')) {
-        const isCabbage = text.includes('キャベツ') || text.includes('cabbage');
-        const targetItem = isCabbage ? 'キャベツ' : (bestVeg?.name || bestFruit?.name || '旬の果物');
-
-        setMessages(prev => [...prev, { role: 'ai', text: `Nano Banana Proを起動しました。${targetItem}の鮮度が伝わる最高のビジュアルを生成します。少々お待ちください...` }]);
-
-        let initialOrientation: 'portrait' | 'landscape' = 'portrait';
-        let initialSize: 'A4' | 'B5' | 'ハガキ' = 'A4';
-
-        if (text.includes('横')) initialOrientation = 'landscape';
-        if (text.includes('B5')) initialSize = 'B5';
-        if (text.includes('ハガキ')) initialSize = 'ハガキ';
-
-        setPopDesign(prev => ({
-          ...prev,
-          isVisible: true,
-          isGenerating: true,
-          title: targetItem,
-          imageUrl: null,
-          error: null,
-          orientation: initialOrientation,
-          size: initialSize
-        }));
-
-        try {
-          const newImageUrl = await generatePopImage({
-            title: targetItem,
-            theme: popDesign.theme,
-            copy: popDesign.copy,
-            orientation: popDesign.orientation
-          });
-
-          setPopDesign(prev => ({
-            ...prev,
-            isGenerating: false,
-            imageUrl: newImageUrl,
-            copy: isCabbage
-              ? `甘み抜群！採れたての${targetItem}。今が一番おいしい時期です。`
-              : `厳選された${targetItem}を贅沢に使用。今しか味わえない格別の美味しさです。`
-          }));
-          setMessages(prev => [...prev, { role: 'ai', text: `お待たせしました！「${targetItem}」のプロ仕様デザイン案が完成しました。ビジュアルはどうですか？` }]);
-        } catch (e: any) {
-          const errorType = (e.message === 'API_KEY_MISSING' || e.message === 'API_KEY_INVALID') ? 'key_missing' : 'network_error';
-          setPopDesign(prev => ({ ...prev, isGenerating: false, error: errorType }));
-          setMessages(prev => [...prev, {
-            role: 'ai', text: errorType === 'key_missing'
-              ? "APIキー（通行証）が設定されていないため、画像の生成を中止しました。設定を確認してください。"
-              : "画像の生成に失敗しました。接続環境を確認してください。"
-          }]);
-        }
-
-      } else if (popDesign.isVisible) {
-        const nextDesign = { ...popDesign };
-        let updateMsg = "";
-        let needsRegen = false;
-
-        if (text.includes('円') || text.includes('価格') || text.includes('¥')) {
-          const priceMatch = text.match(/[0-9,]+/);
-          const price = priceMatch ? priceMatch[0] : text;
-          nextDesign.price = price;
-          updateMsg = `価格を「${price}」に更新しました。`;
-        } else if (text.includes('名前') || text.includes('品名') || text.includes('商品名')) {
-          const nameMatch = text.match(/「(.*?)」/) || text.match(/(?:[はに])(.*?) (?:に|として)/);
-          const name = nameMatch ? nameMatch[1] : text.replace(/.*(名前|品名|商品名)を?/, '').trim();
-          nextDesign.title = name;
-          updateMsg = `商品名を「${name}」に変更しました。`;
-          needsRegen = true;
-        } else if (text.includes('新鮮') || text.includes('セール') || text.includes('特売') || text.includes('雰囲気')) {
-          nextDesign.theme = text.includes('セール') || text.includes('特売') ? 'sale' : 'fresh';
-          updateMsg = `テーマを「${nextDesign.theme === 'sale' ? '特売' : '新鮮'}」に変更しました。`;
-          needsRegen = true;
-        } else if (text.includes('横') || text.includes('縦') || text.includes('A4') || text.includes('B5') || text.includes('ハガキ')) {
-          if (text.includes('A4')) nextDesign.size = 'A4';
-          if (text.includes('B5')) nextDesign.size = 'B5';
-          if (text.includes('ハガキ')) nextDesign.size = 'ハガキ';
-          if (text.includes('横')) nextDesign.orientation = 'landscape';
-          if (text.includes('縦')) nextDesign.orientation = 'portrait';
-
-          updateMsg = `サイズ・向きを「${nextDesign.size} ${nextDesign.orientation === 'landscape' ? '横' : '縦'}」に変更しました。`;
-          needsRegen = true;
-        } else {
-          nextDesign.copy = text;
-          updateMsg = `キャッチコピーを更新しました。`;
-        }
-
-        if (needsRegen) {
-          setPopDesign(prev => ({ ...prev, ...nextDesign, isGenerating: true, imageUrl: null, error: null }));
-          setMessages(prev => [...prev, { role: 'ai', text: `承知いたしました。${updateMsg} 内容に合わせて画像を再生成します...` }]);
-          try {
-            console.log(`Triggering regeneration with orientation: ${nextDesign.orientation}`);
-            const newUrl = await generatePopImage({
-              title: nextDesign.title,
-              theme: nextDesign.theme,
-              copy: nextDesign.copy,
-              orientation: nextDesign.orientation
-            });
-            console.log("Regeneration Success URL:", newUrl);
-            setPopDesign(prev => ({ ...prev, isGenerating: false, imageUrl: newUrl, error: null }));
-            setMessages(prev => [...prev, { role: 'ai', text: "新しいデザイン案が完成しました！" }]);
-          } catch (e: any) {
-            console.error("Regeneration failed:", e);
-            const errorType = (e.message === 'API_KEY_MISSING' || e.message === 'API_KEY_INVALID') ? 'key_missing' : 'network_error';
-            setPopDesign(prev => ({ ...prev, isGenerating: false, error: errorType }));
-          }
-        } else {
-          setPopDesign(nextDesign);
-          setMessages(prev => [...prev, { role: 'ai', text: `承知いたしました！デザインを調整しました。${updateMsg}` }]);
-        }
-
-      } else if (text.startsWith('gen-lang-') || text.startsWith('AIza')) {
-        // Recognition of potential API keys in chat
-        localStorage.setItem('nano_banana_api_key', text);
-        setPopDesign(prev => ({ ...prev, error: null }));
-        setMessages(prev => [...prev, { role: 'ai', text: `キー「${text}」をシステムに登録しました。これで画像生成の準備が整いました！改めてPOPの作成を依頼してみてください。` }]);
-
+      if (text.includes('ポップ') || text.includes('POP')) {
+        setMessages(prev => [...prev, { role: 'ai', text: 'POP画像はPOPibraryに完成画像を登録して管理できます。画面上部の「POP作成」から外部Geminiを開くこともできます。' }]);
       } else {
-        setMessages(prev => [...prev, { role: 'ai', text: `「${text}」について承知いたしました。Nano Banana ProモードでPOP等のデザインを作成することも可能です。` }]);
+        setMessages(prev => [...prev, { role: 'ai', text: `「${text}」について承知いたしました。売場状況に合わせた対応を検討しましょう。` }]);
       }
     }, 500);
   };
@@ -1847,112 +1706,6 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
           </div>
         </div>
 
-        {popDesign.isVisible && (
-          <div className="pop-preview-panel premium">
-            <div className="panel-header">
-              <div className="flex items-center gap-2">
-                <Palette size={16} />
-                <span>AIデザイン・プレビュー</span>
-              </div>
-              <div className="size-badge">{popDesign.size}</div>
-            </div>
-
-            <div className={`pop-canvas-wrapper ${popDesign.isGenerating ? 'generating' : ''} ${popDesign.orientation}`}>
-              {popDesign.isGenerating ? (
-                <div className="generation-overlay">
-                  <div className="spinner-sparkle"></div>
-                  <p>デザイン生成中...</p>
-                </div>
-              ) : (
-                <div className={`pop-canvas-v2 ${popDesign.theme} ${popDesign.orientation}`}>
-                  {popDesign.error === 'key_missing' ? (
-                    <div className="pop-error-overlay">
-                      <AlertCircle className="text-amber-500 mb-2" size={48} />
-                      <p className="error-text">APIキーが未設定のため生成できません</p>
-                      <button
-                        className="btn-fix-key"
-                        onClick={() => {
-                          const key = window.prompt("Gemini APIキーを入力してください:");
-                          if (key) {
-                            localStorage.setItem('nano_banana_api_key', key);
-                            alert("APIキーを保存しました。再度作成を依頼してください。");
-                          }
-                        }}
-                      >
-                        APIキーを設定する
-                      </button>
-                    </div>
-                  ) : popDesign.imageUrl ? (
-                    <img
-                      src={popDesign.imageUrl}
-                      alt="POP Design"
-                      className="pop-bg-image"
-                      onLoad={() => console.log("Image loaded successfully:", popDesign.imageUrl)}
-                      onError={(e) => {
-                        console.error("Image failed to load in DOM:", popDesign.imageUrl, e);
-                        if (popDesign.imageUrl && popDesign.imageUrl.includes('#fallback=')) {
-                          // Extract fallback data attached by aiService
-                          const fallbackInfo = popDesign.imageUrl.split('#fallback=')[1];
-                          const [dims, rawKeyword] = fallbackInfo.split('?');
-                          const [width, height] = dims.split('x');
-                          const keyword = rawKeyword || 'market';
-                          // Use Placehold.co for a highly visible debug/fallback placeholder
-                          const fallbackUrl = `https://placehold.co/${width}x${height}/1e293b/ffffff?text=${encodeURIComponent(keyword + '\n(AI画像生成に失敗しました)')}`;
-                          console.log("Switching to fallback image:", fallbackUrl);
-                          setPopDesign(prev => ({ ...prev, imageUrl: fallbackUrl }));
-                        } else {
-                          // If it still fails, show the network error
-                          setPopDesign(prev => ({ ...prev, error: 'network_error', imageUrl: null }));
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="pop-fallback-bg">
-                      {popDesign.error === 'network_error' ? (
-                        <div className="pop-error-small">
-                          <AlertCircle size={20} />
-                          <span>画像の読み込みに失敗しました（URLエラー）</span>
-                        </div>
-                      ) : (
-                        <span style={{ color: '#94a3b8', fontWeight: 600 }}>No Image Available</span>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="pop-overlay-content">
-                    <div className="pop-badge-premium">RECOMMEND</div>
-                    <h1 className="pop-title-v2">{popDesign.title}</h1>
-                    <p className="pop-copy-v2">{popDesign.copy}</p>
-                    <div className="pop-price-v2">
-                      <span className="price-tag">特別価格</span>
-                      <span className="price-value">{popDesign.price}</span>
-                      <span className="price-unit">円</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="pop-actions">
-              <button className="btn-action primary" onClick={async () => {
-                // Ensure orientation and size are physically updated in the UI wrapper
-                setPopDesign(prev => ({ ...prev, isGenerating: true, error: null, orientation: 'landscape', size: 'B5' }));
-                try {
-                  const url = await generatePopImage({ title: 'テスト', theme: 'fresh', copy: 'テスト', orientation: 'landscape' });
-                  console.log("Debug Direct Regen URL:", url);
-                  setPopDesign(prev => ({ ...prev, isGenerating: false, imageUrl: url }));
-                } catch (e: any) {
-                  console.error("Debug Regen Error:", e);
-                  setPopDesign(prev => ({ ...prev, isGenerating: false, error: 'network_error' }));
-                }
-              }}>Debug: 強制再生成</button>
-              <button className="btn-action primary"><Printer size={18} /> 高画質で印刷</button>
-              <button className="btn-action secondary"><Download size={18} />
-                {popDesign.imageUrl ? '画像を保存' : '案を保存'}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
 
@@ -2055,7 +1808,6 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
         @media (min-width: 900px) {
           .ai-chat-layout { flex-direction: row; align-items: flex-start; }
           .main-chat { flex: 1.2; }
-          .pop-preview-panel { flex: 1; max-width: 400px; position: sticky; top: var(--space-md); }
         }
 
         .ai-chat-container {
@@ -2075,151 +1827,6 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
           flex-direction: column;
           gap: var(--space-sm);
         }
-        .pop-preview-panel.premium {
-          background: #1e293b;
-          color: white;
-          border-radius: var(--radius-lg);
-          padding: var(--space-md);
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-md);
-        }
-        .panel-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-weight: 700;
-          color: var(--text-muted);
-          font-size: 0.85rem;
-        }
-        .size-badge {
-          background: #f1f5f9;
-          padding: 2px 8px;
-          border-radius: 4px;
-          font-size: 0.7rem;
-        }
-
-        /* POP Card Styling */
-        .pop-canvas-wrapper {
-          position: relative;
-          background: #334155;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-          transition: all 0.3s ease;
-        }
-        .pop-canvas-wrapper.portrait { aspect-ratio: 1 / 1.414; }
-        .pop-canvas-wrapper.landscape { aspect-ratio: 1.414 / 1; }
-        
-        .pop-canvas-v2 {
-          height: 100%;
-          width: 100%;
-          position: relative;
-          background: #fff;
-          color: #1a1a1a;
-        }
-        .pop-bg-image {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          filter: brightness(0.9);
-        }
-        .pop-fallback-bg {
-          width: 100%;
-          height: 100%;
-          background: linear-gradient(135deg, #f8fafc, #e2e8f0);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .pop-fallback-bg::before {
-          content: 'No Image';
-          color: #94a3b8;
-          font-weight: 700;
-        }
-
-        .pop-overlay-content {
-          position: absolute;
-          inset: 0;
-          padding: 24px;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          text-align: center;
-          background: radial-gradient(circle, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 80%);
-        }
-        .pop-badge-premium {
-          align-self: center;
-          background: #000;
-          color: #fbbf24;
-          padding: 4px 12px;
-          border-radius: 99px;
-          font-size: 0.7rem;
-          font-weight: 800;
-          letter-spacing: 0.1em;
-        }
-        .pop-title-v2 {
-          font-size: 2.2rem;
-          font-weight: 900;
-          color: #000;
-          margin: 0;
-          line-height: 1;
-          filter: drop-shadow(2px 2px 2px white);
-        }
-        .pop-copy-v2 {
-          background: rgba(255,255,255,0.9);
-          padding: 8px;
-          border-radius: 4px;
-          font-size: 0.85rem;
-          font-weight: 700;
-          color: #334155;
-        }
-        .pop-price-v2 {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        .price-tag { font-size: 0.8rem; font-weight: 900; color: #ef4444; }
-        .price-value { font-size: 3rem; font-weight: 950; color: #ef4444; line-height: 1; }
-        .price-unit { font-size: 1rem; font-weight: 900; color: #ef4444; }
-
-        .generating { opacity: 0.7; }
-        .generation-overlay {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 16px;
-          color: white;
-          font-weight: 700;
-        }
-        .spinner-sparkle {
-          width: 40px;
-          height: 40px;
-          border: 4px solid #3b82f6;
-          border-top-color: transparent;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .btn-action {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 12px;
-          border: none;
-          border-radius: 8px;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        .btn-action.primary { background: #3b82f6; color: white; }
-        .btn-action.secondary { background: #334155; color: white; }
-
         .chat-bubble {
           padding: var(--space-md);
           border-radius: var(--radius-md);
