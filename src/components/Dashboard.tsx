@@ -1879,7 +1879,6 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
           <span className="dashboard-hero-tag">棚卸し</span>
           <span className="dashboard-hero-tag">点検入力</span>
           <span className="dashboard-hero-tag">売上管理</span>
-          <span className="dashboard-hero-tag">POP作成</span>
         </div>
       </section>
 

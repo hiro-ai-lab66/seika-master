@@ -18,8 +18,6 @@ import {
 
 interface InventoryProps {
     currentDate: string;
-    onProductActive?: (name: string) => void;
-    onOpenPopGem?: (name?: string) => void;
     onMonthEndClose?: (date: string) => void;
 }
 

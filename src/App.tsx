@@ -494,7 +494,6 @@ function App() {
   const [inspectionHistoryDateCount, setInspectionHistoryDateCount] = useState(0);
   const [sharedRefreshSummary, setSharedRefreshSummary] = useState<string | null>(null);
 
-  const [lastActiveProductName, setLastActiveProductName] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   
   // Sub-routing state for sellfloor and popibrary
@@ -578,19 +577,6 @@ function App() {
     setIsAuthenticated(false);
     setLoginPassword('');
     setLoginError('');
-  };
-
-  const openPopGem = async (productName?: string) => {
-    const targetName = productName || lastActiveProductName;
-    if (targetName) {
-      try {
-        await navigator.clipboard.writeText(targetName);
-        showToast('商品名をコピーしました。Geminiで貼り付けてください');
-      } catch (e) {
-        showToast('コピーできませんでした。手動で商品名をコピーしてください');
-      }
-    }
-    window.open('https://gemini.google.com/gem/b0f6a098f918', '_blank', 'noopener,noreferrer');
   };
 
   // URLクエリから初期日付を取得
@@ -1271,9 +1257,9 @@ function App() {
       case 'products':
         return <ProductMaster />;
       case 'inventory':
-        return <Inventory currentDate={currentDate} onProductActive={setLastActiveProductName} onOpenPopGem={openPopGem} onMonthEndClose={clearMonthEndAnalysis} />;
+        return <Inventory currentDate={currentDate} onMonthEndClose={clearMonthEndAnalysis} />;
       case 'dailySales':
-        return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} onOpenPopGem={openPopGem} />;
+        return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} />;
        case 'sellfloor':
         if (sellfloorView === 'form') {
            return (
@@ -1493,27 +1479,6 @@ function App() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
-            onClick={() => openPopGem()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              cursor: 'pointer',
-              gap: '4px',
-              border: 'none',
-              backgroundColor: '#fff',
-              color: 'var(--primary)',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              fontSize: '0.85rem',
-              fontWeight: 'bold',
-              textDecoration: 'none',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}
-          >
-            <Sparkles size={16} style={{ color: 'var(--accent)' }} />
-            POP作成
-          </button>
-          <button
             className="icon-button"
             aria-label="Logout"
             onClick={handleLogout}
@@ -1639,7 +1604,7 @@ const AIAssist = ({ state, currentDate, onSaveChirashi }: { state: AppState, cur
 
     setTimeout(async () => {
       if (text.includes('ポップ') || text.includes('POP')) {
-        setMessages(prev => [...prev, { role: 'ai', text: 'POP画像はPOPibraryに完成画像を登録して管理できます。画面上部の「POP作成」から外部Geminiを開くこともできます。' }]);
+        setMessages(prev => [...prev, { role: 'ai', text: 'POP画像はPop Libraryに完成画像を登録して管理できます。登録済みPOPは売場記録にも紐づけて活用できます。' }]);
       } else {
         setMessages(prev => [...prev, { role: 'ai', text: `「${text}」について承知いたしました。売場状況に合わせた対応を検討しましょう。` }]);
       }

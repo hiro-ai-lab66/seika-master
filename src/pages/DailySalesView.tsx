@@ -19,10 +19,9 @@ const normalizeSalesDate = (value: string) => {
 interface Props {
     inspections: InspectionEntry[];
     dailyBudgets: DailyBudget[];
-    onOpenPopGem?: () => void;
 }
 
-export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onOpenPopGem }) => {
+export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) => {
     const [allRecords, setAllRecords] = useState<DailySalesRecord[]>([]);
     const [sharedSales, setSharedSales] = useState<SharedSalesEntry[]>([]);
     const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
@@ -604,14 +603,6 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                                     {csvSummary.diffStatus === '正常' ? '✅' : csvSummary.diffStatus === '注意' ? '⚠️' : '🚨'}{' '}
                                     {csvSummary.diffMessage}
                                 </span>
-                                {csvSummary.diffRate !== null && Math.abs(csvSummary.diffRate) > 1 && onOpenPopGem && (
-                                    <button
-                                        className={`ds-pop-btn ${Math.abs(csvSummary.diffRate) > 3 ? 'ds-pop-btn-emph' : ''}`}
-                                        onClick={() => onOpenPopGem()}
-                                    >
-                                        ✨ 対策POPを作成
-                                    </button>
-                                )}
                             </div>
                         )}
                     </div>
@@ -765,37 +756,6 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets, onO
                 .ds-csv-msg { margin-top: 12px; padding: 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 700; display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.2); }
                 .ds-csv-msg.ds-msg-warn { background: rgba(220, 38, 38, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); }
                 
-                .ds-pop-btn {
-                    align-self: flex-start;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    background: #f8fafc;
-                    color: #0f172a;
-                    border: 1px solid #cbd5e1;
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    font-size: 0.85rem;
-                    font-weight: 800;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                }
-                .ds-pop-btn:hover { background: #f1f5f9; }
-                .ds-pop-btn-emph {
-                    background: #ef4444;
-                    color: white;
-                    border: none;
-                    box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
-                    animation: pulse-red 2s infinite;
-                }
-                .ds-pop-btn-emph:hover { background: #dc2626; }
-                
-                @keyframes pulse-red {
-                    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-                    70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-                    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-                }
-
                 /* 月間累計カード */
                 .ds-monthly-card { background: linear-gradient(135deg, #475569 0%, #1e293b 100%); color: white; border-radius: 12px; padding: 18px; margin-top: 16px; margin-bottom: 24px; }
                 .ds-monthly-card h3 { margin: 0 0 14px 0; font-size: 1rem; font-weight: 700; opacity: 0.9; }
