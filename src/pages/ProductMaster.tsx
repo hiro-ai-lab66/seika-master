@@ -7,10 +7,19 @@ import { fetchSharedProducts, replaceProductsInGoogleSheets, syncProductToGoogle
 import { ensureSharedSheetsSession, isSheetsConfigured } from '../services/googleSheetsInventoryService';
 import { normalizeCode } from '../utils/normalizeCode';
 
+const normalizeProductText = (value: string) =>
+    (value || '')
+        .normalize('NFKC')
+        .replace(/[\u3000\s]+/g, '')
+        .replace(/[\u30a1-\u30f6]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0x60))
+        .toLowerCase();
+
 const getProductMergeKey = (product: Product, source: 'local' | 'sheets', index: number) => {
     const codeKey = normalizeCode(product.code);
     if (codeKey) return codeKey;
-    return `${source}:no-code:${product.id || product.name || index}`;
+    const nameKey = normalizeProductText(product.name || '');
+    if (nameKey) return `name:${nameKey}`;
+    return `${source}:no-code:${product.id || index}`;
 };
 
 const pickNonEmpty = <T extends string | undefined>(primary: T, fallback: T): T =>
@@ -59,10 +68,28 @@ const mergeProducts = (localProducts: Product[], sharedProducts: Product[]): Pro
 type ProductDepartment = '野菜' | '果物';
 
 const normalizeDepartmentText = (value: string) =>
-    (value || '')
-        .normalize('NFKC')
-        .replace(/[\u3000\s]+/g, '')
-        .toLowerCase();
+    normalizeProductText(value);
+
+const FRUIT_NAME_KEYWORDS = [
+    'りんご', '林檎', 'みかん', '蜜柑', 'ばなな', 'いちご', '苺', 'きうい', 'おれんじ',
+    'ぐれーぷふるーつ', 'めろん', 'すいか', '西瓜', 'もも', '桃', 'なし', '梨',
+    'ぶどう', '葡萄', '柿', 'ぱいなっぷる', 'ぱいん', 'でこぽん', '不知火'
+].map(normalizeProductText);
+
+const VEGETABLE_NAME_KEYWORDS = [
+    'きゃべつ', 'れたす', 'とまと', 'みにとまと', '大根', '白菜', 'ほうれん草',
+    '小松菜', 'きゅうり', '胡瓜', 'ぶろっこりー', 'にんじん', '人参', '玉ねぎ',
+    'たまねぎ', '長ねぎ', '長葱', '白ねぎ', 'ぴーまん', 'なす', '茄子', 'じゃがいも',
+    '馬鈴薯', 'さつまいも', 'ごぼう', 'れんこん', '蓮根'
+].map(normalizeProductText);
+
+const inferDepartmentFromName = (name: string): ProductDepartment | '' => {
+    const normalizedName = normalizeProductText(name);
+    if (!normalizedName) return '';
+    if (FRUIT_NAME_KEYWORDS.some(keyword => normalizedName.includes(keyword))) return '果物';
+    if (VEGETABLE_NAME_KEYWORDS.some(keyword => normalizedName.includes(keyword))) return '野菜';
+    return '';
+};
 
 const resolveProductDepartment = (product: Product): ProductDepartment | '' => {
     const productWithDepartment = product as Product & { department?: string };
@@ -72,24 +99,27 @@ const resolveProductDepartment = (product: Product): ProductDepartment | '' => {
         product.type
     ].filter(Boolean);
 
+    const inferredFromName = inferDepartmentFromName(product.name);
     const normalizedValues = values.map(value => normalizeDepartmentText(value || ''));
     const matchedValue = normalizedValues.find(value =>
         value.includes('野菜') ||
         value.includes('果物') ||
         value.includes('果実') ||
-        value.includes('フルーツ') ||
+        value.includes('ふるーつ') ||
         value.includes('fruit')
     );
-    if (!matchedValue) return '';
+    if (!matchedValue) return inferredFromName;
 
-    if (
+    const saysFruit =
         matchedValue.includes('果物') ||
         matchedValue.includes('果実') ||
-        matchedValue.includes('フルーツ') ||
-        matchedValue.includes('fruit')
-    ) return '果物';
-    if (matchedValue.includes('野菜')) return '野菜';
-    return '';
+        matchedValue.includes('ふるーつ') ||
+        matchedValue.includes('fruit');
+    const saysVegetable = matchedValue.includes('野菜');
+
+    if (saysFruit && !saysVegetable) return '果物';
+    if (saysVegetable && !saysFruit) return '野菜';
+    return inferredFromName;
 };
 
 export const ProductMaster: React.FC = () => {
@@ -538,15 +568,12 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
     };
 
     const filteredProducts = useMemo(() => {
-        // 全角英数字を半角に、大文字を小文字に変換
-        // さらにカタカナをひらがなに変換する正規化関数
-        const normalize = (str: string) => {
-            if (!str) return '';
-            return str
-                .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
-                .replace(/[\u30a1-\u30f6]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0x60)) // カタカナをひらがなに
-                .toLowerCase();
-        };
+        const queryTokens = searchQuery
+            .normalize('NFKC')
+            .trim()
+            .split(/[\s\u3000]+/)
+            .map(normalizeProductText)
+            .filter(Boolean);
 
         const result = products.filter(p => {
             // カテゴリフィルターの適用
@@ -555,15 +582,21 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
             }
 
             // 検索クエリの適用
-            if (searchQuery.trim()) {
-                const q = normalize(searchQuery);
-                return (
-                    (p.name && normalize(p.name).includes(q)) ||
-                    (p.code && normalize(p.code).includes(q)) ||
-                    (p.category && normalize(p.category).includes(q)) ||
-                    ((p as Product & { department?: string }).department && normalize((p as Product & { department?: string }).department || '').includes(q)) ||
-                    (p.kana && normalize(p.kana).includes(q))
-                );
+            if (queryTokens.length > 0) {
+                const productWithDepartment = p as Product & { department?: string };
+                const searchableText = [
+                    p.name,
+                    p.code,
+                    p.category,
+                    productWithDepartment.department,
+                    p.type,
+                    p.kana,
+                    p.unit,
+                    p.memo,
+                    resolveProductDepartment(p)
+                ].map(value => normalizeProductText(value || '')).join(' ');
+
+                return queryTokens.every(token => searchableText.includes(token));
             }
 
             return true;
