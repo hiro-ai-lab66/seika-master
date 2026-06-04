@@ -180,7 +180,19 @@ const normalizeShiftCellText = (value: string) =>
     .replace(/[\u3000\s]+/g, '')
     .trim();
 
+const normalizeShiftDutyValue = (value: string) =>
+  normalizeShiftCellText(value)
+    .normalize('NFKC')
+    .toUpperCase();
+
 const hasTimeyFlag = (value: string) => normalizeShiftCellText(value).toLowerCase().includes('t');
+
+const isShiftDutyRow = (label: string) => {
+  if (!label) return false;
+  if (label === 'タイミー') return false;
+  if (label.includes('タイミー') && label.includes('時間')) return false;
+  return true;
+};
 
 const normalizeShiftHeaderDate = (value: string, fallbackYear: string) => {
   const trimmed = (value || '').trim();
@@ -321,19 +333,20 @@ const buildShiftSummary = (
   const timeyRowIndex = normalizedRows.findIndex((entry) => entry.label === 'タイミー');
   const timeyHoursRowIndex = normalizedRows.findIndex((entry) => entry.label.includes('タイミー') && entry.label.includes('時間'));
 
-  const dutyRows = timeyRowIndex >= 0 ? normalizedRows.slice(0, timeyRowIndex) : normalizedRows;
+  const dutyRows = normalizedRows.filter((entry) => isShiftDutyRow(entry.label));
 
   dutyRows.forEach((entry) => {
     if (!entry.label || !entry.value) return;
-    if (entry.value === 'B') {
+    const normalizedValue = normalizeShiftDutyValue(entry.value);
+    if (normalizedValue === 'B') {
       summary.lateMembers.push(entry.row.name);
       return;
     }
-    if (entry.value === '0.5') {
+    if (normalizedValue === '0.5') {
       summary.halfHolidayMembers.push(entry.row.name);
       return;
     }
-    if (entry.value === '0') {
+    if (normalizedValue === '0') {
       summary.holidayMembers.push(entry.row.name);
     }
   });
