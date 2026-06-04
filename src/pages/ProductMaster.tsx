@@ -13,6 +13,9 @@ const getProductMergeKey = (product: Product, source: 'local' | 'sheets', index:
     return `${source}:no-code:${product.id || product.name || index}`;
 };
 
+const pickNonEmpty = <T extends string | undefined>(primary: T, fallback: T): T =>
+    primary && primary.trim() ? primary : fallback;
+
 const mergeProducts = (localProducts: Product[], sharedProducts: Product[]): Product[] => {
     const productMap = new Map<string, Product>();
 
@@ -35,9 +38,9 @@ const mergeProducts = (localProducts: Product[], sharedProducts: Product[]): Pro
             id: localProduct.id || sharedProduct.id,
             name: sharedProduct.name || localProduct.name,
             code: normalizeCode(sharedProduct.code) || normalizeCode(localProduct.code),
-            category: sharedProduct.category ?? localProduct.category,
-            type: sharedProduct.type ?? localProduct.type,
-            kana: sharedProduct.kana ?? localProduct.kana,
+            category: pickNonEmpty(sharedProduct.category, localProduct.category),
+            type: pickNonEmpty(sharedProduct.type, localProduct.type),
+            kana: pickNonEmpty(sharedProduct.kana, localProduct.kana),
             totalSalesQty: localProduct.totalSalesQty ?? sharedProduct.totalSalesQty,
             totalSalesAmt: localProduct.totalSalesAmt ?? sharedProduct.totalSalesAmt,
             firstRegistered: localProduct.firstRegistered ?? sharedProduct.firstRegistered,
@@ -55,6 +58,12 @@ const mergeProducts = (localProducts: Product[], sharedProducts: Product[]): Pro
 
 type ProductDepartment = '野菜' | '果物';
 
+const normalizeDepartmentText = (value: string) =>
+    (value || '')
+        .normalize('NFKC')
+        .replace(/[\u3000\s]+/g, '')
+        .toLowerCase();
+
 const resolveProductDepartment = (product: Product): ProductDepartment | '' => {
     const productWithDepartment = product as Product & { department?: string };
     const values = [
@@ -63,10 +72,22 @@ const resolveProductDepartment = (product: Product): ProductDepartment | '' => {
         product.type
     ].filter(Boolean);
 
-    const matchedValue = values.find(value => value?.includes('野菜') || value?.includes('果物'));
+    const normalizedValues = values.map(value => normalizeDepartmentText(value || ''));
+    const matchedValue = normalizedValues.find(value =>
+        value.includes('野菜') ||
+        value.includes('果物') ||
+        value.includes('果実') ||
+        value.includes('フルーツ') ||
+        value.includes('fruit')
+    );
     if (!matchedValue) return '';
 
-    if (matchedValue.includes('果物')) return '果物';
+    if (
+        matchedValue.includes('果物') ||
+        matchedValue.includes('果実') ||
+        matchedValue.includes('フルーツ') ||
+        matchedValue.includes('fruit')
+    ) return '果物';
     if (matchedValue.includes('野菜')) return '野菜';
     return '';
 };
