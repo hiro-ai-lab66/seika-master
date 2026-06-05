@@ -4,6 +4,7 @@ import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
 import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
+import { createCompatId } from '../utils/ids';
 
 interface SellfloorRecordFormProps {
   onSave: (record: SellfloorRecord) => Promise<{ message: string }>;
@@ -42,8 +43,18 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
   const isEditMode = Boolean(existingRecord);
+
+  const resetFileInputs = () => {
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+    if (libraryInputRef.current) {
+      libraryInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     setProduct(existingRecord?.product || '');
@@ -53,17 +64,17 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSelectedPopId(existingRecord?.popId || '');
     setImageUrl(existingRecord?.photoUrl || '');
     setPhotoFile(null);
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-    }
-    setPhotoPreview(null);
+    setPhotoPreview((currentPreview) => {
+      if (currentPreview) {
+        URL.revokeObjectURL(currentPreview);
+      }
+      return null;
+    });
     setIsSaving(false);
     setSaveSuccess(false);
     setSaveMessage('');
     setSaveError('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    resetFileInputs();
   }, [existingRecord, defaultAuthor]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,9 +110,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveMessage('');
     setSaveError('');
     setSelectedPopId('');
-    if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-    }
+    resetFileInputs();
   };
 
   const handleSave = async () => {
@@ -146,7 +155,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         }
         
         const newRecord: SellfloorRecord = {
-            id: existingRecord?.id || crypto.randomUUID(),
+            id: existingRecord?.id || createCompatId(),
             date: existingRecord?.date || currentDate || getLocalTodayDateString(),
             product,
             location,
@@ -237,8 +246,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             <input
                 type="file"
                 accept="image/*"
+                capture="environment"
                 style={{ display: 'none' }}
-                ref={fileInputRef}
+                ref={cameraInputRef}
+                onChange={handleFileChange}
+            />
+            <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                ref={libraryInputRef}
                 onChange={handleFileChange}
             />
             
@@ -293,14 +310,14 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
                 <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => cameraInputRef.current?.click()}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1, minWidth: '170px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', padding: '12px 14px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer' }}
                 >
                     <Camera size={18} /> 写真を撮る
                 </button>
                 <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => libraryInputRef.current?.click()}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1, minWidth: '170px', backgroundColor: 'white', color: 'var(--text-main)', border: '1px solid #cbd5e1', padding: '12px 14px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer' }}
                 >
                     <Images size={18} /> アルバムから選ぶ

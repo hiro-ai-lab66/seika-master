@@ -1,7 +1,13 @@
 import { authorizedGoogleApiFetch, ensureSharedSheetsSession } from './googleSheetsInventoryService';
+import { createCompatId } from '../utils/ids';
 
-const getDriveFolderId = () => (import.meta as any).env?.VITE_GOOGLE_DRIVE_FOLDER_ID?.trim() || '';
-const getGoogleClientId = () => (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
+type ImportMetaWithEnv = ImportMeta & {
+  env?: Record<string, string | undefined>;
+};
+
+const getEnv = () => (import.meta as ImportMetaWithEnv).env;
+const getDriveFolderId = () => getEnv()?.VITE_GOOGLE_DRIVE_FOLDER_ID?.trim() || '';
+const getGoogleClientId = () => getEnv()?.VITE_GOOGLE_CLIENT_ID?.trim() || '';
 const getOauthProjectHint = () => {
   const clientId = getGoogleClientId();
   const match = clientId.match(/^(\d+)-/);
@@ -33,7 +39,8 @@ const readFileAsDataUrl = (file: File): Promise<string> => {
 
 const resizeImageBlob = (
   source: string,
-  options: { maxWidth: number; maxHeight: number; quality: number }
+  options: { maxWidth: number; maxHeight: number; quality: number },
+  sourceFile?: File
 ): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -69,7 +76,10 @@ const resizeImageBlob = (
         resolve(blob);
       }, 'image/jpeg', options.quality);
     };
-    img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    img.onerror = () => {
+      const fileType = sourceFile?.type || '不明';
+      reject(new Error(`画像の読み込みに失敗しました。Androidで撮影した写真の場合は、カメラ設定をJPEG形式にするか、アルバムからJPEG画像を選択してください。（形式: ${fileType}）`));
+    };
     img.src = source;
   });
 };
@@ -78,12 +88,26 @@ const compressImageForDrive = async (
   file: File,
   options: { maxWidth: number; maxHeight: number; quality: number }
 ): Promise<File> => {
-  const source = await readFileAsDataUrl(file);
-  const blob = await resizeImageBlob(source, options);
-  return new File([blob], `${file.name.replace(/\.[^.]+$/, '') || 'image'}.jpg`, {
-    type: 'image/jpeg',
-    lastModified: Date.now()
-  });
+  let source = '';
+  let objectUrl = '';
+  try {
+    objectUrl = URL.createObjectURL(file);
+    source = objectUrl;
+  } catch {
+    source = await readFileAsDataUrl(file);
+  }
+
+  try {
+    const blob = await resizeImageBlob(source, options, file);
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, '') || 'image'}.jpg`, {
+      type: 'image/jpeg',
+      lastModified: Date.now()
+    });
+  } finally {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
 };
 
 const buildMultipartBody = async (metadata: Record<string, unknown>, file: File, boundary: string): Promise<Blob> => {
@@ -142,7 +166,7 @@ export const uploadImageFileToGoogleDrive = async (
     name: `${options.fileNamePrefix}_${Date.now()}.jpg`,
     parents: [folderId]
   };
-  const boundary = `seika_drive_upload_${crypto.randomUUID()}`;
+  const boundary = `seika_drive_upload_${createCompatId()}`;
   const body = await buildMultipartBody(metadata, compressedFile, boundary);
 
   console.log('[googleDriveImageService] upload via user oauth', {
