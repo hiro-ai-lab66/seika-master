@@ -215,6 +215,11 @@ export const postSharedWriteAction = async <T>(
   action: string,
   payload: unknown
 ): Promise<T> => {
+  console.log('[sharedDataApi] write request', {
+    endpoint: WRITE_API_PATH,
+    resource,
+    action
+  });
   const response = await fetch(WRITE_API_PATH, {
     method: 'POST',
     headers: {
@@ -226,6 +231,13 @@ export const postSharedWriteAction = async <T>(
       action,
       payload
     })
+  });
+  console.log('[sharedDataApi] write response', {
+    endpoint: WRITE_API_PATH,
+    resource,
+    action,
+    status: response.status,
+    ok: response.ok
   });
 
   let json: { result?: T; error?: string } | null = null;

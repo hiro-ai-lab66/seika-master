@@ -43,9 +43,23 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const isEditMode = Boolean(existingRecord);
+
+  const appendDebugLog = (message: string, info?: Record<string, unknown>) => {
+    const detail = info
+      ? ` ${JSON.stringify(info, (_key, value) => value instanceof File ? {
+          name: value.name,
+          type: value.type,
+          size: value.size
+        } : value)}`
+      : '';
+    const entry = `${new Date().toLocaleTimeString('ja-JP')} ${message}${detail}`;
+    console.log('[SellfloorRecordForm:debug]', message, info || {});
+    setDebugLogs((current) => [...current.slice(-19), entry]);
+  };
 
   const resetFileInputs = () => {
     if (cameraInputRef.current) {
@@ -74,12 +88,19 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveSuccess(false);
     setSaveMessage('');
     setSaveError('');
+    setDebugLogs([]);
     resetFileInputs();
   }, [existingRecord, defaultAuthor]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      appendDebugLog('写真選択 onChange 発火', {
+        fileName: file.name,
+        fileType: file.type || 'unknown',
+        fileSize: file.size,
+        fileObjectReceived: true
+      });
       setPhotoFile(file);
       
       // Free memory if there was a previous preview
@@ -90,8 +111,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
       // Create a local preview
       const previewUrl = URL.createObjectURL(file);
       setPhotoPreview(previewUrl);
+      appendDebugLog('プレビューURL作成成功', {
+        previewUrlCreated: Boolean(previewUrl)
+      });
       setSaveSuccess(false);
       setSaveError('');
+      e.target.value = '';
+    } else {
+      appendDebugLog('写真選択 onChange 発火 - ファイルなし', {
+        fileObjectReceived: false
+      });
     }
   };
 
@@ -109,6 +138,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveSuccess(false);
     setSaveMessage('');
     setSaveError('');
+    setDebugLogs([]);
     setSelectedPopId('');
     resetFileInputs();
   };
@@ -117,6 +147,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     const normalizedImageUrl = normalizeDriveImageUrl(imageUrl);
 
     if (!normalizedImageUrl && !photoFile) {
+        appendDebugLog('保存中断 - 画像未選択');
         alert("画像URLを入力するか、写真を選択してください");
         return;
     }
@@ -127,9 +158,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveSuccess(false);
     setSaveError('');
     setSaveMessage('');
+    appendDebugLog('保存開始', {
+      hasManualImageUrl: Boolean(normalizedImageUrl),
+      hasPhotoFile: Boolean(photoFile),
+      apiHost: window.location.origin,
+      path: window.location.pathname
+    });
     try {
         if (normalizedImageUrl && !isRemoteImageUrl(normalizedImageUrl)) {
             console.log('[SellfloorRecordForm] invalid imageUrl provided', { imageUrl: normalizedImageUrl });
+            appendDebugLog('保存中断 - 画像URL形式不正', { imageUrl: normalizedImageUrl });
             alert("画像URL は http(s) URL を入力してください");
             setSaveError('画像URL の形式が不正です');
             return;
@@ -141,18 +179,28 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             imageUrl: normalizedImageUrl,
             hasPhotoFile: Boolean(photoFile)
           });
+          appendDebugLog('手入力URLを使用 - Driveアップロード省略', {
+            imageUrl: normalizedImageUrl
+          });
           photoUrl = normalizedImageUrl;
         } else {
           console.log('[SellfloorRecordForm] uploading image file to drive', {
             fileName: photoFile?.name || null
           });
+          appendDebugLog('Driveアップロード開始', {
+            fileName: photoFile?.name || '',
+            fileType: photoFile?.type || 'unknown',
+            fileSize: photoFile?.size || 0
+          });
           photoUrl = await uploadImageFileToGoogleDrive(photoFile!, {
             fileNamePrefix: 'sellfloor',
             maxWidth: 800,
             maxHeight: 800,
-            quality: 0.65
+            quality: 0.65,
+            onDebug: appendDebugLog
           });
         }
+        appendDebugLog('写真URL確定', { photoUrl });
         
         const newRecord: SellfloorRecord = {
             id: existingRecord?.id || createCompatId(),
@@ -167,9 +215,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             updatedAt: new Date().toISOString()
         };
         console.log("payload:", newRecord);
+        appendDebugLog('売場記録保存API呼び出し開始', {
+          recordId: newRecord.id,
+          photoUrl: newRecord.photoUrl
+        });
         
         const result = await onSave(newRecord);
         console.log("save success", result);
+        appendDebugLog('売場記録保存処理完了', {
+          message: result.message || ''
+        });
         setSaveSuccess(true);
         setSaveMessage(result.message || (isEditMode ? '更新しました' : '保存しました'));
         if (result.message) {
@@ -182,6 +237,9 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     } catch (error) {
         console.log("save fail", error);
         console.error("Failed to save sellfloor record", error);
+        appendDebugLog('保存失敗', {
+          error: error instanceof Error ? error.message : String(error)
+        });
         setSaveError(error instanceof Error ? error.message : "保存に失敗しました");
         alert(error instanceof Error ? error.message : "保存に失敗しました");
     } finally {
@@ -218,6 +276,18 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
           <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#fef2f2', color: '#b91c1c', fontSize: '0.85rem', fontWeight: 700 }}>
             {saveError}
           </div>
+        )}
+        {debugLogs.length > 0 && (
+          <details open style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
+            <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 800, color: '#334155' }}>
+              Android確認ログ
+            </summary>
+            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem', color: '#475569', lineHeight: 1.5, wordBreak: 'break-word' }}>
+              {debugLogs.map((log, index) => (
+                <div key={`${index}-${log}`} style={{ fontFamily: 'monospace' }}>{log}</div>
+              ))}
+            </div>
+          </details>
         )}
         
         {/* Photo Upload Area */}

@@ -37,6 +37,16 @@ const readFileAsDataUrl = (file: File): Promise<string> => {
   });
 };
 
+type DriveUploadDebugInfo = Record<string, string | number | boolean | null | undefined>;
+type DriveUploadDebugLogger = (step: string, info?: DriveUploadDebugInfo) => void;
+type DriveUploadOptions = {
+  fileNamePrefix: string;
+  maxWidth: number;
+  maxHeight: number;
+  quality: number;
+  onDebug?: DriveUploadDebugLogger;
+};
+
 const resizeImageBlob = (
   source: string,
   options: { maxWidth: number; maxHeight: number; quality: number },
@@ -86,23 +96,46 @@ const resizeImageBlob = (
 
 const compressImageForDrive = async (
   file: File,
-  options: { maxWidth: number; maxHeight: number; quality: number }
+  options: { maxWidth: number; maxHeight: number; quality: number },
+  onDebug?: DriveUploadDebugLogger
 ): Promise<File> => {
   let source = '';
   let objectUrl = '';
   try {
     objectUrl = URL.createObjectURL(file);
     source = objectUrl;
+    onDebug?.('画像読み込み準備', {
+      method: 'objectUrl',
+      originalSize: file.size,
+      originalType: file.type || 'unknown'
+    });
   } catch {
     source = await readFileAsDataUrl(file);
+    onDebug?.('画像読み込み準備', {
+      method: 'base64',
+      originalSize: file.size,
+      originalType: file.type || 'unknown',
+      base64Length: source.length
+    });
   }
 
   try {
+    onDebug?.('画像圧縮開始', {
+      maxWidth: options.maxWidth,
+      maxHeight: options.maxHeight,
+      quality: options.quality
+    });
     const blob = await resizeImageBlob(source, options, file);
-    return new File([blob], `${file.name.replace(/\.[^.]+$/, '') || 'image'}.jpg`, {
+    const compressedFile = new File([blob], `${file.name.replace(/\.[^.]+$/, '') || 'image'}.jpg`, {
       type: 'image/jpeg',
       lastModified: Date.now()
     });
+    onDebug?.('画像圧縮成功', {
+      compressedName: compressedFile.name,
+      compressedType: compressedFile.type,
+      compressedSize: compressedFile.size
+    });
+    return compressedFile;
   } finally {
     if (objectUrl) {
       URL.revokeObjectURL(objectUrl);
@@ -136,9 +169,15 @@ const createDriveImageUrl = (fileId: string) => `https://drive.google.com/thumbn
 
 export const uploadImageFileToGoogleDrive = async (
   file: File,
-  options: { fileNamePrefix: string; maxWidth: number; maxHeight: number; quality: number }
+  options: DriveUploadOptions
 ): Promise<string> => {
+  options.onDebug?.('Drive認証確認開始', {
+    fileName: file.name,
+    fileType: file.type || 'unknown',
+    fileSize: file.size
+  });
   await ensureDriveSession();
+  options.onDebug?.('Drive認証確認成功');
 
   const folderId = getDriveFolderId();
   const clientId = getGoogleClientId();
@@ -160,7 +199,7 @@ export const uploadImageFileToGoogleDrive = async (
     maxWidth: options.maxWidth,
     maxHeight: options.maxHeight,
     quality: options.quality
-  });
+  }, options.onDebug);
 
   const metadata: Record<string, unknown> = {
     name: `${options.fileNamePrefix}_${Date.now()}.jpg`,
@@ -168,6 +207,11 @@ export const uploadImageFileToGoogleDrive = async (
   };
   const boundary = `seika_drive_upload_${createCompatId()}`;
   const body = await buildMultipartBody(metadata, compressedFile, boundary);
+  options.onDebug?.('Driveアップロード送信', {
+    endpoint: 'googleapis upload/drive/v3/files',
+    fileName: String(metadata.name),
+    compressedSize: compressedFile.size
+  });
 
   console.log('[googleDriveImageService] upload via user oauth', {
     folderId: maskFolderId(folderId),
@@ -184,9 +228,17 @@ export const uploadImageFileToGoogleDrive = async (
       body
     }
   );
+  options.onDebug?.('Driveアップロード応答', {
+    status: uploadResponse.status,
+    ok: uploadResponse.ok
+  });
 
   if (!uploadResponse.ok) {
     const detail = await uploadResponse.text().catch(() => '');
+    options.onDebug?.('Driveアップロード失敗', {
+      status: uploadResponse.status,
+      errorBody: detail.slice(0, 500)
+    });
     throw new Error(buildDriveOauthError(detail));
   }
 
@@ -209,9 +261,17 @@ export const uploadImageFileToGoogleDrive = async (
       })
     }
   );
+  options.onDebug?.('Drive権限設定応答', {
+    status: permissionResponse.status,
+    ok: permissionResponse.ok
+  });
 
   if (!permissionResponse.ok) {
     const detail = await permissionResponse.text().catch(() => '');
+    options.onDebug?.('Drive権限設定失敗', {
+      status: permissionResponse.status,
+      errorBody: detail.slice(0, 500)
+    });
     throw new Error(buildDriveOauthError(detail || 'Google Drive の共有権限設定に失敗しました'));
   }
 
@@ -221,5 +281,10 @@ export const uploadImageFileToGoogleDrive = async (
     parents: uploadPayload.parents || [folderId]
   });
 
-  return createDriveImageUrl(fileId);
+  const driveUrl = createDriveImageUrl(fileId);
+  options.onDebug?.('Driveアップロード成功', {
+    fileId,
+    driveUrl
+  });
+  return driveUrl;
 };
