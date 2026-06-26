@@ -7,6 +7,7 @@ import {
     readSharedSheetValues,
     writeSharedSheetValues
 } from './googleSheetsInventoryService';
+import { fetchSharedReadResource } from './sharedDataApi';
 
 const PRODUCT_SHEET_NAME = (import.meta as any).env?.VITE_PRODUCTS_SHEET_TAB?.trim() || 'shared_products';
 const PRODUCT_HEADER = ['ID', '商品名', 'コード', 'カテゴリ', '単位', 'タイプ', '更新日時'];
@@ -79,8 +80,22 @@ const listSharedProducts = async (): Promise<SharedProductRow[]> => {
 };
 
 export const fetchSharedProducts = async (): Promise<Product[]> => {
-    await ensureProductSheetsSession(false);
+    try {
+        const apiProducts = await fetchSharedReadResource<Product>('products', { force: true });
+        console.log('[ProductSheets] fetched products from shared API:', apiProducts.length);
+        return apiProducts.map((product) => ({
+            ...product,
+            id: product.id || crypto.randomUUID(),
+            name: product.name || (product as Product & { productName?: string; itemName?: string }).productName || (product as Product & { productName?: string; itemName?: string }).itemName || '',
+            code: product.code || (product as Product & { jan?: string; JAN?: string }).jan || (product as Product & { jan?: string; JAN?: string }).JAN || '',
+            updatedAt: product.updatedAt || new Date().toISOString(),
+            syncStatus: 'synced'
+        }));
+    } catch (error) {
+        console.error('[ProductSheets] shared API fetch failed, falling back to browser Sheets auth', error);
+    }
 
+    await ensureProductSheetsSession(false);
     const rows = await listSharedProducts();
     console.log('[ProductSheets] fetched rows:', rows.length);
     return rows.map((row) => ({

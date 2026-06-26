@@ -214,24 +214,20 @@ export const ProductMaster: React.FC = () => {
     }, []);
 
     const loadSharedProductsIntoState = async (interactiveLogin: boolean) => {
-        if (!isSheetsConfigured()) {
-            setSharedStatus('Google Sheets 未設定のためローカルデータを表示中');
-            setNeedsSheetsLogin(false);
-            return;
-        }
-
         setIsSharedLoading(true);
         setSharedError(null);
 
         try {
-            const restored = await ensureSharedSheetsSession(interactiveLogin);
-            console.log('[ProductMaster] shared product restore result', { restored, interactiveLogin });
+            if (interactiveLogin && isSheetsConfigured()) {
+                const restored = await ensureSharedSheetsSession(true);
+                console.log('[ProductMaster] shared product restore result', { restored, interactiveLogin });
 
-            if (!restored) {
-                setNeedsSheetsLogin(true);
-                setSharedStatus('Google Sheets に再ログインすると共有データを表示できます');
-                setIsSheetsReady(false);
-                return;
+                if (!restored) {
+                    setNeedsSheetsLogin(true);
+                    setSharedStatus('Google Sheets に再ログインすると共有データを表示できます');
+                    setIsSheetsReady(false);
+                    return;
+                }
             }
 
             const sharedProducts = await fetchSharedProducts();
@@ -245,10 +241,10 @@ export const ProductMaster: React.FC = () => {
             isHydratingFromSheetsRef.current = true;
             setProducts(mergedProducts);
             saveProducts(mergedProducts);
-            setIsSheetsReady(true);
+            setIsSheetsReady(false);
             setNeedsSheetsLogin(false);
             setSharedError(null);
-            setSharedStatus('共有データを表示中');
+            setSharedStatus(sharedProducts.length > 0 ? '共有データを表示中' : '共有商品データが空です');
         } catch (error) {
             console.error('[ProductMaster] failed to load shared products', error);
             const message = error instanceof Error ? error.message : '取得に失敗しました';

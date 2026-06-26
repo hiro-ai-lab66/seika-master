@@ -1,4 +1,4 @@
-export type SharedReadResource = 'check' | 'sales' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift' | 'morningStatus';
+export type SharedReadResource = 'check' | 'sales' | 'notice' | 'advertisement' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'shift' | 'morningStatus' | 'products';
 export type SharedWriteResource = 'check' | 'sales' | 'notice' | 'popibrary' | 'sellfloor' | 'budget' | 'dailyNotes' | 'dailySales' | 'morningStatus';
 
 type SharedReadResponse<T> = {

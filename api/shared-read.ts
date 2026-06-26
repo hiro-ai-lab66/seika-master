@@ -246,7 +246,248 @@ const ADVERTISEMENT_COLUMN_INDEX = {
   extra: 7
 } as const;
 
+const normalizeHeaderText = (value: string) => normalizeText(value).toLowerCase();
+
+const findHeaderIndex = (headers: string[], aliases: string[]) => {
+  const normalizedAliases = aliases.map(normalizeHeaderText);
+  return headers.findIndex((header) => {
+    const normalizedHeader = normalizeHeaderText(header);
+    return normalizedAliases.some((alias) => normalizedHeader.includes(alias));
+  });
+};
+
+const getHeaderValue = (row: string[], headers: string[], aliases: string[], fallbackIndex?: number) => {
+  const headerIndex = findHeaderIndex(headers, aliases);
+  const index = headerIndex >= 0 ? headerIndex : fallbackIndex;
+  return index === undefined ? '' : row[index] || '';
+};
+
+const mapProductRows = (rows: string[][]) => {
+  const nonEmptyRows = parseRows(rows);
+  if (nonEmptyRows.length === 0) return [];
+
+  const firstRow = nonEmptyRows[0] || [];
+  const firstRowText = firstRow.map(normalizeHeaderText).join('|');
+  const hasHeader = ['商品名', '品名', '名称', 'コード', 'jan', 'カテゴリ', '単位', '規格', '仕入先']
+    .some((label) => firstRowText.includes(normalizeHeaderText(label)));
+  const headers = hasHeader ? firstRow : ['ID', '商品名', 'コード', 'カテゴリ', '単位', 'タイプ', '更新日時'];
+  const dataRows = hasHeader ? nonEmptyRows.slice(1) : nonEmptyRows;
+
+  return dataRows
+    .map((row, index) => {
+      const code = getHeaderValue(row, headers, ['コード', '商品コード', '品番', '商品番号', 'JAN', 'JANコード', 'PLU'], 2);
+      const updatedAt = getHeaderValue(row, headers, ['更新日時', '更新日', 'updatedAt'], 6) || new Date().toISOString();
+      const name = getHeaderValue(row, headers, ['商品名', '品名', '名称', '商品名（漢字）'], 1);
+      const category = getHeaderValue(row, headers, ['カテゴリ', 'カテゴリー', '部門'], 3);
+      const unit = getHeaderValue(row, headers, ['単位', '入数'], 4);
+      const type = getHeaderValue(row, headers, ['タイプ', '種別'], 5);
+      const supplier = getHeaderValue(row, headers, ['仕入先', '仕入先名', 'supplier']);
+      const spec = getHeaderValue(row, headers, ['規格', 'サイズ', '荷姿', '階級', 'standard', 'spec']);
+      const memo = getHeaderValue(row, headers, ['メモ', '備考', 'memo']);
+
+      return {
+        id: getHeaderValue(row, headers, ['ID', 'id'], 0) || `shared-product-${index + 1}`,
+        rowNumber: (hasHeader ? index + 2 : index + 1),
+        name,
+        productName: name,
+        code,
+        jan: code,
+        category,
+        unit: unit || spec,
+        type,
+        supplier,
+        supplierName: supplier,
+        spec,
+        standard: spec,
+        memo,
+        updatedAt,
+        syncStatus: 'synced'
+      };
+    })
+    .filter((product) => product.name || product.code || product.category || product.supplier || product.spec);
+};
+
+const mapInventoryPhase1ProductRows = (rows: string[][]) => {
+  const productsByKey = new Map<string, {
+    id: string;
+    productName: string;
+    name: string;
+    code: string;
+    category: string;
+    department: string;
+    unit: string;
+    cost: number | null;
+    price: number | null;
+    updatedAt: string;
+    syncStatus: 'synced';
+  }>();
+
+  parseRows(rows)
+    .filter((row) => normalizeHeaderText(row[4] || '') !== 'name')
+    .forEach((row, index) => {
+      const name = row[4] || '';
+      if (!name.trim()) return;
+
+      const id = row[3] || `inventory-product-${index + 1}`;
+      const key = normalizeText(id || name);
+      const updatedAt = row[10] || row[0] || new Date().toISOString();
+      const existing = productsByKey.get(key);
+      if (existing && existing.updatedAt >= updatedAt) return;
+
+      productsByKey.set(key, {
+        id,
+        productName: name,
+        name,
+        code: row[3] || '',
+        category: row[1] || '',
+        department: row[1] || '',
+        unit: row[6] || '',
+        cost: parseNumericValue(row[7] || ''),
+        price: parseNumericValue(row[8] || ''),
+        updatedAt,
+        syncStatus: 'synced'
+      });
+    });
+
+  return Array.from(productsByKey.values())
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+};
+
+const mapDailySalesProductRows = (rows: string[][]) => {
+  const productsByKey = new Map<string, {
+    id: string;
+    productName: string;
+    name: string;
+    code: string;
+    jan: string;
+    category: string;
+    department: string;
+    updatedAt: string;
+    totalSalesQty: number;
+    totalSalesAmt: number;
+    syncStatus: 'synced';
+  }>();
+
+  parseRows(rows).forEach((row, index) => {
+    const code = row[1] || '';
+    const name = row[2] || '';
+    if (!name.trim() && !code.trim()) return;
+
+    const key = normalizeText(code || name);
+    const date = normalizeSheetDate(row[0] || '');
+    const existing = productsByKey.get(key);
+    const salesQty = parseNumericValue(row[3] || '') || 0;
+    const salesAmt = parseNumericValue(row[5] || '') || 0;
+
+    if (existing) {
+      existing.totalSalesQty += salesQty;
+      existing.totalSalesAmt += salesAmt;
+      if (date >= existing.updatedAt) {
+        existing.name = name || existing.name;
+        existing.productName = name || existing.productName;
+        existing.category = row[6] || existing.category;
+        existing.department = row[6] || existing.department;
+        existing.updatedAt = date;
+      }
+      return;
+    }
+
+    productsByKey.set(key, {
+      id: code || `daily-sales-product-${index + 1}`,
+      productName: name,
+      name,
+      code,
+      jan: code,
+      category: row[6] || '',
+      department: row[6] || '',
+      updatedAt: date || new Date().toISOString(),
+      totalSalesQty: salesQty,
+      totalSalesAmt: salesAmt,
+      syncStatus: 'synced'
+    });
+  });
+
+  return Array.from(productsByKey.values())
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+};
+
+const readProductsWithFallback = async (availableSheetNames: string[]) => {
+  const sources: Array<{
+    sheetName: string;
+    range: string;
+    mapRows: (rows: string[][]) => Array<Record<string, unknown>>;
+  }> = [
+    { sheetName: 'shared_products', range: 'A1:Z', mapRows: mapProductRows },
+    { sheetName: 'inventory_phase1', range: 'A1:K', mapRows: mapInventoryPhase1ProductRows },
+    { sheetName: SHARED_DAILY_SALES_SHEET_NAME, range: 'A2:K', mapRows: mapDailySalesProductRows }
+  ];
+
+  const productsByKey = new Map<string, Record<string, unknown>>();
+  const usedSheetNames: string[] = [];
+  let totalRawRowCount = 0;
+
+  const mergeProduct = (product: Record<string, unknown>) => {
+    const code = String(product.code || product.jan || '').trim();
+    const name = String(product.name || product.productName || product.itemName || '').trim();
+    const key = normalizeText(code || name);
+    if (!key) return;
+
+    const existing = productsByKey.get(key);
+    if (!existing) {
+      productsByKey.set(key, product);
+      return;
+    }
+
+    productsByKey.set(key, {
+      ...product,
+      ...existing,
+      supplier: existing.supplier || product.supplier,
+      supplierName: existing.supplierName || product.supplierName,
+      spec: existing.spec || product.spec,
+      standard: existing.standard || product.standard,
+      memo: existing.memo || product.memo,
+      totalSalesQty: Number(existing.totalSalesQty || 0) + Number(product.totalSalesQty || 0),
+      totalSalesAmt: Number(existing.totalSalesAmt || 0) + Number(product.totalSalesAmt || 0)
+    });
+  };
+
+  for (const source of sources) {
+    if (!availableSheetNames.includes(source.sheetName)) continue;
+
+    const rows = await readGoogleSheetValues(source.sheetName, source.range);
+    const items = source.mapRows(rows);
+    totalRawRowCount += rows.length;
+    usedSheetNames.push(source.sheetName);
+    console.log('[shared-read] products source attempt', {
+      sheetName: source.sheetName,
+      rawRowCount: rows.length,
+      parsedItemCount: items.length,
+      rawPreview: rows.slice(0, 3),
+      parsedPreview: items.slice(0, 3)
+    });
+
+    items.forEach(mergeProduct);
+  }
+
+  const items = Array.from(productsByKey.values())
+    .sort((a, b) =>
+      String(a.category || a.department || '').localeCompare(String(b.category || b.department || '')) ||
+      String(a.name || a.productName || '').localeCompare(String(b.name || b.productName || ''))
+    );
+
+  return {
+    sheetName: usedSheetNames.join(',') || 'shared_products',
+    rows: Array.from({ length: totalRawRowCount }, () => []),
+    items
+  };
+};
+
 const resourceConfigs = {
+  products: {
+    sheetName: 'shared_products',
+    range: 'A1:Z',
+    mapRows: mapProductRows
+  },
   check: {
     sheetName: SHARED_CHECK_SHEET_NAME,
     range: 'A2:G',
@@ -498,6 +739,29 @@ export default async function handler(req: any, res: any) {
   try {
     const spreadsheetInfo = getConfiguredSpreadsheetInfo();
     const availableSheetNames = await assertGoogleSheetExists(config.sheetName);
+    if (resource === 'products') {
+      const productResult = await readProductsWithFallback(availableSheetNames);
+      const uniqueCategories = Array.from(new Set((productResult.items as Array<{ category?: string }>).map((item) => item.category).filter(Boolean)));
+      console.log('[shared-read] products response status:', 200);
+      console.log('[shared-read] products item count:', productResult.items.length);
+      res.status(200).json({
+        spreadsheetId: spreadsheetInfo.spreadsheetId,
+        spreadsheetUrl: spreadsheetInfo.spreadsheetUrl,
+        spreadsheetIdSource: spreadsheetInfo.spreadsheetIdSource,
+        sheetName: productResult.sheetName,
+        availableSheetNames,
+        diagnostics: {
+          resource,
+          rawRowCount: productResult.rows.length,
+          parsedItemCount: productResult.items.length,
+          uniqueCategoryCount: uniqueCategories.length,
+          sourceSheetName: productResult.sheetName
+        },
+        items: productResult.items
+      });
+      return;
+    }
+
     console.log('[shared-read] target sheet:', {
       resource,
       sheetName: config.sheetName,
