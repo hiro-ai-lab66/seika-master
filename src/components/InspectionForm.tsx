@@ -183,7 +183,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [sharedError, setSharedError] = useState<string | null>(null);
     const [csvWarning, setCsvWarning] = useState<string | null>(null);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [csvUiResetKey, setCsvUiResetKey] = useState(0);
     const bestItemSourceRef = useRef<{
         date: string;
@@ -1242,11 +1242,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         return result;
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (isSubmittingRef.current) return;
-        isSubmittingRef.current = true;
-        try {
         if (!form.totalBudget || form.totalBudget <= 0) {
             alert("予算を入力してください");
             return;
@@ -1259,6 +1257,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             alert("消化率は0〜100%の範囲で入力してください");
             return;
         }
+        isSubmittingRef.current = true;
         if (saveStatusTimerRef.current !== null) {
             window.clearTimeout(saveStatusTimerRef.current);
             saveStatusTimerRef.current = null;
@@ -1275,14 +1274,27 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 ? Number(((form.actualFinal / normalizedStoreSalesFinal) * 100).toFixed(1))
                 : null;
 
-        const entryToSave = {
+        const entryToSave = structuredClone({
             ...form,
             isFinalConfirmed: period === 'final' ? true : Boolean(form.isFinalConfirmed),
             storeSalesFinal: normalizedStoreSalesFinal,
             compositionRatio: normalizedCompositionRatio,
             bestVegetables: analysisVeggies,
             bestFruits: analysisFruits,
-        } as InspectionEntry;
+        } as InspectionEntry);
+        const saveSnapshot = {
+            date: currentDate,
+            period,
+            entry: entryToSave,
+            rows: structuredClone(buildSharedCheckRows()),
+            dailySalesMetadata: {
+                date: currentDate,
+                weather: deriveOverallWeather(aiWeather12, aiWeather17) || aiWeather || undefined,
+                temp_band: deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null) || aiTempBand || undefined,
+                customer_count: entryToSave.customersFinal ?? undefined,
+                avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
+            }
+        };
         console.log('[InspectionForm][AndroidDebug] submit forecast compare', {
             period,
             salesRaw: period === '17:00' ? actual17Input : actual12Input,
@@ -1299,35 +1311,30 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
         updateProductMaster(allAnalysisItems, 'report-submit');
 
-        // AI分析用メタデータをdaily_salesに反映
-        try {
-            await enrichSharedDailySalesByDate({
-                date: currentDate,
-                weather: deriveOverallWeather(aiWeather12, aiWeather17) || aiWeather || undefined,
-                temp_band: deriveTempBandFromHigh(aiHighTemp ? Number(aiHighTemp) : null) || aiTempBand || undefined,
-                customer_count: form.customersFinal ?? undefined,
-                avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
-            });
-        } catch (dailySalesError) {
-            console.error('[InspectionForm] failed to enrich shared daily sales metadata', dailySalesError);
-        }
+        // 以降の通信は保存開始時のスナップショットを使い、画面操作をブロックしない。
+        void (async () => {
+            // AI分析用メタデータをdaily_salesに反映
+            try {
+                await enrichSharedDailySalesByDate(saveSnapshot.dailySalesMetadata);
+            } catch (dailySalesError) {
+                console.error('[InspectionForm] failed to enrich shared daily sales metadata', dailySalesError);
+            }
 
         let completionMessage = '報告を保存しました';
         try {
-            const rows = buildSharedCheckRows();
-            await upsertSharedCheckRowsForDateTimes(currentDate, [period], rows);
-            if (period === 'final' && form.actualFinal !== null && form.actualFinal !== undefined && form.actualFinal > 0) {
+            await upsertSharedCheckRowsForDateTimes(saveSnapshot.date, [saveSnapshot.period], saveSnapshot.rows);
+            if (saveSnapshot.period === 'final' && saveSnapshot.entry.actualFinal !== null && saveSnapshot.entry.actualFinal !== undefined && saveSnapshot.entry.actualFinal > 0) {
                 try {
                     const salesSyncResult = await upsertFinalInspectionSharedSales({
-                        date: currentDate,
-                        sales: form.actualFinal,
-                        customers: form.customersFinal ?? null,
+                        date: saveSnapshot.date,
+                        sales: saveSnapshot.entry.actualFinal,
+                        customers: saveSnapshot.entry.customersFinal ?? null,
                         author: FINAL_SALES_AUTHOR
                     });
                     console.log('[InspectionForm] synced final inspection to shared_sales', {
-                        date: currentDate,
-                        sales: form.actualFinal,
-                        customers: form.customersFinal ?? null,
+                        date: saveSnapshot.date,
+                        sales: saveSnapshot.entry.actualFinal,
+                        customers: saveSnapshot.entry.customersFinal ?? null,
                         author: FINAL_SALES_AUTHOR,
                         action: salesSyncResult.action
                     });
@@ -1351,23 +1358,20 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             completionMessage = '報告は保存しましたが、共有保存に失敗しました';
         }
 
-        onSave(entryToSave);
         if (completionMessage.includes('失敗')) {
-            setSaveStatus('idle');
+            setSharedStatus(null);
+            setSaveStatus('error');
         } else {
+            onSave(saveSnapshot.entry);
+            setSharedStatus(null);
             setSaveStatus('saved');
             saveStatusTimerRef.current = window.setTimeout(() => {
                 setSaveStatus('idle');
                 saveStatusTimerRef.current = null;
             }, 2000);
         }
-        alert(completionMessage);
-        } finally {
-            isSubmittingRef.current = false;
-            if (saveStatusTimerRef.current === null) {
-                setSaveStatus('idle');
-            }
-        }
+        isSubmittingRef.current = false;
+        })();
     };
 
     // 解析データ独立state
@@ -1794,6 +1798,27 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             </div>
 
             <p style={{ margin: '-8px 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 700 }}>{AMOUNT_NOTE}</p>
+            {saveStatus !== 'idle' && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                        marginTop: '8px',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        background: saveStatus === 'error' ? '#fef2f2' : saveStatus === 'saved' ? '#f0fdf4' : '#eff6ff',
+                        color: saveStatus === 'error' ? '#b91c1c' : saveStatus === 'saved' ? '#15803d' : '#1d4ed8',
+                        fontSize: '0.9rem',
+                        fontWeight: 700
+                    }}
+                >
+                    {saveStatus === 'saving'
+                        ? '保存中…'
+                        : saveStatus === 'saved'
+                            ? '保存しました ✓'
+                            : '保存に失敗しました。再試行してください'}
+                </div>
+            )}
             {(sharedStatus || sharedError) && (
                 <div style={{
                     marginTop: '8px',
@@ -2264,7 +2289,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     disabled={saveStatus === 'saving'}
                     onKeyDown={handleSubmitButtonKeyDown}
                 >
-                    {saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '✓ 保存しました' : '報告を保存する'}
+                    {saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '保存しました ✓' : '報告を保存する'}
                 </button>
             </form>
 

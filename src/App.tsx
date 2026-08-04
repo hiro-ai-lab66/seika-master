@@ -1012,7 +1012,6 @@ function App() {
     });
     void refreshSharedData('inspection-save');
     setDashboardRefreshKey((prev) => prev + 1);
-    setActiveTab('dashboard');
   };
 
   const clearMonthEndAnalysis = (date: string) => {
