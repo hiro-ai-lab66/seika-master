@@ -1847,10 +1847,18 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             </div>
 
             <form ref={formRef} onSubmit={handleSubmit} className="form-stack">
-                <div className="entry-group common-fields">
-                    <div className="form-group">
-                        <label>本日の売上予算（千円） *</label>
+                <section className="budget-section" aria-labelledby="budget-heading">
+                    <div className="section-heading-row">
+                        <div>
+                            <p className="section-kicker">TODAY'S BUDGET</p>
+                            <h3 id="budget-heading">本日の予算</h3>
+                        </div>
+                        <span className="unit-badge">千円単位</span>
+                    </div>
+                    <div className="metric-card metric-card-input budget-card">
+                        <label htmlFor="inspection-total-budget">売上予算</label>
                         <input
+                            id="inspection-total-budget"
                             ref={registerFieldRef('totalBudget')}
                             type="text"
                             inputMode="numeric"
@@ -1864,58 +1872,90 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             style={sharedBudgetTarget > 0 ? { backgroundColor: '#f0fdf4', color: '#15803d', cursor: 'not-allowed' } : undefined}
                         />
                         {sharedBudgetTarget > 0 && (
-                            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#15803d', fontWeight: 600 }}>
-                                ✔ shared_budget から自動取得（{formatThousandInput(sharedBudgetTarget)}千円）
+                            <p className="auto-source-note">
+                                shared_budget から自動取得
                             </p>
                         )}
                     </div>
-                </div>
+                </section>
 
-                {period === '12:00' && (
+                {period !== 'final' && (
                     <div className="entry-group">
-                        <h3>12:00 中間報告</h3>
-                        <div className="form-group-grid">
-                            <div className="form-group">
-                                <label>12時実績（千円）</label>
+                        <div className="section-heading-row">
+                            <div>
+                                <p className="section-kicker">{period === '12:00' ? '12:00 CHECK' : '17:00 CHECK'}</p>
+                                <h3>点検実績</h3>
+                            </div>
+                            <span className="unit-badge">金額は千円</span>
+                        </div>
+                        <div className="metric-grid inspection-metric-grid">
+                            <div className="metric-card metric-card-input">
+                                <label>{period === '12:00' ? '12時実績' : '17時実績'}</label>
                                 <input
-                                    ref={registerFieldRef('actual12')}
+                                    ref={registerFieldRef(period === '12:00' ? 'actual12' : 'actual17')}
                                     type="text"
                                     inputMode="numeric"
                                     pattern="[0-9]*"
-                                    value={actual12Input}
-                                    onChange={e => handleDraftAmountInputChange('actual12', e.target.value, setActual12Input)}
-                                    onKeyDown={e => handleEnterToNext(e, 'actual12')}
+                                    value={period === '12:00' ? actual12Input : actual17Input}
+                                    onChange={e => period === '12:00'
+                                        ? handleDraftAmountInputChange('actual12', e.target.value, setActual12Input)
+                                        : handleDraftAmountInputChange('actual17', e.target.value, setActual17Input)}
+                                    onKeyDown={e => handleEnterToNext(e, period === '12:00' ? 'actual12' : 'actual17')}
                                     placeholder="0"
                                 />
                             </div>
-                            <div className="form-group">
-                                <label>12時消化率 (%)</label>
+                            <div className="metric-card metric-card-input compact-metric-card">
+                                <label>消化率</label>
                                 <input
-                                    ref={registerFieldRef('rate12')}
+                                    ref={registerFieldRef(period === '12:00' ? 'rate12' : 'rate17')}
                                     type="text"
                                     inputMode="decimal"
-                                    value={rate12Input}
-                                    onChange={e => handleRateInputChange('rate12', e.target.value, setRate12Input, 'actual12', actual12Input)}
-                                    onKeyDown={e => handleEnterToNext(e, 'rate12')}
+                                    value={period === '12:00' ? rate12Input : rate17Input}
+                                    onChange={e => period === '12:00'
+                                        ? handleRateInputChange('rate12', e.target.value, setRate12Input, 'actual12', actual12Input)
+                                        : handleRateInputChange('rate17', e.target.value, setRate17Input, 'actual17', actual17Input)}
+                                    onKeyDown={e => handleEnterToNext(e, period === '12:00' ? 'rate12' : 'rate17')}
                                     placeholder="0.0"
                                 />
+                                <span className="metric-suffix">%</span>
+                            </div>
+                            <div className="metric-card">
+                                <span className="metric-label">予測最終</span>
+                                <span className="metric-value">{formatThousandDisplay(period === '12:00' ? form.forecast12 : form.forecast17)}</span>
+                                <span className="metric-unit">千円</span>
+                            </div>
+                            <div className="metric-card">
+                                <span className="metric-label">予算差額</span>
+                                {(() => {
+                                    const difference = period === '12:00' ? form.diff12 : form.diff17;
+                                    return <span className={`metric-value ${difference !== null && difference !== undefined ? (difference < 0 ? 'negative' : 'positive') : ''}`}>{formatThousandDisplay(difference, true)}</span>;
+                                })()}
+                                <span className="metric-unit">千円</span>
                             </div>
                         </div>
-                        <div className="form-group">
-                            <label>12時客数 (名)</label>
-                            <input
-                                ref={registerFieldRef('customers12')}
-                                type="number"
-                                inputMode="numeric"
-                                value={form.customers12 ?? ''}
-                                onChange={e => handleNumberChange('customers12', e.target.value)}
-                                onKeyDown={e => handleEnterToNext(e, 'customers12')}
-                                placeholder="0"
-                            />
+                        <div className="metric-grid customer-metric-grid">
+                            <div className="metric-card metric-card-input">
+                                <label>店計客数</label>
+                                <input
+                                    ref={registerFieldRef(period === '12:00' ? 'customers12' : 'customers17')}
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={(period === '12:00' ? form.customers12 : form.customers17) ?? ''}
+                                    onChange={e => handleNumberChange(period === '12:00' ? 'customers12' : 'customers17', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, period === '12:00' ? 'customers12' : 'customers17')}
+                                    placeholder="0"
+                                />
+                                <span className="metric-suffix">名</span>
+                            </div>
                         </div>
 
-                        <div className="promo-section">
-                            <h4>売り込み商品の状況</h4>
+                        <section className="promo-section">
+                            <div className="section-heading-row compact">
+                                <div>
+                                    <p className="section-kicker">FOCUS ITEM</p>
+                                    <h4>売り込み商品</h4>
+                                </div>
+                            </div>
                             <div className="form-group">
                                 <label>売り込み品名</label>
                                 <input
@@ -1927,9 +1967,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     placeholder="品名を入力"
                                 />
                             </div>
-                            <div className="form-group-grid">
-                                <div className="form-group">
-                                    <label>売上目標（千円）</label>
+                            <div className="metric-grid promo-metric-grid">
+                                <div className="metric-card metric-card-input">
+                                    <label>売上目標</label>
                                     <input
                                         ref={registerFieldRef('promotionTargetSales')}
                                         type="text"
@@ -1941,164 +1981,36 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                         placeholder="目標額"
                                     />
                                 </div>
-                                <div className="form-group">
-                                    <label>12時売上（千円）</label>
+                                <div className="metric-card metric-card-input">
+                                    <label>点検時売上</label>
                                     <input
-                                        ref={registerFieldRef('promotionActual12Sales')}
+                                        ref={registerFieldRef(period === '12:00' ? 'promotionActual12Sales' : 'promotionActual17Sales')}
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
-                                        value={promotionActual12SalesInput}
-                                        onChange={e => handleDraftAmountInputChange('promotionActual12Sales', e.target.value, setPromotionActual12SalesInput)}
-                                        onKeyDown={e => handleEnterToNext(e, 'promotionActual12Sales')}
+                                        value={period === '12:00' ? promotionActual12SalesInput : promotionActual17SalesInput}
+                                        onChange={e => period === '12:00'
+                                            ? handleDraftAmountInputChange('promotionActual12Sales', e.target.value, setPromotionActual12SalesInput)
+                                            : handleDraftAmountInputChange('promotionActual17Sales', e.target.value, setPromotionActual17SalesInput)}
+                                        onKeyDown={e => handleEnterToNext(e, period === '12:00' ? 'promotionActual12Sales' : 'promotionActual17Sales')}
                                         placeholder="実績額"
                                     />
                                 </div>
-                            </div>
-                            <div className="promo-results-row">
-                                {form.promotionTargetSales ? (
-                                    <div className="promo-rate-display">
-                                        消化率: <span className="rate-value">{form.promotionActual12Rate}%</span>
-                                    </div>
-                                ) : null}
-                                <div className="promo-result-inline">
-                                    <span className="label">予測最終</span>
-                                    <span className="value">{form.forecast12 !== null && form.forecast12 !== undefined ? formatThousandDisplay(form.forecast12) : "---"}</span>
-                                </div>
-                                <div className="promo-result-inline">
-                                    <span className="label">予算差額</span>
-                                    <span className={`value ${form.diff12 !== null && form.diff12 !== undefined ? (Number(form.diff12) < 0 ? 'negative' : 'positive') : ''}`}>
-                                    {form.diff12 !== null && form.diff12 !== undefined ? formatThousandDisplay(form.diff12, true) : "---"}
-                                    </span>
+                                <div className="metric-card compact-metric-card">
+                                    <span className="metric-label">消化率</span>
+                                    <span className="metric-value">{period === '12:00' ? form.promotionActual12Rate : form.promotionActual17Rate}%</span>
                                 </div>
                             </div>
-                        </div>
+                        </section>
 
                         <div className="notes-group">
-                            <label>気づいたこと・反省点 (12:00)</label>
+                            <label>気づいたこと・反省点 ({period})</label>
                             <textarea
-                                ref={registerFieldRef('notes12')}
-                                value={form.notes12 || ''}
-                                onChange={e => handleChange('notes12', e.target.value)}
-                                onKeyDown={e => handleEnterToNext(e, 'notes12')}
-                                placeholder="例: 客層が主婦層メイン。キャベツの売れ行きが良い。"
-                                rows={3}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {period === '17:00' && (
-                    <div className="entry-group">
-                        <h3>17:00 夕方報告</h3>
-                        <div className="form-group-grid">
-                            <div className="form-group">
-                                <label>17時実績（千円）</label>
-                                <input
-                                    ref={registerFieldRef('actual17')}
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={actual17Input}
-                                    onChange={e => handleDraftAmountInputChange('actual17', e.target.value, setActual17Input)}
-                                    onKeyDown={e => handleEnterToNext(e, 'actual17')}
-                                    placeholder="0"
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>17時消化率 (%)</label>
-                                <input
-                                    ref={registerFieldRef('rate17')}
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={rate17Input}
-                                    onChange={e => handleRateInputChange('rate17', e.target.value, setRate17Input, 'actual17', actual17Input)}
-                                    onKeyDown={e => handleEnterToNext(e, 'rate17')}
-                                    placeholder="0.0"
-                                />
-                            </div>
-                        </div>
-                        <div className="form-group">
-                            <label>17時客数 (名)</label>
-                            <input
-                                ref={registerFieldRef('customers17')}
-                                type="number"
-                                inputMode="numeric"
-                                value={form.customers17 ?? ''}
-                                onChange={e => handleNumberChange('customers17', e.target.value)}
-                                onKeyDown={e => handleEnterToNext(e, 'customers17')}
-                                placeholder="0"
-                            />
-                        </div>
-
-                        <div className="promo-section">
-                            <h4>売り込み商品の状況</h4>
-                            <div className="form-group">
-                                <label>売り込み品名</label>
-                                <input
-                                    ref={registerFieldRef('promotionItem')}
-                                    type="text"
-                                    value={promotionItemInput}
-                                    onChange={e => handlePromotionItemInputChange(e.target.value)}
-                                    onKeyDown={e => handleEnterToNext(e, 'promotionItem')}
-                                    placeholder="品名を入力"
-                                />
-                            </div>
-                            <div className="form-group-grid">
-                                <div className="form-group">
-                                    <label>売上目標（千円）</label>
-                                    <input
-                                        ref={registerFieldRef('promotionTargetSales')}
-                                        type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        value={promotionTargetSalesInput}
-                                        onChange={e => handleDraftAmountInputChange('promotionTargetSales', e.target.value, setPromotionTargetSalesInput)}
-                                        onKeyDown={e => handleEnterToNext(e, 'promotionTargetSales')}
-                                        placeholder="目標額"
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>17時売上（千円）</label>
-                                    <input
-                                        ref={registerFieldRef('promotionActual17Sales')}
-                                        type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        value={promotionActual17SalesInput}
-                                        onChange={e => handleDraftAmountInputChange('promotionActual17Sales', e.target.value, setPromotionActual17SalesInput)}
-                                        onKeyDown={e => handleEnterToNext(e, 'promotionActual17Sales')}
-                                        placeholder="実績額"
-                                    />
-                                </div>
-                            </div>
-                            <div className="promo-results-row">
-                                {form.promotionTargetSales ? (
-                                    <div className="promo-rate-display">
-                                        消化率: <span className="rate-value">{form.promotionActual17Rate}%</span>
-                                    </div>
-                                ) : null}
-                                <div className="promo-result-inline">
-                                    <span className="label">予測最終</span>
-                                    <span className="value">{form.forecast17 !== null && form.forecast17 !== undefined ? formatThousandDisplay(form.forecast17) : "---"}</span>
-                                </div>
-                                <div className="promo-result-inline">
-                                    <span className="label">予算差額</span>
-                                    <span className={`value ${form.diff17 !== null && form.diff17 !== undefined ? (Number(form.diff17) < 0 ? 'negative' : 'positive') : ''}`}>
-                                    {form.diff17 !== null && form.diff17 !== undefined ? formatThousandDisplay(form.diff17, true) : "---"}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="notes-group">
-                            <label>気づいたこと・反省点 (17:00)</label>
-                            <textarea
-                                ref={registerFieldRef('notes17')}
-                                value={form.notes17 || ''}
-                                onChange={e => handleChange('notes17', e.target.value)}
-                                onKeyDown={e => handleEnterToNext(e, 'notes17')}
-                                placeholder="例: 夕方のピークが早まった。明日の品出しを15分早める。"
+                                ref={registerFieldRef(period === '12:00' ? 'notes12' : 'notes17')}
+                                value={(period === '12:00' ? form.notes12 : form.notes17) || ''}
+                                onChange={e => handleChange(period === '12:00' ? 'notes12' : 'notes17', e.target.value)}
+                                onKeyDown={e => handleEnterToNext(e, period === '12:00' ? 'notes12' : 'notes17')}
+                                placeholder="点検時の気づきや申し送りを入力"
                                 rows={3}
                             />
                         </div>
@@ -2107,10 +2019,17 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
                 {period === 'final' && (
                     <div className="entry-group">
-                        <h3>最終報告 (閉店)</h3>
-                        <div className="form-group-grid">
-                            <div className="form-group">
-                                <label>最終実績（千円）</label>
+                        <div className="section-heading-row">
+                            <div>
+                                <p className="section-kicker">CLOSING RESULT</p>
+                                <h3>最終実績（閉店）</h3>
+                            </div>
+                            <span className="unit-badge">金額は千円</span>
+                        </div>
+
+                        <div className="metric-grid final-primary-grid">
+                            <div className="metric-card metric-card-input featured">
+                                <label>青果最終実績</label>
                                 <input
                                     ref={registerFieldRef('actualFinal')}
                                     type="text"
@@ -2122,20 +2041,44 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     placeholder="0"
                                 />
                             </div>
-                            <div className="form-group">
-                                <label>最終客数</label>
+                            <div className="metric-card compact-metric-card">
+                                <span className="metric-label">予算比</span>
+                                <span className="metric-value">{form.budgetRatio !== null && form.budgetRatio !== undefined ? `${form.budgetRatio}%` : '---'}</span>
+                            </div>
+                            <div className="metric-card">
+                                <span className="metric-label">予算差額</span>
+                                <span className={`metric-value ${form.diffFinal !== null && form.diffFinal !== undefined ? (form.diffFinal < 0 ? 'negative' : 'positive') : ''}`}>
+                                    {formatThousandDisplay(form.diffFinal, true)}
+                                </span>
+                                <span className="metric-unit">千円</span>
+                            </div>
+                        </div>
+
+                        <div className="metric-grid final-loss-grid">
+                            <div className="metric-card metric-card-input">
+                                <label>ロス額</label>
                                 <input
-                                    ref={registerFieldRef('customersFinal')}
+                                    ref={registerFieldRef('lossAmount')}
                                     type="number"
-                                    inputMode="numeric"
-                                    value={form.customersFinal ?? ''}
-                                    onChange={e => handleNumberChange('customersFinal', e.target.value)}
-                                    onKeyDown={e => handleEnterToNext(e, 'customersFinal')}
+                                    inputMode="decimal"
+                                    step="0.1"
+                                    min="0"
+                                    value={lossAmountInput}
+                                    onChange={e => handleLossAmountChange(e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'lossAmount')}
                                     placeholder="0"
                                 />
+                                <span className="metric-suffix">千円</span>
                             </div>
-                            <div className="form-group">
-                                <label>店計売上（千円）</label>
+                            <div className="metric-card compact-metric-card">
+                                <span className="metric-label">ロス率</span>
+                                <span className="metric-value">{form.lossRate !== null && form.lossRate !== undefined ? `${form.lossRate}%` : '0.00%'}</span>
+                            </div>
+                        </div>
+
+                        <div className="metric-grid final-store-grid">
+                            <div className="metric-card metric-card-input">
+                                <label>店計売上</label>
                                 <input
                                     ref={registerFieldRef('storeSalesFinal')}
                                     type="text"
@@ -2150,59 +2093,33 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                     }}
                                     onKeyDown={e => handleEnterToNext(e, 'storeSalesFinal')}
                                 />
+                                <span className="metric-suffix">千円</span>
+                            </div>
+                            <div className="metric-card metric-card-input">
+                                <label>最終客数</label>
+                                <input
+                                    ref={registerFieldRef('customersFinal')}
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={form.customersFinal ?? ''}
+                                    onChange={e => handleNumberChange('customersFinal', e.target.value)}
+                                    onKeyDown={e => handleEnterToNext(e, 'customersFinal')}
+                                    placeholder="0"
+                                />
+                                <span className="metric-suffix">名</span>
+                            </div>
+                            <div className="metric-card compact-metric-card">
+                                <span className="metric-label">青果構成比</span>
+                                <span className="metric-value">{form.compositionRatio !== null && form.compositionRatio !== undefined ? `${form.compositionRatio}%` : '---'}</span>
                             </div>
                         </div>
-                        <div
-                            style={{
-                                display: 'flex',
-                                gap: '8px',
-                                flexWrap: 'wrap',
-                                alignItems: 'center',
-                                marginBottom: '14px',
-                                padding: '10px 12px',
-                                borderRadius: '12px',
-                                background: '#f8fafc',
-                                border: '1px solid #e2e8f0'
-                            }}
-                        >
-                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569' }}>補助表示</span>
-                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
-                                客単価: {aiAvgPrice ? `${aiAvgPrice}千円` : '---'}
-                            </span>
-                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
-                                構成比: {form.compositionRatio !== null && form.compositionRatio !== undefined ? `${form.compositionRatio}%` : '---'}
-                            </span>
+
+                        <div className="support-strip">
+                            <span>補助表示</span>
+                            <strong>客単価 {aiAvgPrice ? `${aiAvgPrice}千円` : '---'}</strong>
                         </div>
                         <div className="form-group" style={{ gridColumn: '1 / -1', padding: '12px', background: '#ffe4e6', color: '#e11d48', fontWeight: 'bold', borderRadius: '4px', textAlign: 'center' }}>
                             CSVデバッグ機能 反映済み
-                        </div>
-                        <div className="live-results-grid">
-                            <div className="result-item">
-                                <div className="label">予算比</div>
-                                <div className="value">{form.budgetRatio !== null && form.budgetRatio !== undefined ? `${form.budgetRatio}%` : '---'}</div>
-                            </div>
-                        </div>
-                        <div className="form-group-grid">
-                            <div className="form-group">
-                                <label>ロス額（千円）</label>
-                                <input
-                                    ref={registerFieldRef('lossAmount')}
-                                    type="number"
-                                    inputMode="decimal"
-                                    step="0.1"
-                                    min="0"
-                                    value={lossAmountInput}
-                                    onChange={e => handleLossAmountChange(e.target.value)}
-                                    onKeyDown={e => handleEnterToNext(e, 'lossAmount')}
-                                    placeholder="0"
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>ロス率 (%)</label>
-                                <div className="read-only-display">
-                                    {form.lossRate !== null && form.lossRate !== undefined ? `${form.lossRate}%` : "0.00%"}
-                                </div>
-                            </div>
                         </div>
 
                         {/* AI分析用入力 */}
@@ -2356,16 +2273,209 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
           display: flex;
           flex-direction: column;
           gap: var(--space-lg);
+          width: 100%;
+          max-width: 1180px;
+          margin: 0 auto;
+          overflow-x: hidden;
         }
+        .form-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+        .budget-section,
+        .entry-group {
+          background: #ffffff;
+          padding: 28px;
+          border-radius: 20px;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .budget-section {
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+        .section-heading-row {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        .section-heading-row.compact {
+          align-items: center;
+        }
+        .section-heading-row h3,
+        .section-heading-row h4 {
+          margin: 0;
+          border: 0;
+          padding: 0;
+          color: #111827;
+          font-size: 1.35rem;
+          line-height: 1.25;
+          letter-spacing: 0.01em;
+        }
+        .section-kicker {
+          margin: 0 0 4px;
+          color: #64748b;
+          font-size: 0.68rem;
+          font-weight: 800;
+          letter-spacing: 0.13em;
+        }
+        .unit-badge {
+          flex: 0 0 auto;
+          padding: 5px 10px;
+          border-radius: 999px;
+          background: #f1f5f9;
+          color: #475569;
+          font-size: 0.72rem;
+          font-weight: 700;
+        }
+        .metric-grid {
+          display: grid;
+          gap: 14px;
+          width: 100%;
+        }
+        .inspection-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .customer-metric-grid { grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(0, 1fr)); }
+        .customer-metric-grid > * { grid-column: 1; }
+        .promo-metric-grid,
+        .final-primary-grid,
+        .final-store-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .final-loss-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .metric-card {
+          position: relative;
+          min-width: 0;
+          min-height: 136px;
+          padding: 18px 18px 16px;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          background: #f8fafc;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .metric-card.featured {
+          background: #f0fdf4;
+          border-color: #bbf7d0;
+        }
+        .compact-metric-card {
+          align-self: center;
+          min-height: 106px;
+          padding: 14px 16px;
+          background: #ffffff;
+        }
+        .compact-metric-card .metric-value {
+          font-size: clamp(1.25rem, 1.9vw, 1.6rem);
+        }
+        .compact-metric-card.metric-card-input input {
+          min-height: 40px;
+          padding-top: 4px;
+          font-size: clamp(1.25rem, 1.9vw, 1.6rem);
+        }
+        .metric-card label,
+        .metric-label {
+          color: #64748b;
+          font-size: 0.78rem;
+          font-weight: 700;
+          line-height: 1.3;
+        }
+        .metric-value {
+          margin-top: auto;
+          color: #0f172a;
+          font-size: clamp(1.45rem, 2.4vw, 2rem);
+          font-weight: 800;
+          line-height: 1.05;
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+        }
+        .metric-value.positive { color: #15803d; }
+        .metric-value.negative { color: #dc2626; }
+        .metric-unit {
+          color: #64748b;
+          font-size: 0.7rem;
+          font-weight: 700;
+          text-align: right;
+        }
+        .metric-card-input input {
+          min-width: 0;
+          width: 100%;
+          margin-top: auto;
+          padding: 8px 0 4px;
+          border: 0;
+          border-bottom: 2px solid #cbd5e1;
+          border-radius: 0;
+          background: transparent;
+          color: #0f172a;
+          font-size: clamp(1.45rem, 2.4vw, 2rem);
+          font-weight: 800;
+          line-height: 1.1;
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+        }
+        .metric-card-input input:focus {
+          border-color: #059669;
+          background: transparent;
+        }
+        .metric-card-input input::placeholder { color: #94a3b8; }
+        .metric-suffix {
+          position: absolute;
+          right: 18px;
+          bottom: 7px;
+          color: #64748b;
+          font-size: 0.65rem;
+          font-weight: 700;
+          pointer-events: none;
+        }
+        .metric-card-input:has(.metric-suffix) input { padding-right: 34px; }
+        .budget-card {
+          max-width: 400px;
+          min-height: 102px;
+          padding: 13px 15px 12px;
+          gap: 5px;
+        }
+        .budget-card.metric-card-input input {
+          min-height: 40px;
+          padding: 3px 0 2px;
+          font-size: clamp(1.25rem, 1.8vw, 1.55rem);
+        }
+        .budget-card label {
+          font-size: 0.72rem;
+        }
+        .budget-card .auto-source-note {
+          font-size: 0.66rem;
+        }
+        .auto-source-note {
+          margin: 0;
+          color: #15803d;
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-align: right;
+        }
+        .support-strip {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 12px 14px;
+          border-radius: 12px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          color: #334155;
+          font-size: 0.8rem;
+        }
+        .support-strip span { color: #64748b; font-weight: 700; }
+        .support-strip strong { font-size: 0.88rem; }
         .form-group-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: var(--space-md);
         }
         .promo-section {
-          margin-top: var(--space-md);
-          padding-top: var(--space-md);
-          border-top: 2px dashed #e2e8f0;
+          margin-top: 8px;
+          padding: 24px 0 0;
+          border-top: 1px solid #e5e7eb;
           display: flex;
           flex-direction: column;
           gap: var(--space-sm);
@@ -2439,13 +2549,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
           box-shadow: var(--shadow);
         }
         .entry-group {
-          background: white;
-          padding: var(--space-lg);
-          border-radius: var(--radius-lg);
           display: flex;
           flex-direction: column;
-          gap: var(--space-md);
-          border: 1px solid #f1f5f9;
+          gap: 20px;
         }
         .entry-group h3 {
           font-size: 1.1rem;
@@ -2781,6 +2887,37 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             border-radius: 6px;
             font-size: 0.88rem;
             background: white;
+        }
+        @media (max-width: 900px) {
+          .inspection-metric-grid,
+          .promo-metric-grid,
+          .final-primary-grid,
+          .final-store-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .customer-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 600px) {
+          .inspection-form { gap: 16px; }
+          .budget-section,
+          .entry-group { padding: 20px 16px; border-radius: 16px; }
+          .section-heading-row { align-items: center; }
+          .section-heading-row h3,
+          .section-heading-row h4 { font-size: 1.15rem; }
+          .inspection-metric-grid,
+          .promo-metric-grid,
+          .final-primary-grid,
+          .final-store-grid,
+          .final-loss-grid,
+          .customer-metric-grid { grid-template-columns: 1fr; }
+          .customer-metric-grid > * { grid-column: auto; }
+          .metric-card { min-height: 116px; padding: 15px; }
+          .compact-metric-card { min-height: 96px; padding: 13px 15px; }
+          .budget-card { min-height: 98px; padding: 12px 14px; }
+          .metric-suffix { right: 15px; }
+          .budget-card { max-width: none; }
+          .form-group-grid,
+          .csv-upload-grid,
+          .ai-meta-grid { grid-template-columns: 1fr; }
+          .support-strip { align-items: flex-start; flex-direction: column; gap: 4px; }
         }
       `}</style>
         </div>
