@@ -963,14 +963,14 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                                             marginBottom: '6px'
                                         }}
                                     >
-                                        <div style={{
+                                        <div className="product-master-item-heading" style={{
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'space-between',
                                             gap: '8px',
                                             marginBottom: '6px'
                                         }}>
-                                            <div style={{
+                                            <div className="product-master-item-name" style={{
                                                 fontSize: '14px',
                                                 fontWeight: 500,
                                                 color: 'var(--color-text-primary, var(--text-main))',
@@ -982,7 +982,7 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
                                             }}>
                                                 {displayName || '名称未設定'}
                                             </div>
-                                            <div style={{
+                                            <div className="product-master-item-code" style={{
                                                 fontSize: '13px',
                                                 color: 'var(--color-text-secondary, var(--text-muted))',
                                                 background: 'var(--color-background-secondary, #f1f5f9)',
@@ -1172,6 +1172,24 @@ ${cleanHeaders.filter(h => h).join(', ') || '(なし)'}
           opacity: 0.45;
           box-shadow: none;
           cursor: not-allowed;
+        }
+
+        @media (min-width: 769px) and (max-width: 1180px) {
+          .product-master-item-heading {
+            justify-content: flex-start !important;
+          }
+
+          .product-master-item-name {
+            flex: 0 1 auto !important;
+            max-width: 70%;
+          }
+
+          .product-master-item-code {
+            font-size: 13px !important;
+            line-height: 1.35;
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+          }
         }
 
         @media (max-width: 768px) {
