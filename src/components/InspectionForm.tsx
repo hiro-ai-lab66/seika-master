@@ -12,6 +12,7 @@ import { fetchSharedBudgetForDate } from '../services/googleSheetsBudgetService'
 import { deriveOverallWeather, deriveTempBandFromHigh, fetchDailyWeatherSnapshot } from '../services/weatherService';
 import { formatDisplayCodeWithCheckDigit } from '../utils/codeDisplay';
 import { normalizeCode } from '../utils/normalizeCode';
+import { runParallelInspectionSaves } from '../utils/inspectionSaveParallel';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -184,6 +185,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const [csvWarning, setCsvWarning] = useState<string | null>(null);
     const [isSharedReloading, setIsSharedReloading] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const saveButtonPressedAtRef = useRef<number | null>(null);
     const [csvUiResetKey, setCsvUiResetKey] = useState(0);
     const bestItemSourceRef = useRef<{
         date: string;
@@ -330,6 +332,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const handleSubmitButtonKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            saveButtonPressedAtRef.current = performance.now();
+        }
         if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
         event.preventDefault();
         if (isSubmittingRef.current) return;
@@ -1243,6 +1248,10 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     };
 
     const handleSubmit = (e: React.FormEvent) => {
+        const handlerStartedAt = performance.now();
+        const buttonToHandlerMs = saveButtonPressedAtRef.current === null
+            ? null
+            : handlerStartedAt - saveButtonPressedAtRef.current;
         e.preventDefault();
         if (isSubmittingRef.current) return;
         if (!form.totalBudget || form.totalBudget <= 0) {
@@ -1263,6 +1272,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             saveStatusTimerRef.current = null;
         }
         setSaveStatus('saving');
+
+        const dataPreparationStartedAt = performance.now();
 
         // 解析データを報告データに紐づけて保存
         const normalizedStoreSalesFinal = parseThousandInput(storeSalesInput);
@@ -1295,6 +1306,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 avg_price: aiAvgPrice ? Number(aiAvgPrice) * 1000 : undefined,
             }
         };
+        const dataPreparationMs = performance.now() - dataPreparationStartedAt;
         console.log('[InspectionForm][AndroidDebug] submit forecast compare', {
             period,
             salesRaw: period === '17:00' ? actual17Input : actual12Input,
@@ -1309,21 +1321,54 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
 
         // 商品マスターへの登録（報告時のみ・累計更新）
         const allAnalysisItems = [...analysisVeggies, ...analysisFruits];
+        const localProductSaveStartedAt = performance.now();
         updateProductMaster(allAnalysisItems, 'report-submit');
+        const localProductSaveMs = performance.now() - localProductSaveStartedAt;
+
+        console.log('[Save Performance] started', {
+            date: saveSnapshot.date,
+            period: saveSnapshot.period,
+            buttonToHandlerMs: buttonToHandlerMs === null ? 'keyboard/unknown' : Number(buttonToHandlerMs.toFixed(1)),
+            dataPreparationMs: Number(dataPreparationMs.toFixed(1)),
+            localProductSaveMs: Number(localProductSaveMs.toFixed(1)),
+            checkRowCount: saveSnapshot.rows.length
+        });
 
         // 以降の通信は保存開始時のスナップショットを使い、画面操作をブロックしない。
         void (async () => {
-            // AI分析用メタデータをdaily_salesに反映
-            try {
-                await enrichSharedDailySalesByDate(saveSnapshot.dailySalesMetadata);
-            } catch (dailySalesError) {
-                console.error('[InspectionForm] failed to enrich shared daily sales metadata', dailySalesError);
+            const asyncSaveStartedAt = performance.now();
+            let dailySalesMetadataMs = 0;
+            let sharedCheckMs = 0;
+            let parallelSaveMs = 0;
+            let finalSalesHistoryMs = 0;
+            let sharedSalesStatus: 'not-applicable' | 'success' | 'failed' | 'skipped-shared-check-failed' = 'not-applicable';
+            let sharedSalesError: unknown;
+            const parallelResult = await runParallelInspectionSaves(
+                () => enrichSharedDailySalesByDate(saveSnapshot.dailySalesMetadata),
+                () => upsertSharedCheckRowsForDateTimes(saveSnapshot.date, [saveSnapshot.period], saveSnapshot.rows)
+            );
+            dailySalesMetadataMs = parallelResult.dailySales.durationMs;
+            sharedCheckMs = parallelResult.sharedCheck.durationMs;
+            parallelSaveMs = parallelResult.parallelSaveMs;
+
+            const saveFailures: string[] = [];
+            if (parallelResult.dailySales.status === 'rejected') {
+                console.error('[InspectionForm] failed to enrich shared daily sales metadata', parallelResult.dailySales.error);
+                saveFailures.push(`daily_sales: ${parallelResult.dailySales.error instanceof Error ? parallelResult.dailySales.error.message : '更新に失敗しました'}`);
+            }
+            if (parallelResult.sharedCheck.status === 'rejected') {
+                console.error('[InspectionForm] failed to sync report submit to shared_check', parallelResult.sharedCheck.error);
+                saveFailures.push(`shared_check: ${parallelResult.sharedCheck.error instanceof Error ? parallelResult.sharedCheck.error.message : '更新に失敗しました'}`);
             }
 
-        let completionMessage = '報告を保存しました';
-        try {
-            await upsertSharedCheckRowsForDateTimes(saveSnapshot.date, [saveSnapshot.period], saveSnapshot.rows);
-            if (saveSnapshot.period === 'final' && saveSnapshot.entry.actualFinal !== null && saveSnapshot.entry.actualFinal !== undefined && saveSnapshot.entry.actualFinal > 0) {
+            if (
+                parallelResult.sharedCheck.status === 'fulfilled' &&
+                saveSnapshot.period === 'final' &&
+                saveSnapshot.entry.actualFinal !== null &&
+                saveSnapshot.entry.actualFinal !== undefined &&
+                saveSnapshot.entry.actualFinal > 0
+            ) {
+                const finalSalesHistoryStartedAt = performance.now();
                 try {
                     const salesSyncResult = await upsertFinalInspectionSharedSales({
                         date: saveSnapshot.date,
@@ -1338,39 +1383,94 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                         author: FINAL_SALES_AUTHOR,
                         action: salesSyncResult.action
                     });
+                    sharedSalesStatus = 'success';
                 } catch (salesError) {
                     console.error('[InspectionForm] failed to sync final inspection to shared_sales', salesError);
-                    setSharedError(`売上履歴の共有保存に失敗しました: ${salesError instanceof Error ? salesError.message : 'shared_sales 更新に失敗しました'}`);
-                    completionMessage = '報告は保存しましたが、売上履歴の共有保存に失敗しました';
+                    saveFailures.push(`shared_sales: ${salesError instanceof Error ? salesError.message : '更新に失敗しました'}`);
+                    sharedSalesStatus = 'failed';
+                    sharedSalesError = salesError;
+                } finally {
+                    finalSalesHistoryMs = performance.now() - finalSalesHistoryStartedAt;
                 }
+            } else if (
+                parallelResult.sharedCheck.status === 'rejected' &&
+                saveSnapshot.period === 'final' &&
+                saveSnapshot.entry.actualFinal !== null &&
+                saveSnapshot.entry.actualFinal !== undefined &&
+                saveSnapshot.entry.actualFinal > 0
+            ) {
+                sharedSalesStatus = 'skipped-shared-check-failed';
             }
 
-            if (!completionMessage.includes('失敗')) {
+            console.log('[Inspection Save]', {
+                date: saveSnapshot.date,
+                period: saveSnapshot.period,
+                daily_sales: {
+                    status: parallelResult.dailySales.status === 'fulfilled' ? 'success' : 'failed',
+                    durationMs: Number(dailySalesMetadataMs.toFixed(1)),
+                    error: parallelResult.dailySales.status === 'rejected' ? parallelResult.dailySales.error : undefined
+                },
+                shared_check: {
+                    status: parallelResult.sharedCheck.status === 'fulfilled' ? 'success' : 'failed',
+                    durationMs: Number(sharedCheckMs.toFixed(1)),
+                    error: parallelResult.sharedCheck.status === 'rejected' ? parallelResult.sharedCheck.error : undefined
+                },
+                shared_sales: {
+                    status: sharedSalesStatus,
+                    durationMs: Number(finalSalesHistoryMs.toFixed(1)),
+                    error: sharedSalesError
+                },
+                parallelSaveMs: Number(parallelSaveMs.toFixed(1))
+            });
+
+            const completionMessage = saveFailures.length === 0
+                ? '報告を保存し、共有データも更新しました'
+                : '保存に失敗しました。再試行してください';
+
+            if (saveFailures.length === 0) {
                 setSharedError(null);
+                setSharedStatus(`報告を保存し、共有データも更新しました（シート: ${getSharedCheckSheetName()}）`);
+            } else {
+                setSharedError(saveFailures.join(' / '));
+                setSharedStatus(null);
             }
-            setSharedStatus(`報告を保存し、共有データも更新しました（シート: ${getSharedCheckSheetName()}）`);
-            if (!completionMessage.includes('失敗')) {
-                completionMessage = '報告を保存し、共有データも更新しました';
-            }
-        } catch (error) {
-            console.error('[InspectionForm] failed to sync report submit to shared_check', error);
-            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : '報告共有に失敗しました'}`);
-            completionMessage = '報告は保存しましたが、共有保存に失敗しました';
-        }
 
-        if (completionMessage.includes('失敗')) {
-            setSharedStatus(null);
-            setSaveStatus('error');
-        } else {
-            onSave(saveSnapshot.entry);
-            setSharedStatus(null);
-            setSaveStatus('saved');
-            saveStatusTimerRef.current = window.setTimeout(() => {
-                setSaveStatus('idle');
-                saveStatusTimerRef.current = null;
-            }, 2000);
-        }
-        isSubmittingRef.current = false;
+            if (saveFailures.length > 0) {
+                setSharedStatus(null);
+                setSaveStatus('error');
+            } else {
+                onSave(saveSnapshot.entry);
+                setSharedStatus(null);
+                setSaveStatus('saved');
+                saveStatusTimerRef.current = window.setTimeout(() => {
+                    setSaveStatus('idle');
+                    saveStatusTimerRef.current = null;
+                }, 2000);
+            }
+            const totalToStateUpdateMs = performance.now() - handlerStartedAt;
+            console.log('[Save Performance]', {
+                date: saveSnapshot.date,
+                period: saveSnapshot.period,
+                buttonToHandlerMs: buttonToHandlerMs === null ? 'keyboard/unknown' : Number(buttonToHandlerMs.toFixed(1)),
+                dataPreparationMs: Number(dataPreparationMs.toFixed(1)),
+                localProductSaveMs: Number(localProductSaveMs.toFixed(1)),
+                dailySalesMetadataMs: Number(dailySalesMetadataMs.toFixed(1)),
+                sharedCheckSaveMs: Number(sharedCheckMs.toFixed(1)),
+                parallelSaveMs: Number(parallelSaveMs.toFixed(1)),
+                sharedSalesSaveMs: Number(finalSalesHistoryMs.toFixed(1)),
+                finalSalesHistoryMs: Number(finalSalesHistoryMs.toFixed(1)),
+                asyncSaveTotalMs: Number((performance.now() - asyncSaveStartedAt).toFixed(1)),
+                totalToStateUpdateMs: Number(totalToStateUpdateMs.toFixed(1)),
+                result: completionMessage
+            });
+            window.requestAnimationFrame(() => {
+                console.log('[Save Performance] completion display painted', {
+                    date: saveSnapshot.date,
+                    period: saveSnapshot.period,
+                    totalToPaintMs: Number((performance.now() - handlerStartedAt).toFixed(1))
+                });
+            });
+            isSubmittingRef.current = false;
         })();
     };
 
@@ -2287,6 +2387,9 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     type="submit"
                     className={`button-primary inspection-save-button ${saveStatus === 'saved' ? 'saved' : ''}`}
                     disabled={saveStatus === 'saving'}
+                    onPointerDown={() => {
+                        saveButtonPressedAtRef.current = performance.now();
+                    }}
                     onKeyDown={handleSubmitButtonKeyDown}
                 >
                     {saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '保存しました ✓' : '報告を保存する'}

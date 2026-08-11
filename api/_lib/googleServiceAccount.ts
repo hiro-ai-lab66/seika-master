@@ -151,9 +151,13 @@ const buildJwtAssertion = () => {
 };
 
 export const getGoogleAccessToken = async () => {
+  const tokenStartedAt = performance.now();
   if (tokenCache && tokenCache.expiresAt > Date.now() + 60_000) {
     console.log('[googleServiceAccount] using cached access token', {
       expiresAt: new Date(tokenCache.expiresAt).toISOString()
+    });
+    console.log('[Save Performance][Google Sheets] access token cache', {
+      durationMs: Number((performance.now() - tokenStartedAt).toFixed(1))
     });
     return tokenCache.accessToken;
   }
@@ -198,10 +202,14 @@ export const getGoogleAccessToken = async () => {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000
   };
+  console.log('[Save Performance][Google Sheets] OAuth token fetch', {
+    durationMs: Number((performance.now() - tokenStartedAt).toFixed(1))
+  });
   return data.access_token;
 };
 
 export const readGoogleSheetValues = async (sheetName: string, a1Range: string) => {
+  const startedAt = performance.now();
   const { spreadsheetId, spreadsheetUrl } = getConfiguredSpreadsheetInfo();
   const accessToken = await getGoogleAccessToken();
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
@@ -240,7 +248,49 @@ export const readGoogleSheetValues = async (sheetName: string, a1Range: string) 
     range,
     rowCount: data.values?.length || 0
   });
+  console.log('[Save Performance][Google Sheets] read', {
+    sheetName,
+    range: a1Range,
+    rowCount: data.values?.length || 0,
+    durationMs: Number((performance.now() - startedAt).toFixed(1))
+  });
   return data.values || [];
+};
+
+export const readGoogleSheetValueRanges = async (sheetName: string, a1Ranges: string[]) => {
+  if (a1Ranges.length === 0) return [];
+
+  const startedAt = performance.now();
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
+  const accessToken = await getGoogleAccessToken();
+  const query = new URLSearchParams({ majorDimension: 'ROWS' });
+  a1Ranges.forEach((a1Range) => {
+    const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
+    query.append('ranges', range);
+  });
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values:batchGet?${query.toString()}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google Sheets 複数範囲の読み取りに失敗しました: ${errorText}`);
+  }
+
+  const data = await response.json() as {
+    valueRanges?: Array<{ range?: string; values?: string[][] }>;
+  };
+  const valueRanges = data.valueRanges || [];
+  console.log('[Save Performance][Google Sheets] batch read', {
+    sheetName,
+    rangeCount: a1Ranges.length,
+    returnedRangeCount: valueRanges.length,
+    durationMs: Number((performance.now() - startedAt).toFixed(1))
+  });
+  return valueRanges;
 };
 
 const writeValues = async (
@@ -248,6 +298,7 @@ const writeValues = async (
   url: string,
   values: string[][]
 ) => {
+  const startedAt = performance.now();
   console.log('[googleServiceAccount] write request start', {
     method,
     url,
@@ -286,9 +337,15 @@ const writeValues = async (
     status: response.status,
     body: responseText
   });
+  console.log('[Save Performance][Google Sheets] write', {
+    method,
+    rowCount: values.length,
+    durationMs: Number((performance.now() - startedAt).toFixed(1))
+  });
 };
 
 export const readGoogleSpreadsheetMetadata = async () => {
+  const startedAt = performance.now();
   const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const accessToken = await getGoogleAccessToken();
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title`;
@@ -309,7 +366,12 @@ export const readGoogleSpreadsheetMetadata = async () => {
     throw new Error(`Google Sheets メタデータ取得に失敗しました: ${errorText}`);
   }
 
-  return response.json() as Promise<{ sheets?: Array<{ properties?: { title?: string } }> }>;
+  const result = await response.json() as { sheets?: Array<{ properties?: { title?: string } }> };
+  console.log('[Save Performance][Google Sheets] metadata read', {
+    sheetCount: result.sheets?.length || 0,
+    durationMs: Number((performance.now() - startedAt).toFixed(1))
+  });
+  return result;
 };
 
 export const listGoogleSheetTitles = async () => {
@@ -387,6 +449,46 @@ export const appendGoogleSheetValues = async (sheetName: string, a1Range: string
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   await writeValues('POST', url, values);
+};
+
+export const batchUpdateGoogleSheetValues = async (
+  sheetName: string,
+  updates: Array<{ a1Range: string; values: string[][] }>
+) => {
+  if (updates.length === 0) return;
+
+  const startedAt = performance.now();
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
+  const accessToken = await getGoogleAccessToken();
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      valueInputOption: 'USER_ENTERED',
+      data: updates.map(({ a1Range, values }) => ({
+        range: `'${sheetName.replace(/'/g, "''")}'!${a1Range}`,
+        majorDimension: 'ROWS',
+        values
+      }))
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google Sheets 複数範囲の更新に失敗しました: ${errorText}`);
+  }
+
+  await response.text();
+  console.log('[Save Performance][Google Sheets] batch update', {
+    sheetName,
+    rangeCount: updates.length,
+    rowCount: updates.reduce((count, update) => count + update.values.length, 0),
+    durationMs: Number((performance.now() - startedAt).toFixed(1))
+  });
 };
 
 export const formatServerError = (error: unknown) => serializeError(error);

@@ -215,6 +215,14 @@ export const postSharedWriteAction = async <T>(
   action: string,
   payload: unknown
 ): Promise<T> => {
+  const requestStartedAt = performance.now();
+  const serializeStartedAt = performance.now();
+  const requestBody = JSON.stringify({
+    resource,
+    action,
+    payload
+  });
+  const serializeMs = performance.now() - serializeStartedAt;
   console.log('[sharedDataApi] write request', {
     endpoint: WRITE_API_PATH,
     resource,
@@ -226,18 +234,17 @@ export const postSharedWriteAction = async <T>(
       'Content-Type': 'application/json',
       Accept: 'application/json'
     },
-    body: JSON.stringify({
-      resource,
-      action,
-      payload
-    })
+    body: requestBody
   });
+  const responseReceivedAt = performance.now();
   console.log('[sharedDataApi] write response', {
     endpoint: WRITE_API_PATH,
     resource,
     action,
     status: response.status,
-    ok: response.ok
+    ok: response.ok,
+    serializeMs: Number(serializeMs.toFixed(1)),
+    requestToResponseMs: Number((responseReceivedAt - requestStartedAt).toFixed(1))
   });
 
   let json: { result?: T; error?: string } | null = null;
@@ -246,6 +253,15 @@ export const postSharedWriteAction = async <T>(
   } catch (error) {
     console.error('[sharedDataApi] failed to parse write response', { resource, action, error });
   }
+
+  console.log('[Save Performance][API]', {
+    resource,
+    action,
+    serializeMs: Number(serializeMs.toFixed(1)),
+    requestToResponseMs: Number((responseReceivedAt - requestStartedAt).toFixed(1)),
+    responseParseMs: Number((performance.now() - responseReceivedAt).toFixed(1)),
+    totalMs: Number((performance.now() - requestStartedAt).toFixed(1))
+  });
 
   if (!response.ok) {
     const errorMessage = await buildReadableError(response, '共有データAPIの書き込みに失敗しました。サーバー設定を確認してください');

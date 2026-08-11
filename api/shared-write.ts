@@ -1,4 +1,6 @@
-import { appendGoogleSheetValues, ensureGoogleSheetExists, formatServerError, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { appendGoogleSheetValues, batchUpdateGoogleSheetValues, ensureGoogleSheetExists, formatServerError, readGoogleSheetValueRanges, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { buildDailySalesMetadataUpdates, buildDailySalesMutationPlan, type DailySalesIndexedRow, type DailySalesInputRecord } from './_lib/dailySalesMutationPlan.js';
+import { buildSharedCheckMutationPlan, type SharedCheckIndexedRow, type SharedCheckInputRow } from './_lib/sharedCheckMutationPlan.js';
 import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME, SHARED_SALES_SHEET_NAME } from '../sharedSheetNames.js';
 
 const nowIso = () => new Date().toISOString();
@@ -21,14 +23,25 @@ const parseRows = (rows: string[][]) => rows.filter((row) => row.some((cell) => 
 const buildErrorMessage = (error: unknown) => error instanceof Error ? error.message : '共有データの保存に失敗しました';
 
 const ensureHeader = async (sheetName: string, header: readonly string[]) => {
+  const startedAt = performance.now();
+  const ensureSheetStartedAt = performance.now();
   await ensureGoogleSheetExists(sheetName);
+  const ensureSheetMs = performance.now() - ensureSheetStartedAt;
   const widthLetter = String.fromCharCode('A'.charCodeAt(0) + header.length - 1);
   const existing = await readGoogleSheetValues(sheetName, `A1:${widthLetter}1`);
+  const headerReadCompletedAt = performance.now();
   const current = existing[0] || [];
   const isValid = header.every((label, index) => current[index] === label);
   if (!isValid) {
     await writeGoogleSheetValues(sheetName, `A1:${widthLetter}1`, [[...header]]);
   }
+  console.log('[Save Performance][Vercel API] ensure header', {
+    sheetName,
+    ensureSheetMs: Number(ensureSheetMs.toFixed(1)),
+    headerReadMs: Number((headerReadCompletedAt - ensureSheetStartedAt - ensureSheetMs).toFixed(1)),
+    headerWriteMs: Number((performance.now() - headerReadCompletedAt).toFixed(1)),
+    totalMs: Number((performance.now() - startedAt).toFixed(1))
+  });
 };
 
 const replaceRows = async (sheetName: string, width: number, rows: string[][]) => {
@@ -123,6 +136,94 @@ const sortCheckRows = (rows: string[][]) =>
     return (a[3] || '').localeCompare(b[3] || '');
   });
 
+const CHECK_INDEX_BATCH_SIZE = 100;
+
+const findSharedCheckRowsForDate = async (sheetName: string, date: string): Promise<SharedCheckIndexedRow[]> => {
+  const dateColumnResult = await readGoogleSheetValueRanges(sheetName, ['A2:A']);
+  const dateValues = dateColumnResult[0]?.values || [];
+  const candidateRowNumbers = dateValues
+    .map((row, index) => row[0] === date ? index + 2 : null)
+    .filter((rowNumber): rowNumber is number => rowNumber !== null);
+  const indexedRows: SharedCheckIndexedRow[] = [];
+
+  for (let index = 0; index < candidateRowNumbers.length; index += CHECK_INDEX_BATCH_SIZE) {
+    const rowNumberBatch = candidateRowNumbers.slice(index, index + CHECK_INDEX_BATCH_SIZE);
+    const results = await readGoogleSheetValueRanges(
+      sheetName,
+      rowNumberBatch.map((rowNumber) => `A${rowNumber}:G${rowNumber}`)
+    );
+    results.forEach((result) => {
+      const rowNumberMatch = (result.range || '').match(/![A-Z]+(\d+):[A-Z]+\d+$/);
+      const rowNumber = rowNumberMatch ? Number(rowNumberMatch[1]) : null;
+      const values = result.values?.[0] || [];
+      if (rowNumber !== null && values.some((cell) => cell?.toString().trim())) {
+        indexedRows.push({ rowNumber, values });
+      }
+    });
+  }
+
+  return indexedRows;
+};
+
+const DAILY_SALES_INDEX_BATCH_SIZE = 100;
+
+const findDailySalesRowNumbersForDate = async (sheetName: string, date: string): Promise<number[]> => {
+  const dateValues = await readGoogleSheetValues(sheetName, 'A2:A');
+  const normalizedDate = normalizeDailySalesDate(date);
+  return dateValues
+    .map((row, index) => normalizeDailySalesDate(row[0] || '') === normalizedDate ? index + 2 : null)
+    .filter((rowNumber): rowNumber is number => rowNumber !== null);
+};
+
+const readDailySalesRowsByNumbers = async (
+  sheetName: string,
+  rowNumbers: number[],
+  columns: 'A:K' | 'H:K'
+): Promise<DailySalesIndexedRow[]> => {
+  const [startColumn, endColumn] = columns.split(':');
+  const indexedRows: DailySalesIndexedRow[] = [];
+  const sortedRowNumbers = [...rowNumbers].sort((left, right) => left - right);
+  const contiguousRanges = sortedRowNumbers.reduce<Array<{ start: number; end: number }>>((ranges, rowNumber) => {
+    const lastRange = ranges[ranges.length - 1];
+    if (lastRange && rowNumber === lastRange.end + 1) {
+      lastRange.end = rowNumber;
+    } else {
+      ranges.push({ start: rowNumber, end: rowNumber });
+    }
+    return ranges;
+  }, []);
+
+  for (let index = 0; index < contiguousRanges.length; index += DAILY_SALES_INDEX_BATCH_SIZE) {
+    const rangeBatch = contiguousRanges.slice(index, index + DAILY_SALES_INDEX_BATCH_SIZE);
+    const results = await readGoogleSheetValueRanges(
+      sheetName,
+      rangeBatch.map((range) => `${startColumn}${range.start}:${endColumn}${range.end}`)
+    );
+    const returnedRowNumbers = new Set<number>();
+    results.forEach((result) => {
+      const rowRangeMatch = (result.range || '').match(/![A-Z]+(\d+):[A-Z]+(\d+)$/);
+      if (!rowRangeMatch) return;
+      const rangeStart = Number(rowRangeMatch[1]);
+      const rangeEnd = Number(rowRangeMatch[2]);
+      for (let rowNumber = rangeStart; rowNumber <= rangeEnd; rowNumber += 1) {
+        returnedRowNumbers.add(rowNumber);
+        indexedRows.push({
+          rowNumber,
+          values: result.values?.[rowNumber - rangeStart] || []
+        });
+      }
+    });
+    const expectedRowNumbers = rangeBatch.flatMap((range) =>
+      Array.from({ length: range.end - range.start + 1 }, (_, offset) => range.start + offset)
+    );
+    if (expectedRowNumbers.some((rowNumber) => !returnedRowNumbers.has(rowNumber))) {
+      throw new Error('daily_sales の対象行取得結果と行番号が一致しません');
+    }
+  }
+
+  return indexedRows;
+};
+
 const normalizeBudgetDate = (raw: string): string => {
   if (!raw) return raw;
   const trimmed = raw.trim();
@@ -180,7 +281,8 @@ const normalizeDailySalesDate = (raw: string): string => {
 };
 
 async function handleCheckUpsert(payload: any) {
-  const { date, times, rows } = payload as { date: string; times: string[]; rows: any[] };
+  const startedAt = performance.now();
+  const { date, times, rows } = payload as { date: string; times: string[]; rows: SharedCheckInputRow[] };
   const sheet = SHEETS.check;
   console.log('[shared-write] handleCheckUpsert', {
     targetSheet: sheet.name,
@@ -190,25 +292,42 @@ async function handleCheckUpsert(payload: any) {
     payloadPreview: rows[0] || null
   });
   await ensureHeader(sheet.name, sheet.header);
-  const existing = await readParsedRows(sheet.name, sheet.width);
-  const preserved = existing.filter((row) => !(row[0] === date && times.includes(row[6] || '')));
-  const nextRows = [
-    ...preserved,
-    ...rows.map((row) => [
-      row.date,
-      row.store,
-      row.item,
-      row.content,
-      row.status,
-      row.owner,
-      row.time
-    ])
-  ];
-  await replaceRows(sheet.name, sheet.width, nextRows);
+  const headerMs = performance.now() - startedAt;
+  const searchStartedAt = performance.now();
+  const existingRowsForDate = await findSharedCheckRowsForDate(sheet.name, date);
+  const searchMs = performance.now() - searchStartedAt;
+  const plan = buildSharedCheckMutationPlan(date, times, rows, existingRowsForDate);
+  const writeStartedAt = performance.now();
+  await batchUpdateGoogleSheetValues(
+    sheet.name,
+    plan.updates.map((update) => ({
+      a1Range: `A${update.rowNumber}:G${update.rowNumber}`,
+      values: [update.values]
+    }))
+  );
+  if (plan.appends.length > 0) {
+    await appendGoogleSheetValues(sheet.name, 'A:G', plan.appends);
+  }
+  const writeMs = performance.now() - writeStartedAt;
   console.log('[shared-write] handleCheckUpsert completed', {
     targetSheet: sheet.name,
-    existingRowCount: existing.length,
-    nextRowCount: nextRows.length
+    matchedDateRowCount: existingRowsForDate.length,
+    matchedTargetRowCount: plan.matchedRowCount,
+    updatedOrBlankedRowCount: plan.updates.length,
+    appendedRowCount: plan.appends.length,
+    duplicateRowCount: plan.duplicateRowCount,
+    obsoleteRowCount: plan.obsoleteRowCount
+  });
+  console.log('[Save Performance][Vercel API] shared_check targeted upsert', {
+    legacyFullReadBaselineMs: '23236-30067',
+    matchedDateRowCount: existingRowsForDate.length,
+    matchedTargetRowCount: plan.matchedRowCount,
+    updatedOrBlankedRowCount: plan.updates.length,
+    appendedRowCount: plan.appends.length,
+    ensureHeaderMs: Number(headerMs.toFixed(1)),
+    targetRowSearchMs: Number(searchMs.toFixed(1)),
+    targetRowWriteMs: Number(writeMs.toFixed(1)),
+    totalMs: Number((performance.now() - startedAt).toFixed(1))
   });
   return { ok: true };
 }
@@ -275,18 +394,27 @@ async function handleSalesAppend(payload: any) {
 }
 
 async function handleSalesUpsertFinal(payload: any) {
+  const startedAt = performance.now();
   const { date, sales, customers, author } = payload;
   const sheet = SHEETS.sales;
   await ensureHeader(sheet.name, sheet.header);
+  const headerMs = performance.now() - startedAt;
+  const readStartedAt = performance.now();
   const existing = await readParsedRows(sheet.name, sheet.width);
+  const readMs = performance.now() - readStartedAt;
   const matchedIndex = existing.findIndex((row) => row[1] === date && row[4] === author);
   const updatedAt = nowIso();
 
   if (matchedIndex >= 0) {
     const matched = existing[matchedIndex];
     if ((Number(matched[2] || '0') || 0) === sales && ((matched[3] ? Number(matched[3]) : null)) === customers) {
+      console.log('[Save Performance][Vercel API] final sales upsert', {
+        action: 'skipped', ensureHeaderMs: Number(headerMs.toFixed(1)), fullSheetReadMs: Number(readMs.toFixed(1)), writeMs: 0,
+        totalMs: Number((performance.now() - startedAt).toFixed(1))
+      });
       return { action: 'skipped' };
     }
+    const writeStartedAt = performance.now();
     await writeGoogleSheetValues(sheet.name, `A${matchedIndex + 2}:F${matchedIndex + 2}`, [[
       matched[0],
       date,
@@ -295,10 +423,15 @@ async function handleSalesUpsertFinal(payload: any) {
       author || '',
       updatedAt
     ]]);
+    console.log('[Save Performance][Vercel API] final sales upsert', {
+      action: 'updated', ensureHeaderMs: Number(headerMs.toFixed(1)), fullSheetReadMs: Number(readMs.toFixed(1)),
+      writeMs: Number((performance.now() - writeStartedAt).toFixed(1)), totalMs: Number((performance.now() - startedAt).toFixed(1))
+    });
     return { action: 'updated' };
   }
 
   const nextId = existing.reduce((max, row) => Math.max(max, Number(row[0] || '0') || 0), 0) + 1;
+  const writeStartedAt = performance.now();
   await appendGoogleSheetValues(sheet.name, 'A:F', [[
     String(nextId),
     date,
@@ -307,6 +440,10 @@ async function handleSalesUpsertFinal(payload: any) {
     author || '',
     updatedAt
   ]]);
+  console.log('[Save Performance][Vercel API] final sales upsert', {
+    action: 'appended', ensureHeaderMs: Number(headerMs.toFixed(1)), fullSheetReadMs: Number(readMs.toFixed(1)),
+    writeMs: Number((performance.now() - writeStartedAt).toFixed(1)), totalMs: Number((performance.now() - startedAt).toFixed(1))
+  });
   return { action: 'appended' };
 }
 
@@ -362,49 +499,52 @@ async function handleNoticeDelete(payload: any) {
 }
 
 async function handleDailySalesUpsert(payload: any) {
+  const startedAt = performance.now();
   const { date, department, records } = payload as {
     date: string;
     department: '野菜' | '果物';
-    records: Array<{
-      date: string;
-      code: string;
-      name: string;
-      salesQty: number;
-      salesYoY?: number;
-      salesAmt: number;
-      department: '野菜' | '果物';
-      weather?: string;
-      temp_band?: string;
-      customer_count?: number;
-      avg_price?: number;
-    }>;
+    records: DailySalesInputRecord[];
   };
   const sheet = SHEETS.dailySales;
   await ensureHeader(sheet.name, sheet.header);
-  const existing = await readParsedRows(sheet.name, sheet.width);
-  const normalizedDate = normalizeDailySalesDate(date);
-  const preserved = existing.filter((row) => !(normalizeDailySalesDate(row[0] || '') === normalizedDate && (row[6] || '') === department));
-  const nextRows = [
-    ...preserved,
-    ...records.map((record) => [
-      normalizeDailySalesDate(record.date || normalizedDate),
-      record.code || '',
-      record.name || '',
-      String(record.salesQty ?? 0),
-      record.salesYoY === undefined || record.salesYoY === null ? '' : String(record.salesYoY),
-      String(record.salesAmt ?? 0),
-      record.department || department,
-      record.weather || '',
-      record.temp_band || '',
-      record.customer_count === undefined || record.customer_count === null ? '' : String(record.customer_count),
-      record.avg_price === undefined || record.avg_price === null ? '' : String(record.avg_price)
-    ])
-  ];
-  await replaceRows(sheet.name, sheet.width, nextRows);
+  const headerMs = performance.now() - startedAt;
+  const searchStartedAt = performance.now();
+  const targetRowNumbers = await findDailySalesRowNumbersForDate(sheet.name, date);
+  const existingRowsForDate = await readDailySalesRowsByNumbers(sheet.name, targetRowNumbers, 'A:K');
+  const searchMs = performance.now() - searchStartedAt;
+  const plan = buildDailySalesMutationPlan(date, department, records, existingRowsForDate);
+  const writeStartedAt = performance.now();
+  await batchUpdateGoogleSheetValues(
+    sheet.name,
+    plan.updates.map((update) => ({
+      a1Range: `A${update.rowNumber}:K${update.rowNumber}`,
+      values: [update.values]
+    }))
+  );
+  if (plan.appends.length > 0) {
+    await appendGoogleSheetValues(sheet.name, 'A:K', plan.appends);
+  }
+  const writeMs = performance.now() - writeStartedAt;
+  console.log('[Save Performance][Vercel API] daily_sales targeted upsert', {
+    legacyFullReadBaselineMs: '2732-5177',
+    legacyFullWritePayloadBytes: 3236040,
+    department,
+    matchedDateRowCount: existingRowsForDate.length,
+    matchedDepartmentRowCount: plan.matchedRowCount,
+    updatedOrBlankedRowCount: plan.updates.length,
+    appendedRowCount: plan.appends.length,
+    duplicateRowCount: plan.duplicateRowCount,
+    obsoleteRowCount: plan.obsoleteRowCount,
+    ensureHeaderMs: Number(headerMs.toFixed(1)),
+    targetRowSearchMs: Number(searchMs.toFixed(1)),
+    targetRowWriteMs: Number(writeMs.toFixed(1)),
+    totalMs: Number((performance.now() - startedAt).toFixed(1))
+  });
   return { ok: true, rowCount: records.length };
 }
 
 async function handleDailySalesEnrich(payload: any) {
+  const startedAt = performance.now();
   const { date, weather, temp_band, customer_count, avg_price } = payload as {
     date: string;
     weather?: string;
@@ -414,25 +554,34 @@ async function handleDailySalesEnrich(payload: any) {
   };
   const sheet = SHEETS.dailySales;
   await ensureHeader(sheet.name, sheet.header);
-  const existing = await readParsedRows(sheet.name, sheet.width);
-  const normalizedDate = normalizeDailySalesDate(date);
-  const nextRows = existing.map((row) => {
-    if (normalizeDailySalesDate(row[0] || '') !== normalizedDate) return row;
-    return [
-      row[0] || '',
-      row[1] || '',
-      row[2] || '',
-      row[3] || '',
-      row[4] || '',
-      row[5] || '',
-      row[6] || '',
-      weather ?? (row[7] || ''),
-      temp_band ?? (row[8] || ''),
-      customer_count === undefined || customer_count === null ? (row[9] || '') : String(customer_count),
-      avg_price === undefined || avg_price === null ? (row[10] || '') : String(avg_price)
-    ];
+  const headerMs = performance.now() - startedAt;
+  const searchStartedAt = performance.now();
+  const targetRowNumbers = await findDailySalesRowNumbersForDate(sheet.name, date);
+  const existingMetadataRows = await readDailySalesRowsByNumbers(sheet.name, targetRowNumbers, 'H:K');
+  const searchMs = performance.now() - searchStartedAt;
+  const updates = buildDailySalesMetadataUpdates(
+    { weather, temp_band, customer_count, avg_price },
+    existingMetadataRows
+  );
+  const writeStartedAt = performance.now();
+  await batchUpdateGoogleSheetValues(
+    sheet.name,
+    updates.map((update) => ({
+      a1Range: `H${update.rowNumber}:K${update.rowNumber}`,
+      values: [update.values]
+    }))
+  );
+  const writeMs = performance.now() - writeStartedAt;
+  console.log('[Save Performance][Vercel API] daily_sales targeted enrich', {
+    legacyFullReadBaselineMs: '2732-5177',
+    legacyFullWritePayloadBytes: 3236040,
+    matchedDateRowCount: existingMetadataRows.length,
+    updatedRowCount: updates.length,
+    ensureHeaderMs: Number(headerMs.toFixed(1)),
+    targetRowSearchMs: Number(searchMs.toFixed(1)),
+    targetRowWriteMs: Number(writeMs.toFixed(1)),
+    totalMs: Number((performance.now() - startedAt).toFixed(1))
   });
-  await replaceRows(sheet.name, sheet.width, nextRows);
   return { ok: true };
 }
 
@@ -774,12 +923,18 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const requestStartedAt = performance.now();
     console.log('[shared-write] request received', {
       resource,
       action,
       payloadKeys: Object.keys(body?.payload || {})
     });
     const result = await targetHandler(body.payload || {});
+    console.log('[Save Performance][Vercel API] request total', {
+      resource,
+      action,
+      totalMs: Number((performance.now() - requestStartedAt).toFixed(1))
+    });
     res.status(200).json({ result });
   } catch (error) {
     const serialized = formatServerError(error);

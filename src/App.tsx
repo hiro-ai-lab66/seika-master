@@ -32,6 +32,7 @@ import { fetchSharedReadResource } from './services/sharedDataApi';
 import { getSharedBudgetSheetName } from './services/googleSheetsBudgetService';
 import { getSharedSalesSheetName } from './services/googleSheetsSalesService';
 import type { RawBudgetRow, RawCheckRow, RawSalesRow } from './types/history';
+import { upsertInspectionSnapshot } from './utils/inspectionSnapshot';
 
 
 const STORAGE_KEY = 'seika_master_data_v2';
@@ -626,8 +627,17 @@ function App() {
   });
 
   useEffect(() => {
+    const startedAt = performance.now();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const serializedState = JSON.stringify(state);
+      const serializedAt = performance.now();
+      localStorage.setItem(STORAGE_KEY, serializedState);
+      console.log('[Save Performance][App] localStorage state persist', {
+        serializeMs: Number((serializedAt - startedAt).toFixed(1)),
+        writeMs: Number((performance.now() - serializedAt).toFixed(1)),
+        totalMs: Number((performance.now() - startedAt).toFixed(1)),
+        bytes: new Blob([serializedState]).size
+      });
     } catch (e) {
       console.error("Failed to save state to localStorage", e);
       // QuotaExceededError is common if saving large base64 strings
@@ -678,15 +688,116 @@ function App() {
     }
   }, [activeTab]);
 
-  const refreshSharedData = async (reason: 'startup' | 'visibility' | 'inspection-save') => {
+  const refreshInspectionHistoryAfterSave = async (savedEntry: InspectionEntry) => {
+    const startedAt = performance.now();
+    setIsInspectionSharedLoading(true);
+    setInspectionSharedError(null);
+    try {
+      const supportingApiStartedAt = performance.now();
+      const [sharedBudgetResultRaw, sharedSalesResultRaw] = await Promise.all([
+        fetchSharedReadResource<SharedBudgetEntry>('budget').catch((budgetError) => {
+          console.warn('[App] shared_budget 取得失敗（保存スナップショットの反映は継続）', budgetError);
+          return [] as SharedBudgetEntry[];
+        }),
+        fetchSharedReadResource<SharedSalesEntry>('sales').catch((salesError) => {
+          console.warn('[App] shared_sales 取得失敗（保存スナップショットの反映は継続）', salesError);
+          return [] as SharedSalesEntry[];
+        })
+      ]);
+      const supportingApiMs = performance.now() - supportingApiStartedAt;
+      const sharedBudgetResult = sharedBudgetResultRaw
+        .map((entry) => ({ ...entry, date: normalizeHistoryDateKey(entry.date) }));
+      const sharedSalesResult = sharedSalesResultRaw
+        .map((entry) => ({ ...entry, date: normalizeHistoryDateKey(entry.date) }));
+      const stateUpdateStartedAt = performance.now();
+
+      setState((prev) => {
+        const stateComputeStartedAt = performance.now();
+        const snapshotInspections = upsertInspectionSnapshot(prev.inspections || [], savedEntry);
+        const inspectionsWithSales = mergeInspectionEntriesWithSharedSales(snapshotInspections, sharedSalesResult);
+        const nextInspections = mergeInspectionEntriesWithSharedBudget(inspectionsWithSales, sharedBudgetResult);
+        const sharedBudgetMapped: DailyBudget[] = sharedBudgetResult
+          .filter((entry) => entry.date && entry.salesTarget > 0)
+          .map((entry) => ({
+            date: entry.date,
+            dayOfWeek: getDayOfWeek(entry.date),
+            totalBudget: entry.salesTarget,
+            veggieBudget: 0,
+            fruitBudget: 0
+          }));
+        const budgetMap = new Map<string, DailyBudget>();
+        sharedBudgetMapped.forEach((budget) => budgetMap.set(budget.date, budget));
+        (prev.dailyBudgets || []).forEach((budget) => {
+          if (budget.totalBudget > 0) budgetMap.set(budget.date, budget);
+        });
+        const finalBudgets = mergeDailyBudgetsFromInspections(Array.from(budgetMap.values()), nextInspections);
+
+        console.log('[Save Performance][App] inspection snapshot state compute', {
+          savedDate: savedEntry.date,
+          inspectionCountBefore: (prev.inspections || []).length,
+          inspectionCountAfter: nextInspections.length,
+          durationMs: Number((performance.now() - stateComputeStartedAt).toFixed(1))
+        });
+        return {
+          ...prev,
+          inspections: nextInspections,
+          dailyBudgets: finalBudgets
+        };
+      });
+
+      const estimatedInspections = mergeInspectionEntriesWithSharedBudget(
+        mergeInspectionEntriesWithSharedSales(
+          upsertInspectionSnapshot(state.inspections || [], savedEntry),
+          sharedSalesResult
+        ),
+        sharedBudgetResult
+      );
+      setInspectionHistoryDateCount(new Set(estimatedInspections.map((entry) => entry.date)).size);
+      setInspectionHistoryLastUpdated(new Date().toISOString());
+      setInspectionSharedStatus(`保存内容を反映しました（シート: ${getSharedCheckSheetName()}）`);
+
+      console.log('[Save Performance][App] inspection-save history refresh', {
+        sharedCheckFetchCount: 0,
+        sharedCheckResponseBytes: 0,
+        sharedCheckApiMs: 0,
+        sharedCheckJsonParseMs: 0,
+        supportingApiMs: Number(supportingApiMs.toFixed(1)),
+        stateUpdateDispatchMs: Number((performance.now() - stateUpdateStartedAt).toFixed(1)),
+        totalMs: Number((performance.now() - startedAt).toFixed(1))
+      });
+    } catch (error) {
+      console.error('[App] failed to apply saved inspection snapshot', error);
+      setInspectionSharedError(buildSharedUiError('保存内容の反映エラー', error));
+    } finally {
+      setIsInspectionSharedLoading(false);
+    }
+  };
+
+  const refreshSharedData = async (
+    reason: 'startup' | 'visibility' | 'inspection-save',
+    savedInspection?: InspectionEntry
+  ) => {
+    const startedAt = performance.now();
     console.log('[App] refreshSharedData start', { reason });
+    const inspectionRefresh = reason === 'inspection-save'
+      ? savedInspection
+        ? refreshInspectionHistoryAfterSave(savedInspection)
+        : Promise.resolve(console.warn(
+            '[App] inspection-save refresh skipped: saved inspection snapshot is missing'
+          ))
+      : loadInspectionHistoryFromSheets('tab');
     const results = await Promise.allSettled([
-      loadInspectionHistoryFromSheets(reason === 'inspection-save' ? 'save' : 'tab'),
+      inspectionRefresh,
       loadSellfloorRecordsFromSheets(false),
       loadPopibraryFromSheets(false)
     ]);
 
     const failedCount = results.filter((result) => result.status === 'rejected').length;
+    console.log('[Save Performance][App] post-save shared refresh', {
+      reason,
+      durationMs: Number((performance.now() - startedAt).toFixed(1)),
+      failedCount
+    });
     if (failedCount > 0) {
       setSharedRefreshSummary(`${failedCount}件の共有データ更新に失敗しました`);
       return;
@@ -1000,17 +1111,14 @@ function App() {
   }, [isAuthenticated]);
 
   const saveInspection = (entry: InspectionEntry) => {
+    const startedAt = performance.now();
     setState(prev => {
-      const exists = prev.inspections.findIndex(i => i.date === entry.date);
-      const newInspections = [...prev.inspections];
-      if (exists !== -1) {
-        newInspections[exists] = entry;
-      } else {
-        newInspections.unshift(entry);
-      }
-      return { ...prev, inspections: newInspections };
+      return { ...prev, inspections: upsertInspectionSnapshot(prev.inspections || [], entry) };
     });
-    void refreshSharedData('inspection-save');
+    console.log('[Save Performance][App] inspection state update dispatched', {
+      durationMs: Number((performance.now() - startedAt).toFixed(1))
+    });
+    void refreshSharedData('inspection-save', entry);
     setDashboardRefreshKey((prev) => prev + 1);
   };
 

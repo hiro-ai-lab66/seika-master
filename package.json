@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:vercel": "vercel dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -32,6 +33,7 @@
     "playwright": "^1.58.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
+    "vercel": "^58.9.1",
     "vite": "^7.3.1"
   }
 }
