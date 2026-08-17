@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import type { ReactNode } from 'react';
-import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Plus, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut } from 'lucide-react';
+import { LayoutDashboard, PenLine, Sparkles, CheckSquare, Settings, FileText, Calculator, Send, Plus, Package, Boxes, Trash2, BarChart3, Camera, Library, TrendingUp, NotebookText, LogOut, CalendarRange } from 'lucide-react';
 import type { AppState, InspectionEntry, ToDoItem, DailyBudget, SellfloorRecord, DailyNotesEntry, SharedBudgetEntry, SharedSalesEntry, PopItem } from './types';
 import { getDayOfWeek, getLocalTodayDateString } from './utils/calculations';
 import { createHistoryData } from './utils/calculateHistory';
@@ -22,6 +22,7 @@ import { MarketInfoDetail } from './pages/MarketInfoDetail';
 import { MarketInfoAnalysis } from './pages/MarketInfoAnalysis';
 import { AIAnalysisHistoryList } from './pages/AIAnalysisHistoryList';
 import { DailyNotesPage } from './pages/DailyNotesPage';
+import { PeriodAnalysisPage } from './pages/PeriodAnalysisPage';
 import type { AIAnalysisResult, MarketInfo } from './types';
 import { deleteSharedSellfloorRecord, fetchSharedSellfloorRecords, getSharedSellfloorSheetName, updateSharedSellfloorRecord, upsertSharedSellfloorRecord } from './services/googleSheetsSellfloorRecordService';
 import { isSheetsConfigured } from './services/googleSheetsInventoryService';
@@ -485,7 +486,7 @@ function App() {
   });
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'sellfloor' | 'popibrary' | 'market' | 'dailyNotes'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'ai' | 'todo' | 'history' | 'budget' | 'products' | 'inventory' | 'dailySales' | 'periodAnalysis' | 'sellfloor' | 'popibrary' | 'market' | 'dailyNotes'>('dashboard');
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [inspectionSharedStatus, setInspectionSharedStatus] = useState<string | null>(null);
   const [inspectionSharedError, setInspectionSharedError] = useState<string | null>(null);
@@ -1367,6 +1368,8 @@ function App() {
         return <Inventory currentDate={currentDate} onMonthEndClose={clearMonthEndAnalysis} />;
       case 'dailySales':
         return <DailySalesView inspections={state.inspections} dailyBudgets={state.dailyBudgets} />;
+      case 'periodAnalysis':
+        return <PeriodAnalysisPage />;
        case 'sellfloor':
         if (sellfloorView === 'form') {
            return (
@@ -1635,6 +1638,7 @@ function App() {
           { id: 'dailyNotes', icon: NotebookText, label: '連絡事項' },
           { id: 'budget', icon: Calculator, label: '予算設定' },
           { id: 'dailySales', icon: BarChart3, label: '売上履歴' },
+          { id: 'periodAnalysis', icon: CalendarRange, label: '期間分析' },
           { id: 'inventory', icon: Boxes, label: '棚卸し' },
           { id: 'market', icon: TrendingUp, label: '相場情報' },
           { id: 'ai', icon: Sparkles, label: 'AI支援' },
