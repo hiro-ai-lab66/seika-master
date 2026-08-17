@@ -30,6 +30,7 @@ import { PeriodReflectionCard } from '../components/PeriodReflectionCard';
 import { PeriodAIReflectionCard } from '../components/PeriodAIReflectionCard';
 import { PeriodAnalysisPdfReport } from '../components/PeriodAnalysisPdfReport';
 import { PeriodSellfloorGallery } from '../components/PeriodSellfloorGallery';
+import { PeriodProductYoYAnalysis } from '../components/PeriodProductYoYAnalysis';
 import { AIReflectionUnavailableError, generatePeriodReflectionAI } from '../services/periodReflectionAIService';
 import {
   buildPeriodAnalysisFileBase,
@@ -106,7 +107,7 @@ const RankingTable = memo(({ title, rows, metric, total }: { title: string; rows
       <div className="pa-table-scroll">
         <table className="pa-ranking-table">
           <thead>
-            <tr><th>順位</th><th>商品</th><th>部門</th><th>数量</th><th>売上</th><th>割合</th></tr>
+            <tr><th>順位</th><th>商品</th><th>部門</th><th>数量</th><th>売上</th><th>数量前年比</th><th>判定</th><th>割合</th></tr>
           </thead>
           <tbody>
             {rows.map((row, index) => (
@@ -119,6 +120,8 @@ const RankingTable = memo(({ title, rows, metric, total }: { title: string; rows
                 <td><span className={`pa-dept pa-dept-${row.department === '野菜' ? 'veg' : 'fruit'}`}>{row.department}</span></td>
                 <td className={metric === 'quantity' ? 'pa-table-primary' : ''}>{number(row.quantity)}点</td>
                 <td className={metric === 'sales' ? 'pa-table-primary' : ''}>{yen(row.sales)}</td>
+                <td><strong className={`pa-yoy-value is-${row.quantityYoYQuality.toLowerCase().replace('_', '-')}`}>{row.quantityYoY === null ? '比較不能' : `${row.quantityYoY.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}%`}</strong></td>
+                <td><span className={`pa-yoy-verdict is-${row.quantityYoYVerdict === '前年超え' ? 'above' : row.quantityYoYVerdict === '前年割れ' ? 'below' : 'unavailable'}`}>{row.quantityYoYVerdict}</span></td>
                 <td><span className="pa-share">{((metric === 'sales' ? row.sales : row.quantity) / Math.max(1, total) * 100).toFixed(1)}%</span></td>
               </tr>
             ))}
@@ -590,6 +593,8 @@ export const PeriodAnalysisPage = () => {
         <RankingTable title="売上高ランキング TOP10" rows={analysis.salesRanking} metric="sales" total={rankingSalesTotal} />
         <RankingTable title="販売数量ランキング TOP10" rows={analysis.quantityRanking} metric="quantity" total={rankingQuantityTotal} />
       </div>
+
+      <PeriodProductYoYAnalysis analysis={analysis.productQuantityYoY} />
 
       <PeriodReflectionCard reflection={reflection} />
 

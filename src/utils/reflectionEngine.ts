@@ -32,7 +32,7 @@ export type ReflectionQuality = {
 };
 
 export type PeriodReflection = {
-  ruleVersion: '1.0';
+  ruleVersion: '1.1';
   comparisonBasis: string;
   goodPoints: ReflectionItem[];
   attentionPoints: ReflectionItem[];
@@ -220,6 +220,59 @@ export const buildPeriodReflection = (
     ));
   }
 
+  const yoy = analysis.productQuantityYoY;
+  const top20Comparable = yoy.topSales20.filter((product) => product.quantityYoY !== null);
+  const top20Above = top20Comparable.filter((product) => (product.quantityYoY || 0) >= 100);
+  const top20Below = top20Comparable.filter((product) => (product.quantityYoY || 0) < 100);
+  if (yoy.summary.abovePreviousRate !== null && yoy.summary.abovePreviousRate >= 60) {
+    goodPoints.push(createItem(
+      'product-quantity-yoy-rate-high',
+      `商品販売数量前年比の前年超え商品率${formatPercent(yoy.summary.abovePreviousRate)}`,
+      `比較可能${yoy.summary.comparableProducts}商品中、前年超え${yoy.summary.abovePreviousProducts}商品（売上高前年比ではありません）`
+    ));
+  } else if (yoy.summary.abovePreviousRate !== null && yoy.summary.abovePreviousRate < 50) {
+    attentionPoints.push(createItem(
+      'product-quantity-yoy-rate-low',
+      `商品販売数量前年比の前年割れ商品が過半数`,
+      `比較可能${yoy.summary.comparableProducts}商品中、前年割れ${yoy.summary.belowPreviousProducts}商品／前年超え商品率${formatPercent(yoy.summary.abovePreviousRate)}`
+    ));
+  }
+  if (top20Comparable.length > 0 && top20Above.length / top20Comparable.length >= 0.6) {
+    goodPoints.push(createItem(
+      'top20-product-quantity-yoy-above',
+      '期間売上TOP20で商品販売数量前年比の前年超えが多い',
+      `比較可能${top20Comparable.length}商品中、前年超え${top20Above.length}商品`
+    ));
+  }
+  if (top20Below.length > 0) {
+    attentionPoints.push(createItem(
+      'top20-product-quantity-yoy-below',
+      `期間売上TOP20で商品販売数量前年比の前年割れ${top20Below.length}商品`,
+      top20Below.slice(0, 8).map((product) => `${product.name} ${formatPercent(product.quantityYoY || 0)}`).join('、')
+    ));
+  }
+  yoy.topSales20.filter((product) => product.quantityYoY !== null && (product.quantityYoY || 0) >= 120 && product.quantityYoYQuality !== 'OUTLIER').slice(0, 5).forEach((product) => {
+    goodPoints.push(createItem(
+      `product-quantity-yoy-120-${product.key}`,
+      `${product.name}の商品販売数量前年比${formatPercent(product.quantityYoY || 0)}`,
+      `${product.department}／今年数量${formatNumber(product.quantity)}点／比較可能${product.comparableDays}日`
+    ));
+  });
+  if (yoy.summary.productCount > 0 && yoy.summary.comparisonUnavailableProducts / yoy.summary.productCount >= 0.3) {
+    attentionPoints.push(createItem(
+      'product-quantity-yoy-unavailable',
+      '商品販売数量前年比の比較不能商品が多い',
+      `全${yoy.summary.productCount}商品中${yoy.summary.comparisonUnavailableProducts}商品（0・空欄・不正値を比較不能として除外）`
+    ));
+  }
+  if (yoy.summary.outlierProducts > 0) {
+    attentionPoints.push(createItem(
+      'product-quantity-yoy-outlier',
+      `商品販売数量前年比の高倍率注意${yoy.summary.outlierProducts}商品`,
+      `1,000%以上。元値を保持して要確認：${yoy.summary.outlierValues.slice(0, 10).map(formatPercent).join('、') || '期間集計比が1,000%以上'}`
+    ));
+  }
+
   const warningRows = analysis.qualityByDate.filter((item) => item.status === 'WARNING');
   const missingRows = analysis.qualityByDate.filter((item) => item.status === 'MISSING');
   if (warningRows.length > 0) {
@@ -284,6 +337,13 @@ export const buildPeriodReflection = (
       if (latestRank < firstRank) tags.push(`伸長（日別売上順位 ${firstRankDate} ${firstRank}位→${latestRankDate} ${latestRank}位）`);
       if (latestRank > firstRank) tags.push(`要確認（日別売上順位 ${firstRankDate} ${firstRank}位→${latestRankDate} ${latestRank}位）`);
     }
+    const yoyProduct = analysis.productQuantityYoY.topSales20.find((item) => item.key === product.key);
+    if (yoyProduct?.quantityYoY !== null && yoyProduct?.quantityYoY !== undefined) {
+      tags.push(`商品販売数量前年比${formatPercent(yoyProduct.quantityYoY)}（${yoyProduct.quantityYoYVerdict}）`);
+      if (yoyProduct.quantityYoYQuality === 'OUTLIER') tags.push('高倍率注意');
+    } else {
+      tags.push('商品販売数量前年比は比較不能');
+    }
     if (tags.length === 0) tags.push(`期間売上${index + 1}位`);
     return {
       rank: index + 1,
@@ -293,7 +353,7 @@ export const buildPeriodReflection = (
       sales: product.sales,
       quantity: product.quantity,
       comment: tags.join('／'),
-      evidence: `${product.department}／売上 ${formatYen(product.sales)}／数量 ${formatNumber(product.quantity)}点`
+      evidence: `${product.department}／売上 ${formatYen(product.sales)}／数量 ${formatNumber(product.quantity)}点／商品販売数量前年比 ${yoyProduct?.quantityYoY === null || yoyProduct?.quantityYoY === undefined ? '比較不能' : formatPercent(yoyProduct.quantityYoY)}`
     };
   });
 
@@ -305,7 +365,7 @@ export const buildPeriodReflection = (
   ];
 
   return {
-    ruleVersion: '1.0',
+    ruleVersion: '1.1',
     comparisonBasis: comparableRows.length >= 2
       ? `増減・更新は選択期間の初回実績日（${first?.date}）と最終実績日（${latest?.date}）、および期間内の日別順位で判定`
       : '実績日が1日以下のため、増減・順位推移は判定しない',
@@ -322,7 +382,7 @@ export const buildPeriodReflection = (
     },
     limitations: [
       '不足・欠品・在庫・発注量の事実データは使用していないため、「毎回不足」「増量候補」は判定しません。',
-      '前年比較データは使用していないため、前年からの増減は判定しません。',
+      '前年比はdaily_salesの「売上数昨比」による商品販売数量前年比のみです。正式売上・客数・客単価の前年比は判定しません。',
       'すべての文章は固定ルールと集計値から生成し、AI文章生成は使用していません。'
     ]
   };

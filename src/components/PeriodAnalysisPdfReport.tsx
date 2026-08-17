@@ -89,18 +89,24 @@ export const PeriodAnalysisPdfReport = ({ context, qualityScore, sellfloorRecord
 
       <ReportPage page={4} total={totalPages} condition={context.conditionLabel} generatedAt={generatedAt}>
         <PdfHeading eyebrow="PRODUCT RANKING">商品ランキング</PdfHeading>
+        <div className="pa-pdf-yoy-summary">
+          <div><span>商品販売数量前年比</span><strong>{analysis.productQuantityYoY.summary.abovePreviousRate === null ? '-' : `${analysis.productQuantityYoY.summary.abovePreviousRate.toFixed(1)}%`}</strong><small>前年超え商品率</small></div>
+          <div><span>比較可能</span><strong>{analysis.productQuantityYoY.summary.comparableProducts}商品</strong><small>比較不能を除外</small></div>
+          <div><span>前年超え／割れ</span><strong>{analysis.productQuantityYoY.summary.abovePreviousProducts}／{analysis.productQuantityYoY.summary.belowPreviousProducts}</strong><small>数量前年比100%基準</small></div>
+          <div><span>比較不能／高倍率</span><strong>{analysis.productQuantityYoY.summary.comparisonUnavailableProducts}／{analysis.productQuantityYoY.summary.outlierProducts}</strong><small>1,000%以上は要確認</small></div>
+        </div>
         <div className="pa-pdf-ranking-columns">
           {(['sales', 'quantity'] as const).map((metric) => (
             <div key={metric}><h3>{metric === 'sales' ? '売上TOP10' : '数量TOP10'}</h3><table><thead><tr><th>順位</th><th>商品</th><th>{metric === 'sales' ? '売上' : '数量'}</th><th>割合</th></tr></thead><tbody>
               {(metric === 'sales' ? analysis.salesRanking : analysis.quantityRanking).map((item, index) => {
                 const value = metric === 'sales' ? item.sales : item.quantity;
                 const total = metric === 'sales' ? Math.max(1, analysis.productDetailSales) : Math.max(1, analysis.quantityRanking.reduce((sum, row) => sum + row.quantity, 0));
-                return <tr key={item.key}><td><b>{index + 1}</b></td><td><strong>{item.name}</strong><small>{item.code} / {item.department}</small></td><td>{metric === 'sales' ? yen(value) : `${number(value)}点`}</td><td>{(value / total * 100).toFixed(1)}%</td></tr>;
+                return <tr key={item.key}><td><b>{index + 1}</b></td><td><strong>{item.name}</strong><small>{item.code} / {item.department} / 数量前年比 {item.quantityYoY === null ? '比較不能' : `${item.quantityYoY.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}%`}{item.quantityYoYQuality === 'OUTLIER' ? ` 高倍率注意${item.outlierValues.length ? `（日次 ${item.outlierValues.map((ratio) => `${ratio}%`).join(' / ')}）` : ''}` : ''}</small></td><td>{metric === 'sales' ? yen(value) : `${number(value)}点`}</td><td>{(value / total * 100).toFixed(1)}%</td></tr>;
               })}
             </tbody></table></div>
           ))}
         </div>
-        <small className="pa-pdf-note">売上割合は商品明細合計比、数量割合はTOP10内構成比。商品分析はdaily_salesのみを使用。</small>
+        <small className="pa-pdf-note">前年比はdaily_sales「売上数昨比」による商品販売数量前年比です。正式売上前年比ではありません。0は比較不能、1,000%以上は元値を保持して高倍率注意とします。</small>
       </ReportPage>
 
       <ReportPage page={5} total={totalPages} condition={context.conditionLabel} generatedAt={generatedAt}>

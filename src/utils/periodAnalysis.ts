@@ -2,6 +2,8 @@ import type { DailySalesRecord, SharedBudgetEntry, SharedSalesEntry } from '../t
 
 export type AnalysisMode = 'day' | 'week' | 'nthWeek' | 'month' | 'custom' | 'weekday' | 'event';
 export type DataQualityStatus = 'VALID' | 'WARNING' | 'MISSING';
+export type ProductQuantityYoYQuality = 'VALID' | 'COMPARISON_UNAVAILABLE' | 'OUTLIER' | 'WARNING';
+export type ProductQuantityYoYVerdict = '前年超え' | '前年割れ' | '比較不能';
 
 export type ProductRankingRow = {
   key: string;
@@ -11,6 +13,37 @@ export type ProductRankingRow = {
   sales: number;
   quantity: number;
   activeDays: number;
+  quantityYoY: number | null;
+  quantityYoYVerdict: ProductQuantityYoYVerdict;
+  quantityYoYQuality: ProductQuantityYoYQuality;
+  comparableDays: number;
+  comparisonUnavailableDays: number;
+  estimatedPreviousQuantity: number;
+  outlierValues: number[];
+};
+
+export type ProductQuantityYoYSummary = {
+  productCount: number;
+  comparableProducts: number;
+  abovePreviousProducts: number;
+  belowPreviousProducts: number;
+  abovePreviousRate: number | null;
+  comparisonUnavailableProducts: number;
+  outlierProducts: number;
+  outlierValues: number[];
+};
+
+export type ProductQuantityYoYAnalysis = {
+  metricLabel: '商品販売数量前年比';
+  source: 'daily_sales.salesYoY';
+  calculationMethod: string;
+  summary: ProductQuantityYoYSummary;
+  departments: {
+    vegetable: ProductQuantityYoYSummary;
+    fruit: ProductQuantityYoYSummary;
+  };
+  quality: Record<ProductQuantityYoYQuality, number>;
+  topSales20: ProductRankingRow[];
 };
 
 export type PeriodAnalysisDailyRow = {
@@ -49,6 +82,7 @@ export type PeriodAnalysisResult = {
   }>;
   salesRanking: ProductRankingRow[];
   quantityRanking: ProductRankingRow[];
+  productQuantityYoY: ProductQuantityYoYAnalysis;
 };
 
 export const normalizeAnalysisDate = (value: string) => {
@@ -242,7 +276,11 @@ export const buildPeriodAnalysis = (
     dedupedRecords.push(...dateRecords);
   });
 
-  const productMap = new Map<string, ProductRankingRow & { dates: Set<string> }>();
+  const productMap = new Map<string, ProductRankingRow & {
+    dates: Set<string>;
+    comparableQuantity: number;
+    rawOutlierValues: Set<number>;
+  }>();
   dedupedRecords.forEach((record) => {
     const code = normalizeAnalysisCode(record.code);
     const key = `${record.department}|${code}`;
@@ -254,24 +292,85 @@ export const buildPeriodAnalysis = (
       sales: 0,
       quantity: 0,
       activeDays: 0,
-      dates: new Set<string>()
+      quantityYoY: null,
+      quantityYoYVerdict: '比較不能',
+      quantityYoYQuality: 'COMPARISON_UNAVAILABLE',
+      comparableDays: 0,
+      comparisonUnavailableDays: 0,
+      estimatedPreviousQuantity: 0,
+      outlierValues: [],
+      dates: new Set<string>(),
+      comparableQuantity: 0,
+      rawOutlierValues: new Set<number>()
     };
     current.sales += Number(record.salesAmt || 0);
     current.quantity += Number(record.salesQty || 0);
     current.dates.add(record.date);
     current.activeDays = current.dates.size;
+    const sourceYoY = Number(record.salesYoY);
+    const quantity = Number(record.salesQty || 0);
+    if (Number.isFinite(sourceYoY) && sourceYoY > 0 && quantity > 0) {
+      current.comparableDays += 1;
+      current.comparableQuantity += quantity;
+      current.estimatedPreviousQuantity += quantity / (sourceYoY / 100);
+      if (sourceYoY >= 1000) current.rawOutlierValues.add(sourceYoY);
+    } else {
+      current.comparisonUnavailableDays += 1;
+    }
     productMap.set(key, current);
   });
 
-  const products = [...productMap.values()].map((product) => ({
-    key: product.key,
-    code: product.code,
-    name: product.name,
-    department: product.department,
-    sales: product.sales,
-    quantity: product.quantity,
-    activeDays: product.activeDays
-  }));
+  const products = [...productMap.values()].map((product): ProductRankingRow => {
+    const quantityYoY = product.estimatedPreviousQuantity > 0
+      ? product.comparableQuantity / product.estimatedPreviousQuantity * 100
+      : null;
+    const outlierValues = [...product.rawOutlierValues].sort((a, b) => b - a);
+    const quantityYoYQuality: ProductQuantityYoYQuality = outlierValues.length > 0 || (quantityYoY !== null && quantityYoY >= 1000)
+      ? 'OUTLIER'
+      : quantityYoY === null
+        ? 'COMPARISON_UNAVAILABLE'
+        : product.comparisonUnavailableDays > 0
+          ? 'WARNING'
+          : 'VALID';
+    return {
+      key: product.key,
+      code: product.code,
+      name: product.name,
+      department: product.department,
+      sales: product.sales,
+      quantity: product.quantity,
+      activeDays: product.activeDays,
+      quantityYoY,
+      quantityYoYVerdict: quantityYoY === null ? '比較不能' : quantityYoY >= 100 ? '前年超え' : '前年割れ',
+      quantityYoYQuality,
+      comparableDays: product.comparableDays,
+      comparisonUnavailableDays: product.comparisonUnavailableDays,
+      estimatedPreviousQuantity: product.estimatedPreviousQuantity,
+      outlierValues
+    };
+  });
+  const summarizeProductQuantityYoY = (rows: ProductRankingRow[]): ProductQuantityYoYSummary => {
+    const comparable = rows.filter((row) => row.quantityYoY !== null);
+    const abovePreviousProducts = comparable.filter((row) => (row.quantityYoY || 0) >= 100).length;
+    const belowPreviousProducts = comparable.length - abovePreviousProducts;
+    return {
+      productCount: rows.length,
+      comparableProducts: comparable.length,
+      abovePreviousProducts,
+      belowPreviousProducts,
+      abovePreviousRate: comparable.length > 0 ? abovePreviousProducts / comparable.length * 100 : null,
+      comparisonUnavailableProducts: rows.length - comparable.length,
+      outlierProducts: rows.filter((row) => row.quantityYoYQuality === 'OUTLIER').length,
+      outlierValues: [...new Set(rows.flatMap((row) => row.outlierValues))].sort((a, b) => b - a)
+    };
+  };
+  const productQuantityYoYQuality: Record<ProductQuantityYoYQuality, number> = {
+    VALID: 0,
+    COMPARISON_UNAVAILABLE: 0,
+    OUTLIER: 0,
+    WARNING: 0
+  };
+  products.forEach((product) => { productQuantityYoYQuality[product.quantityYoYQuality] += 1; });
   const officialSales = selectedDates.reduce((sum, date) => sum + Number(salesByDate.get(date)?.sales || 0), 0);
   const budget = selectedDates.reduce((sum, date) => sum + Number(budgetByDate.get(date)?.salesTarget || 0), 0);
   const customers = selectedDates.reduce((sum, date) => sum + Number(salesByDate.get(date)?.customers || 0), 0);
@@ -298,6 +397,18 @@ export const buildPeriodAnalysis = (
     quality,
     qualityByDate,
     salesRanking: [...products].sort((a, b) => b.sales - a.sales || b.quantity - a.quantity).slice(0, 10),
-    quantityRanking: [...products].sort((a, b) => b.quantity - a.quantity || b.sales - a.sales).slice(0, 10)
+    quantityRanking: [...products].sort((a, b) => b.quantity - a.quantity || b.sales - a.sales).slice(0, 10),
+    productQuantityYoY: {
+      metricLabel: '商品販売数量前年比',
+      source: 'daily_sales.salesYoY',
+      calculationMethod: '比較可能な日次行ごとに今年数量÷(数量前年比/100)で前年数量を推定し、今年数量合計÷推定前年数量合計で期間比を算出。0・空欄・不正値は除外。',
+      summary: summarizeProductQuantityYoY(products),
+      departments: {
+        vegetable: summarizeProductQuantityYoY(products.filter((row) => row.department === '野菜')),
+        fruit: summarizeProductQuantityYoY(products.filter((row) => row.department === '果物'))
+      },
+      quality: productQuantityYoYQuality,
+      topSales20: [...products].sort((a, b) => b.sales - a.sales || b.quantity - a.quantity).slice(0, 20)
+    }
   };
 };

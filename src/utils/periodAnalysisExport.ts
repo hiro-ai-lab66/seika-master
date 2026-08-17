@@ -126,7 +126,18 @@ const addOverviewSheet = (workbook: ExcelJS.Workbook, context: PeriodExportConte
     const row = sheet.addRow([item.date, item.status, qualityReason(item.status, item.reasons), null]);
     styleQualityCell(row.getCell(2), item.status);
   });
+  sheet.addRow([]);
+  const yoyHeader = sheet.addRow(['商品販売数量前年比', '商品数／率', 'データソース', '備考']);
+  styleHeader(yoyHeader);
+  const yoy = analysis.productQuantityYoY.summary;
+  sheet.addRow(['比較可能商品数', yoy.comparableProducts, 'daily_sales 売上数昨比', '0・空欄・不正値を除外']);
+  sheet.addRow(['前年超え商品数', yoy.abovePreviousProducts, 'daily_sales 売上数昨比', '数量前年比100%以上']);
+  sheet.addRow(['前年割れ商品数', yoy.belowPreviousProducts, 'daily_sales 売上数昨比', '数量前年比100%未満']);
+  const yoyRateRow = sheet.addRow(['前年超え商品率', yoy.abovePreviousRate === null ? null : yoy.abovePreviousRate / 100, 'daily_sales 売上数昨比', '比較不能商品を分母から除外']);
+  sheet.addRow(['比較不能商品数', yoy.comparisonUnavailableProducts, 'daily_sales 売上数昨比', '前年比0を0%として扱わない']);
+  sheet.addRow(['高倍率注意件数', yoy.outlierProducts, 'daily_sales 売上数昨比', `1,000%以上／元値 ${yoy.outlierValues.join('%, ')}${yoy.outlierValues.length ? '%' : ''}`]);
   sheet.getColumn(2).numFmt = '#,##0';
+  yoyRateRow.getCell(2).numFmt = '0.0%';
   [7, 8, 10, 11, 12].forEach((rowNumber) => { sheet.getCell(`B${rowNumber}`).numFmt = '#,##0'; });
   achievementRow.getCell(2).numFmt = '0.0%';
   averageRow.getCell(2).numFmt = '#,##0';
@@ -172,24 +183,27 @@ const addDailySheet = (workbook: ExcelJS.Workbook, context: PeriodExportContext)
 
 const addRankingSheet = (workbook: ExcelJS.Workbook, name: '売上ランキング' | '数量ランキング', rows: ProductRankingRow[], metric: 'sales' | 'quantity') => {
   const sheet = workbook.addWorksheet(name);
-  titleSheet(sheet, name, 'E');
-  sheet.columns = [{ width: 9 }, { width: 19 }, { width: 36 }, { width: 17 }, { width: 17 }];
+  titleSheet(sheet, name, 'I');
+  sheet.columns = [{ width: 9 }, { width: 19 }, { width: 36 }, { width: 17 }, { width: 17 }, { width: 18 }, { width: 16 }, { width: 25 }, { width: 28 }];
   sheet.addRow([]);
   const header = sheet.addRow(metric === 'sales'
-    ? ['順位', '商品コード', '商品名', '売上高', '数量']
-    : ['順位', '商品コード', '商品名', '数量', '売上高']);
+    ? ['順位', '商品コード', '商品名', '売上高', '数量', '数量前年比', '前年判定', '品質状態', '高倍率元値']
+    : ['順位', '商品コード', '商品名', '数量', '売上高', '数量前年比', '前年判定', '品質状態', '高倍率元値']);
   styleHeader(header);
   rows.forEach((item, index) => {
     const row = sheet.addRow(metric === 'sales'
-      ? [index + 1, item.code, item.name, item.sales, item.quantity]
-      : [index + 1, item.code, item.name, item.quantity, item.sales]);
+      ? [index + 1, item.code, item.name, item.sales, item.quantity, item.quantityYoY === null ? '比較不能' : item.quantityYoY / 100, item.quantityYoYVerdict, item.quantityYoYQuality, item.outlierValues.map((value) => `${value}%`).join(' / ') || null]
+      : [index + 1, item.code, item.name, item.quantity, item.sales, item.quantityYoY === null ? '比較不能' : item.quantityYoY / 100, item.quantityYoYVerdict, item.quantityYoYQuality, item.outlierValues.map((value) => `${value}%`).join(' / ') || null]);
     row.getCell(2).value = { richText: [{ text: item.code }] };
     row.getCell(2).numFmt = '@';
     row.getCell(4).numFmt = '#,##0';
     row.getCell(5).numFmt = '#,##0';
-    applyRowBorder(row, 5);
+    if (item.quantityYoY !== null) row.getCell(6).numFmt = '0.0%';
+    row.getCell(7).font = { bold: true, color: { argb: item.quantityYoYVerdict === '前年超え' ? COLORS.green : item.quantityYoYVerdict === '前年割れ' ? COLORS.red : COLORS.slate } };
+    row.getCell(8).font = { bold: true, color: { argb: item.quantityYoYQuality === 'OUTLIER' ? 'B45309' : item.quantityYoYQuality === 'VALID' ? COLORS.green : COLORS.slate } };
+    applyRowBorder(row, 9);
   });
-  sheet.autoFilter = `A3:E${Math.max(3, rows.length + 3)}`;
+  sheet.autoFilter = `A3:I${Math.max(3, rows.length + 3)}`;
   return sheet;
 };
 
@@ -336,6 +350,12 @@ const summaryCsv = (context: PeriodExportContext) => {
     ['客数', analysis.customers, 'shared_sales'],
     ['客単価', analysis.averageSpend === null ? '' : analysis.averageSpend, 'shared_sales'],
     ['商品数', analysis.productCount, 'daily_sales'],
+    ['商品販売数量前年比 比較可能商品数', analysis.productQuantityYoY.summary.comparableProducts, 'daily_sales 売上数昨比'],
+    ['商品販売数量前年比 前年超え商品数', analysis.productQuantityYoY.summary.abovePreviousProducts, 'daily_sales 売上数昨比'],
+    ['商品販売数量前年比 前年割れ商品数', analysis.productQuantityYoY.summary.belowPreviousProducts, 'daily_sales 売上数昨比'],
+    ['商品販売数量前年比 前年超え商品率（%）', analysis.productQuantityYoY.summary.abovePreviousRate === null ? '' : analysis.productQuantityYoY.summary.abovePreviousRate, '比較不能を分母から除外'],
+    ['商品販売数量前年比 比較不能商品数', analysis.productQuantityYoY.summary.comparisonUnavailableProducts, '前年比0を0%として扱わない'],
+    ['商品販売数量前年比 高倍率注意件数', analysis.productQuantityYoY.summary.outlierProducts, '1,000%以上・元値保持'],
     ['VALID', analysis.quality.VALID, ''],
     ['WARNING', analysis.quality.WARNING, ''],
     ['MISSING', analysis.quality.MISSING, '']
@@ -352,11 +372,11 @@ const dailyCsv = (context: PeriodExportContext) => csv([
 
 const rankingCsv = (rows: ProductRankingRow[], metric: 'sales' | 'quantity') => csv([
   metric === 'sales'
-    ? ['順位', '商品コード', '商品名', '売上高', '数量']
-    : ['順位', '商品コード', '商品名', '数量', '売上高'],
+    ? ['順位', '商品コード', '商品名', '売上高', '数量', '数量前年比（%）', '前年判定', '品質状態', '高倍率元値']
+    : ['順位', '商品コード', '商品名', '数量', '売上高', '数量前年比（%）', '前年判定', '品質状態', '高倍率元値'],
   ...rows.map((item, index) => metric === 'sales'
-    ? [index + 1, item.code, item.name, item.sales, item.quantity]
-    : [index + 1, item.code, item.name, item.quantity, item.sales])
+    ? [index + 1, item.code, item.name, item.sales, item.quantity, item.quantityYoY === null ? '比較不能' : item.quantityYoY, item.quantityYoYVerdict, item.quantityYoYQuality, item.outlierValues.map((value) => `${value}%`).join(' / ')]
+    : [index + 1, item.code, item.name, item.quantity, item.sales, item.quantityYoY === null ? '比較不能' : item.quantityYoY, item.quantityYoYVerdict, item.quantityYoYQuality, item.outlierValues.map((value) => `${value}%`).join(' / ')])
 ]);
 
 export const buildPeriodAnalysisCsvContent = (context: PeriodExportContext, kind: PeriodCsvKind) => {

@@ -14,10 +14,11 @@ type OpenAIResponsePayload = {
 const SYSTEM_INSTRUCTIONS = `あなたは青果売場の期間振り返り文章を整える編集者です。入力JSONに含まれる客観的事実だけを使い、日本語で簡潔に整理してください。
 
 厳守事項:
-- 入力にない数値、商品、出来事、前年比、天候、欠品、売り切れ、在庫、発注数量を作らない。
+- 入力にない数値、商品、出来事、天候、欠品、売り切れ、在庫、発注数量を作らない。
 - 因果関係を断定しない。入力に因果の根拠はない。
 - WARNING / MISSING / DUPLICATE は正常データと同じ確度で扱わず「確認が必要」「商品明細差がある」等と書く。
-- 前年データは入力されないため前年比較を書かない。
+- productQuantityYoY は「商品販売数量前年比」だけを表す。「売上前年比」「正式売上前年比」「客数前年比」「客単価前年比」と言い換えない。
+- 商品販売数量前年比が比較不能のときは比較を書かない。OUTLIERは高倍率注意・要確認と明示し、原因を推測しない。
 - 提案は ruleFacts.nextYearCandidates の範囲に限定し、発注ケース数や数量を提案しない。
 - productTrends は ruleFacts.productComments とランキングに存在する主要商品だけを5〜10件。商品が5件未満なら存在する件数だけ。
 - periodSummary は300〜500文字程度。goodPoints、improvementPoints、nextYearProposal は読みやすい段落にする。
@@ -54,13 +55,16 @@ const RESPONSE_SCHEMA = {
 const isInput = (value: unknown): value is AIReflectionInput => {
   if (!value || typeof value !== 'object') return false;
   const input = value as Partial<AIReflectionInput>;
-  return input.schemaVersion === '1.0'
+  return input.schemaVersion === '1.1'
     && typeof input.period?.startDate === 'string'
     && typeof input.period?.endDate === 'string'
     && typeof input.condition?.mode === 'string'
     && typeof input.kpis?.officialSales === 'number'
     && Array.isArray(input.rankings?.salesTop10)
     && Array.isArray(input.rankings?.quantityTop10)
+    && input.productQuantityYoY?.metricLabel === '商品販売数量前年比'
+    && input.productQuantityYoY?.source === 'daily_sales.salesYoY'
+    && Array.isArray(input.productQuantityYoY?.topSales20)
     && Array.isArray(input.ruleFacts?.goodPoints)
     && Array.isArray(input.ruleFacts?.attentionPoints)
     && Array.isArray(input.ruleFacts?.nextYearCandidates)

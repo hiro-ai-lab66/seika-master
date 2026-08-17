@@ -1,4 +1,4 @@
-import type { PeriodAnalysisResult, ProductRankingRow } from './periodAnalysis';
+import type { PeriodAnalysisResult, ProductQuantityYoYAnalysis, ProductRankingRow } from './periodAnalysis';
 import type { PeriodReflection, ReflectionItem } from './reflectionEngine';
 
 export const AI_REFLECTION_SECTION_IDS = [
@@ -48,7 +48,7 @@ export type AIReflectionWorkspace = {
 };
 
 export type AIReflectionInput = {
-  schemaVersion: '1.0';
+  schemaVersion: '1.1';
   period: { startDate: string; endDate: string; label: string };
   condition: { mode: string; label: string };
   kpis: {
@@ -60,8 +60,18 @@ export type AIReflectionInput = {
     productCount: number;
   };
   rankings: {
-    salesTop10: Array<Pick<ProductRankingRow, 'code' | 'name' | 'department' | 'sales' | 'quantity' | 'activeDays'>>;
-    quantityTop10: Array<Pick<ProductRankingRow, 'code' | 'name' | 'department' | 'sales' | 'quantity' | 'activeDays'>>;
+    salesTop10: Array<Pick<ProductRankingRow, 'code' | 'name' | 'department' | 'sales' | 'quantity' | 'activeDays' | 'quantityYoY' | 'quantityYoYVerdict' | 'quantityYoYQuality'>>;
+    quantityTop10: Array<Pick<ProductRankingRow, 'code' | 'name' | 'department' | 'sales' | 'quantity' | 'activeDays' | 'quantityYoY' | 'quantityYoYVerdict' | 'quantityYoYQuality'>>;
+  };
+  productQuantityYoY: {
+    metricLabel: ProductQuantityYoYAnalysis['metricLabel'];
+    source: ProductQuantityYoYAnalysis['source'];
+    calculationMethod: string;
+    summary: ProductQuantityYoYAnalysis['summary'];
+    departments: ProductQuantityYoYAnalysis['departments'];
+    quality: ProductQuantityYoYAnalysis['quality'];
+    topSales20: Array<Pick<ProductRankingRow, 'code' | 'name' | 'department' | 'sales' | 'quantity' | 'quantityYoY' | 'quantityYoYVerdict' | 'quantityYoYQuality' | 'comparableDays' | 'comparisonUnavailableDays' | 'outlierValues'>>;
+    safetyNotes: string[];
   };
   ruleFacts: {
     comparisonBasis: string;
@@ -88,7 +98,7 @@ export const buildAIReflectionInput = (
   analysis: PeriodAnalysisResult,
   reflection: PeriodReflection
 ): AIReflectionInput => ({
-  schemaVersion: '1.0',
+  schemaVersion: '1.1',
   period: { startDate, endDate, label },
   condition: { mode, label },
   kpis: {
@@ -100,8 +110,22 @@ export const buildAIReflectionInput = (
     productCount: analysis.productCount
   },
   rankings: {
-    salesTop10: analysis.salesRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays }) => ({ code, name, department, sales, quantity, activeDays })),
-    quantityTop10: analysis.quantityRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays }) => ({ code, name, department, sales, quantity, activeDays }))
+    salesTop10: analysis.salesRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality })),
+    quantityTop10: analysis.quantityRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }))
+  },
+  productQuantityYoY: {
+    metricLabel: analysis.productQuantityYoY.metricLabel,
+    source: analysis.productQuantityYoY.source,
+    calculationMethod: analysis.productQuantityYoY.calculationMethod,
+    summary: analysis.productQuantityYoY.summary,
+    departments: analysis.productQuantityYoY.departments,
+    quality: analysis.productQuantityYoY.quality,
+    topSales20: analysis.productQuantityYoY.topSales20.map(({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues }) => ({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues })),
+    safetyNotes: [
+      'この前年比は商品販売数量前年比であり、正式売上前年比ではない。',
+      '0・空欄・不正値は比較不能として集計から除外する。',
+      '1,000%以上は高倍率注意として元値を保持し、要確認とする。'
+    ]
   },
   ruleFacts: {
     comparisonBasis: reflection.comparisonBasis,
@@ -142,7 +166,7 @@ const evidenceText = (id: AIReflectionSectionId, input: AIReflectionInput) => {
   if (id === 'good_points') return itemEvidence(input.ruleFacts.goodPoints) || '該当事実なし';
   if (id === 'improvement_points') return itemEvidence(input.ruleFacts.attentionPoints) || '該当事実なし';
   if (id === 'next_year_proposal') return itemEvidence(input.ruleFacts.nextYearCandidates) || '該当候補なし';
-  return productEvidence({ ...input.ruleFacts, ruleVersion: '1.0' });
+  return productEvidence({ ...input.ruleFacts, ruleVersion: '1.1' });
 };
 
 export const createAIReflectionWorkspace = (
