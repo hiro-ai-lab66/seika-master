@@ -48,11 +48,14 @@ const SYSTEM_INSTRUCTIONS = `あなたは青果売場の期間振り返り文章
 - WARNING / MISSING / DUPLICATE は正常データと同じ確度で扱わず「確認が必要」「商品明細差がある」等と書く。
 - productQuantityYoY は「商品販売数量前年比」だけを表す。「売上前年比」「正式売上前年比」「客数前年比」「客単価前年比」と言い換えない。
 - 商品販売数量前年比が比較不能のときは比較を書かない。OUTLIERは高倍率注意・要確認と明示し、原因を推測しない。
-- 提案は ruleFacts.nextYearCandidates の範囲に限定し、発注ケース数や数量を提案しない。
-- productTrends は ruleFacts.productComments とランキングに存在する主要商品だけを5〜10件。商品が5件未満なら存在する件数だけ。
+- 次回提案は ruleFacts.nextYearCandidates、ruleFacts.attentionPoints、ruleFacts.productComments、productQuantityYoY の明示的な事実だけを行動へ言い換える。優先順位は「★★★ 優先」「★★ 優先」「★ 継続」の3段階とし、重要度の高い順に原則5〜7項目を並べる。各項目は優先順位を含めて1行にし、同じ事実の言い換えで水増ししない。根拠が5項目未満なら無理に作らない。発注ケース数や数量、入力にない関連販売は提案しない。
+- productTrends は ruleFacts.productComments とランキングに存在する主要商品だけを5〜10件。好調商品を先、改善商品を後にまとめる。商品名は name に入れ、comment は「◎ 好調商品\n数量前年比○%\n短い事実」または「▲ 改善商品\n数量前年比○%\n短い事実」の2〜3行にする。比較不能は「▲ 改善商品\n数量前年比は比較不能\n要確認」とする。商品が5件未満なら存在する件数だけ。
 - period.isPartial が true の場合は、分析の対象期間と period.actualEndDate までの実績であることを期間総括の冒頭で自然に明記する。実績期間には period.actualStartDate と period.actualEndDate を使う。
-- periodSummary は日本語で必ず250〜600文字に収め、350〜500文字を目安にする。出力前に文字数条件を満たしていることを確認する。goodPoints、improvementPoints、nextYearProposal は読みやすい段落にする。
-- 店長・青果責任者が業務で読みやすい、つながりのある自然な文章にする。KPIを単に列挙せず、事実同士を簡潔につないで整理する。
+- periodSummary は次回・来年への提案を書かず、「結論→主な良かった点・悪かった点→全体評価」の順でまとめる。3〜4文、150〜300文字を目安とし、長くても350文字以内にする。数字の列挙や日別数値の細かな再掲を避け、文字数を満たすために説明を水増ししない。出力前に文字数条件を満たしていることを確認する。
+- goodPoints は「✅」で始まる短い箇条書きを3〜5項目にする。1項目は1行とし、項目間に空行を入れる。数字の説明は必要最小限にする。
+- improvementPoints は「⚠」で始まる短い箇条書きを3〜5項目にする。改善が必要な事実だけを書き、1項目は1行、項目間に空行を入れる。
+- nextYearProposal は「★★★ 優先」「★★ 優先」「★ 継続」の順で短い箇条書きにし、次回に実行・確認する行動が1行で分かる表現にする。項目間に空行を入れる。その末尾に空行を入れて「【AI総評】」を置き、入力JSONだけを根拠に全体の要点を2〜3文でまとめる。AI総評では原因、未入力の事実、将来の成果を推測せず、periodSummaryや提案と同じ説明を繰り返さない。
+- 青果チーフが3分で読み返し、来年の売場づくりに使える文章にする。読みやすさを最優先し、長文、重複、数字の羅列、「○○が考えられます」の多用を避ける。
 - 事実の意味を変えず、推測を付け足さない。該当事実がない場合は、その旨を明記する。
 - JSONスキーマどおりにのみ出力する。`;
 
@@ -164,8 +167,8 @@ const validateGenerated = (value: unknown, input: AIReflectionInput): AIReflecti
     .every((item) => typeof item === 'string' && item.trim().length > 0)) {
     throw new Error('AI応答の文章セクションが不正です');
   }
-  if (result.periodSummary.length < 250 || result.periodSummary.length > 600) {
-    throw new Error('期間総括が指定文字数（300〜500文字程度）から外れています');
+  if (result.periodSummary.length < 150 || result.periodSummary.length > 350) {
+    throw new Error('期間総括が指定文字数（150〜350文字）から外れています');
   }
   if (!Array.isArray(result.productTrends) || result.productTrends.length > 10 || result.productTrends.some((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return true;
