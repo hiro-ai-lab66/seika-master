@@ -49,7 +49,14 @@ export type AIReflectionWorkspace = {
 
 export type AIReflectionInput = {
   schemaVersion: '1.1';
-  period: { startDate: string; endDate: string; label: string };
+  period: {
+    startDate: string;
+    endDate: string;
+    label: string;
+    actualStartDate: string | null;
+    actualEndDate: string | null;
+    isPartial: boolean;
+  };
   condition: { mode: string; label: string };
   kpis: {
     officialSales: number;
@@ -97,46 +104,62 @@ export const buildAIReflectionInput = (
   endDate: string,
   analysis: PeriodAnalysisResult,
   reflection: PeriodReflection
-): AIReflectionInput => ({
-  schemaVersion: '1.1',
-  period: { startDate, endDate, label },
-  condition: { mode, label },
-  kpis: {
-    officialSales: analysis.officialSales,
-    budget: analysis.budget,
-    achievementRate: analysis.achievementRate,
-    customers: analysis.customers,
-    averageSpend: analysis.averageSpend,
-    productCount: analysis.productCount
-  },
-  rankings: {
-    salesTop10: analysis.salesRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality })),
-    quantityTop10: analysis.quantityRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }))
-  },
-  productQuantityYoY: {
-    metricLabel: analysis.productQuantityYoY.metricLabel,
-    source: analysis.productQuantityYoY.source,
-    calculationMethod: analysis.productQuantityYoY.calculationMethod,
-    summary: analysis.productQuantityYoY.summary,
-    departments: analysis.productQuantityYoY.departments,
-    quality: analysis.productQuantityYoY.quality,
-    topSales20: analysis.productQuantityYoY.topSales20.map(({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues }) => ({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues })),
-    safetyNotes: [
-      'この前年比は商品販売数量前年比であり、正式売上前年比ではない。',
-      '0・空欄・不正値は比較不能として集計から除外する。',
-      '1,000%以上は高倍率注意として元値を保持し、要確認とする。'
-    ]
-  },
-  ruleFacts: {
-    comparisonBasis: reflection.comparisonBasis,
-    goodPoints: reflection.goodPoints,
-    attentionPoints: reflection.attentionPoints,
-    nextYearCandidates: reflection.nextYearCandidates,
-    productComments: reflection.productComments,
-    quality: reflection.quality,
-    limitations: reflection.limitations
-  }
-});
+): AIReflectionInput => {
+  const actualDates = analysis.dailyRows
+    .filter((row) => row.officialSales > 0)
+    .map((row) => row.date)
+    .sort((a, b) => a.localeCompare(b));
+  const actualStartDate = actualDates[0] || null;
+  const actualEndDate = actualDates.at(-1) || null;
+
+  return {
+    schemaVersion: '1.1',
+    period: {
+      startDate,
+      endDate,
+      label,
+      actualStartDate,
+      actualEndDate,
+      isPartial: actualEndDate !== null && actualEndDate < endDate
+    },
+    condition: { mode, label },
+    kpis: {
+      officialSales: analysis.officialSales,
+      budget: analysis.budget,
+      achievementRate: analysis.achievementRate === null ? null : Math.round(analysis.achievementRate * 10) / 10,
+      customers: analysis.customers,
+      averageSpend: analysis.averageSpend === null ? null : Math.round(analysis.averageSpend),
+      productCount: analysis.productCount
+    },
+    rankings: {
+      salesTop10: analysis.salesRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality })),
+      quantityTop10: analysis.quantityRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }))
+    },
+    productQuantityYoY: {
+      metricLabel: analysis.productQuantityYoY.metricLabel,
+      source: analysis.productQuantityYoY.source,
+      calculationMethod: analysis.productQuantityYoY.calculationMethod,
+      summary: analysis.productQuantityYoY.summary,
+      departments: analysis.productQuantityYoY.departments,
+      quality: analysis.productQuantityYoY.quality,
+      topSales20: analysis.productQuantityYoY.topSales20.map(({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues }) => ({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues })),
+      safetyNotes: [
+        'この前年比は商品販売数量前年比であり、正式売上前年比ではない。',
+        '0・空欄・不正値は比較不能として集計から除外する。',
+        '1,000%以上は高倍率注意として元値を保持し、要確認とする。'
+      ]
+    },
+    ruleFacts: {
+      comparisonBasis: reflection.comparisonBasis,
+      goodPoints: reflection.goodPoints,
+      attentionPoints: reflection.attentionPoints,
+      nextYearCandidates: reflection.nextYearCandidates,
+      productComments: reflection.productComments,
+      quality: reflection.quality,
+      limitations: reflection.limitations
+    }
+  };
+};
 
 const TITLES: Record<AIReflectionSectionId, string> = {
   period_summary: '期間総括',
