@@ -293,8 +293,23 @@ export const PeriodAnalysisPage = () => {
   const overallQuality = analysis.quality.MISSING > 0 ? 'MISSING' : analysis.quality.WARNING > 0 || reflection.quality.DUPLICATE > 0 ? 'WARNING' : 'VALID';
   const periodSellfloorRecords = useMemo(() => {
     const dates = new Set(selection.dates);
-    return sellfloorRecords.filter((record) => dates.has(normalizeAnalysisDate(record.date))).sort((a, b) => b.date.localeCompare(a.date));
-  }, [selection.dates, sellfloorRecords]);
+    return sellfloorRecords
+      .filter((record) => {
+        const date = normalizeAnalysisDate(record.date);
+        if (!date) return false;
+        if (mode === 'weekday') return dates.has(date);
+        return Boolean(selection.startDate && selection.endDate)
+          && date >= selection.startDate
+          && date <= selection.endDate;
+      })
+      .sort((a, b) => {
+        const aDate = normalizeAnalysisDate(a.date);
+        const bDate = normalizeAnalysisDate(b.date);
+        const dateCompare = bDate.localeCompare(aDate);
+        if (dateCompare !== 0) return dateCompare;
+        return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+      });
+  }, [mode, selection.dates, selection.endDate, selection.startDate, sellfloorRecords]);
   const aiInput = useMemo(() => buildAIReflectionInput(
     mode,
     selection.label,

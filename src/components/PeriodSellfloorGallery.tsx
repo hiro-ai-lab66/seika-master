@@ -1,6 +1,40 @@
 import { Camera, ImageOff, MapPin } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import type { SellfloorRecord } from '../types';
+import { buildGoogleDriveImageCandidates } from '../services/storageService';
+
+const SellfloorImage = ({ record }: { record: SellfloorRecord }) => {
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
+  const imageCandidates = buildGoogleDriveImageCandidates(record.photoUrl || '', 1600);
+  const imageSrc = imageCandidates[imageCandidateIndex] || '';
+
+  if (!imageSrc) return <ImageOff size={30} />;
+
+  return (
+    <img
+      src={imageSrc}
+      alt={`${record.date} ${record.product || '売場'}`}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={(event) => {
+        const nextCandidate = imageCandidates[imageCandidateIndex + 1];
+        console.error('[PeriodSellfloorGallery] image load failed', {
+          recordId: record.id,
+          attemptedSrc: imageSrc,
+          currentSrc: event.currentTarget.currentSrc,
+          nextCandidate,
+          imageCandidateIndex
+        });
+        if (nextCandidate && nextCandidate !== imageSrc) {
+          setImageCandidateIndex((current) => current + 1);
+          return;
+        }
+        setImageCandidateIndex(imageCandidates.length);
+      }}
+    />
+  );
+};
 
 export const PeriodSellfloorGallery = memo(({ records }: { records: SellfloorRecord[] }) => (
   <section className="pa-sellfloor-section pa-surface">
@@ -15,7 +49,7 @@ export const PeriodSellfloorGallery = memo(({ records }: { records: SellfloorRec
         {records.map((record) => (
           <article key={`${record.id}-${record.date}`} className="pa-sellfloor-card">
             <div className="pa-sellfloor-image">
-              {record.photoUrl ? <img src={record.photoUrl} alt={`${record.date} ${record.product || '売場'}`} loading="lazy" /> : <ImageOff size={30} />}
+              <SellfloorImage key={record.photoUrl} record={record} />
               <time>{record.date}</time>
             </div>
             <div className="pa-sellfloor-copy">
