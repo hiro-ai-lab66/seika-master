@@ -2,6 +2,7 @@ import { BarChart3, CheckCircle2, ClipboardCheck, ShieldCheck, Sparkles } from '
 import type { SellfloorRecord } from '../types';
 import type { PeriodExportContext } from '../utils/periodAnalysisExport';
 import type { AIReflectionSectionId } from '../utils/aiReflection';
+import type { PeriodPdfSellfloorRecord } from '../utils/periodAnalysisPdfImages';
 import { DepartmentPieChart, PeriodLineChart } from './PeriodAnalysisCharts';
 
 const yen = (value: number) => `${Math.round(value).toLocaleString('ja-JP')}円`;
@@ -29,14 +30,33 @@ const reflectionText = (items: Array<{ text: string; evidence: string }>) => ite
   ? items.slice(0, 8).map((item) => <li key={`${item.text}-${item.evidence}`}><strong>{item.text}</strong><span>{item.evidence}</span></li>)
   : <li><span>該当する客観的事実はありません。</span></li>;
 
-export const PeriodAnalysisPdfReport = ({ context, qualityScore, sellfloorRecords, generatedAt }: {
+const chunkRecords = (records: PeriodPdfSellfloorRecord[], size: number) => {
+  const chunks: PeriodPdfSellfloorRecord[][] = [];
+  for (let index = 0; index < records.length; index += size) chunks.push(records.slice(index, index + size));
+  return chunks;
+};
+
+const formatRecordDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return year && month && day ? `${year}年${month}月${day}日` : value;
+};
+
+const truncateComment = (value: string, maxLength = 72) => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
+};
+
+export const PeriodAnalysisPdfReport = ({ context, qualityScore, sellfloorRecords, pdfSellfloorRecords, pdfSellfloorTotalRecordCount, generatedAt }: {
   context: PeriodExportContext;
   qualityScore: number;
   sellfloorRecords: SellfloorRecord[];
+  pdfSellfloorRecords: PeriodPdfSellfloorRecord[];
+  pdfSellfloorTotalRecordCount: number;
   generatedAt: string;
 }) => {
   const { analysis, reflection, aiReflection } = context;
-  const totalPages = 7;
+  const sellfloorPages = chunkRecords(pdfSellfloorRecords, 4);
+  const totalPages = 7 + sellfloorPages.length;
   const getAIText = (id: AIReflectionSectionId) => {
     const section = aiReflection?.sections[id];
     return section?.confirmed || section?.fieldCorrection || section?.aiGenerated || 'AI未生成。ルールベースの客観的事実を参照してください。';
@@ -129,7 +149,39 @@ export const PeriodAnalysisPdfReport = ({ context, qualityScore, sellfloorRecord
         <div className="pa-pdf-quality-list"><strong>品質理由</strong>{reflection.quality.reasons.length ? reflection.quality.reasons.slice(0, 10).map((reason) => <span key={reason}>{reason}</span>) : <span>品質警告理由なし</span>}</div>
       </ReportPage>
 
-      <ReportPage page={7} total={totalPages} condition={context.conditionLabel} generatedAt={generatedAt} className="pa-pdf-final">
+      {sellfloorPages.map((records, pageIndex) => (
+        <ReportPage key={`sellfloor-${pageIndex}`} page={7 + pageIndex} total={totalPages} condition={context.conditionLabel} generatedAt={generatedAt} className="pa-pdf-sellfloor-page">
+          <div className="pa-pdf-sellfloor-title">
+            <PdfHeading eyebrow="SELLFLOOR RECORDS">期間内の売場記録</PdfHeading>
+            <div className="pa-pdf-sellfloor-meta">
+              <strong>{pageIndex * 4 + 1}〜{pageIndex * 4 + records.length}件目</strong>
+              <span>{pdfSellfloorTotalRecordCount > pdfSellfloorRecords.length ? `全${pdfSellfloorTotalRecordCount}件中${pdfSellfloorRecords.length}件を掲載` : `全${pdfSellfloorRecords.length}件を掲載`}</span>
+            </div>
+          </div>
+          <div className="pa-pdf-sellfloor-grid">
+            {records.map(({ record, imageDataUrl }) => {
+              const comment = truncateComment(record.comment || '');
+              return (
+                <article className="pa-pdf-sellfloor-card" key={record.id}>
+                  <div className="pa-pdf-sellfloor-image">
+                    {imageDataUrl
+                      ? <img src={imageDataUrl} alt="" loading="eager" decoding="sync" data-pdf-sellfloor-image />
+                      : <span>画像を取得できませんでした</span>}
+                  </div>
+                  <div className="pa-pdf-sellfloor-copy">
+                    <time>{formatRecordDate(record.date)}</time>
+                    <strong>{record.product || '商品名未入力'}</strong>
+                    <span>売場場所: {record.location || '未入力'}</span>
+                    {comment && <p>{comment}</p>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </ReportPage>
+      ))}
+
+      <ReportPage page={totalPages} total={totalPages} condition={context.conditionLabel} generatedAt={generatedAt} className="pa-pdf-final">
         <div className="pa-pdf-final-mark"><CheckCircle2 size={34} /></div>
         <h1>次回の売場・発注計画へ</h1>
         <p>本資料は、青果マスターに蓄積された正式売上・予算・商品明細をもとに作成した社内振り返り資料です。</p>

@@ -52,6 +52,11 @@ import {
   type ProductRankingRow
 } from '../utils/periodAnalysis';
 import { exportPeriodAnalysisPdf } from '../utils/periodAnalysisPdf';
+import {
+  preparePeriodPdfSellfloorRecords,
+  waitForPeriodPdfImages,
+  type PeriodPdfSellfloorRecord
+} from '../utils/periodAnalysisPdfImages';
 import { buildPeriodReflection } from '../utils/reflectionEngine';
 import {
   buildAIReflectionInput,
@@ -173,6 +178,8 @@ export const PeriodAnalysisPage = () => {
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
   const [reportGeneratedAt, setReportGeneratedAt] = useState(() => new Date().toLocaleString('ja-JP'));
+  const [pdfSellfloorRecords, setPdfSellfloorRecords] = useState<PeriodPdfSellfloorRecord[]>([]);
+  const [pdfSellfloorTotalRecordCount, setPdfSellfloorTotalRecordCount] = useState(0);
   const [aiWorkspaces, setAiWorkspaces] = useState<Record<string, AIReflectionWorkspace>>({});
   const [aiGeneratingKey, setAiGeneratingKey] = useState('');
   const [aiErrors, setAiErrors] = useState<Record<string, string>>({});
@@ -447,12 +454,18 @@ export const PeriodAnalysisPage = () => {
   const handlePdfExport = async () => {
     setIsPdfExporting(true);
     setExportMessage('');
+    setPdfSellfloorRecords([]);
+    setPdfSellfloorTotalRecordCount(0);
     const generatedAt = new Date().toLocaleString('ja-JP');
     setReportGeneratedAt(generatedAt);
     try {
+      const preparedSellfloor = await preparePeriodPdfSellfloorRecords(periodSellfloorRecords);
+      setPdfSellfloorRecords(preparedSellfloor.records);
+      setPdfSellfloorTotalRecordCount(preparedSellfloor.totalRecordCount);
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
       const report = document.getElementById('period-analysis-pdf-report');
       if (!report) throw new Error('PDFレポートを準備できませんでした');
+      await waitForPeriodPdfImages(report);
       await exportPeriodAnalysisPdf(report, `${exportFileBase}_振り返りレポート`);
       setExportMessage(`${exportFileBase}_振り返りレポート.pdf を出力しました`);
     } catch (pdfError) {
@@ -460,6 +473,8 @@ export const PeriodAnalysisPage = () => {
       setExportMessage(pdfError instanceof Error ? `PDF出力に失敗しました: ${pdfError.message}` : 'PDF出力に失敗しました');
     } finally {
       setIsPdfExporting(false);
+      setPdfSellfloorRecords([]);
+      setPdfSellfloorTotalRecordCount(0);
     }
   };
 
@@ -638,11 +653,18 @@ export const PeriodAnalysisPage = () => {
             <button type="button" onClick={() => handleCsvExport('quantityRanking')} disabled={selectedDayCount === 0}>数量</button>
           </div>
         </div>
-        <div className="pa-export-note"><strong>PDF・印刷</strong><span>A4横／7ページ／KPI・グラフ・ランキング・振り返り・品質・改善提案</span><small>ExcelはAI生成内容・現場修正・確定内容・根拠・ステータス・更新日時を維持します。</small></div>
+        <div className="pa-export-note"><strong>PDF・印刷</strong><span>A4横／7〜10ページ／KPI・グラフ・ランキング・振り返り・品質・改善提案・売場写真</span><small>ExcelはAI生成内容・現場修正・確定内容・根拠・ステータス・更新日時を維持します。</small></div>
         {exportMessage && <div className="pa-export-message">{exportMessage}</div>}
       </section>
 
-      <PeriodAnalysisPdfReport context={exportContext} qualityScore={qualityScore} sellfloorRecords={periodSellfloorRecords} generatedAt={reportGeneratedAt} />
+      <PeriodAnalysisPdfReport
+        context={exportContext}
+        qualityScore={qualityScore}
+        sellfloorRecords={periodSellfloorRecords}
+        pdfSellfloorRecords={pdfSellfloorRecords}
+        pdfSellfloorTotalRecordCount={pdfSellfloorTotalRecordCount}
+        generatedAt={reportGeneratedAt}
+      />
     </div>
   );
 };
