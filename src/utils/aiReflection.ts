@@ -97,6 +97,9 @@ const productEvidence = (reflection: PeriodReflection) => reflection.productComm
   .map((item) => `${item.rank}. ${item.name}（${item.code}）: ${item.comment}\n  根拠: ${item.evidence}`)
   .join('\n');
 
+const roundQuantityYoYForAI = (value: number | null) =>
+  value !== null && Number.isFinite(value) ? Math.round(value * 10) / 10 : value;
+
 export const buildAIReflectionInput = (
   mode: string,
   label: string,
@@ -132,8 +135,8 @@ export const buildAIReflectionInput = (
       productCount: analysis.productCount
     },
     rankings: {
-      salesTop10: analysis.salesRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality })),
-      quantityTop10: analysis.quantityRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }))
+      salesTop10: analysis.salesRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY: roundQuantityYoYForAI(quantityYoY), quantityYoYVerdict, quantityYoYQuality })),
+      quantityTop10: analysis.quantityRanking.slice(0, 10).map(({ code, name, department, sales, quantity, activeDays, quantityYoY, quantityYoYVerdict, quantityYoYQuality }) => ({ code, name, department, sales, quantity, activeDays, quantityYoY: roundQuantityYoYForAI(quantityYoY), quantityYoYVerdict, quantityYoYQuality }))
     },
     productQuantityYoY: {
       metricLabel: analysis.productQuantityYoY.metricLabel,
@@ -142,7 +145,7 @@ export const buildAIReflectionInput = (
       summary: analysis.productQuantityYoY.summary,
       departments: analysis.productQuantityYoY.departments,
       quality: analysis.productQuantityYoY.quality,
-      topSales20: analysis.productQuantityYoY.topSales20.map(({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues }) => ({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues })),
+      topSales20: analysis.productQuantityYoY.topSales20.map(({ code, name, department, sales, quantity, quantityYoY, quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues }) => ({ code, name, department, sales, quantity, quantityYoY: roundQuantityYoYForAI(quantityYoY), quantityYoYVerdict, quantityYoYQuality, comparableDays, comparisonUnavailableDays, outlierValues })),
       safetyNotes: [
         'この前年比は商品販売数量前年比であり、正式売上前年比ではない。',
         '0・空欄・不正値は比較不能として集計から除外する。',
