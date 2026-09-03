@@ -5,6 +5,7 @@ export type SharedCheckIndexedRow = {
 
 export type SharedCheckMutationPlan = {
   updates: Array<{ rowNumber: number; values: string[] }>;
+  unchanged: Array<{ rowNumber: number; values: string[] }>;
   appends: string[][];
   matchedRowCount: number;
   duplicateRowCount: number;
@@ -31,7 +32,7 @@ const normalizeCheckRow = (row: SharedCheckInputRow): string[] => [
   row.time || ''
 ];
 
-const buildCheckLogicalKey = (values: string[]) =>
+export const buildCheckLogicalKey = (values: string[]) =>
   [values[0] || '', values[1] || '', values[6] || '', values[2] || ''].join('\u241f');
 
 const checkRowsEqual = (left: string[], right: string[]) =>
@@ -63,12 +64,24 @@ export const buildSharedCheckMutationPlan = (
   });
 
   const incomingByKey = new Map<string, string[]>();
-  incomingRows.forEach((row) => incomingByKey.set(buildCheckLogicalKey(row), row));
+  incomingRows.forEach((row) => {
+    const key = buildCheckLogicalKey(row);
+    if (incomingByKey.has(key)) {
+      throw new Error(`shared_check の送信データに重複キーがあります: ${key}`);
+    }
+    incomingByKey.set(key, row);
+  });
+
+  const duplicateKeys = Array.from(existingByKey.entries())
+    .filter(([, matches]) => matches.length > 1)
+    .map(([key]) => key);
+  if (duplicateKeys.length > 0) {
+    throw new Error(`shared_check に既存の重複キーがあります: ${duplicateKeys.join(', ')}`);
+  }
 
   const updates: Array<{ rowNumber: number; values: string[] }> = [];
+  const unchanged: Array<{ rowNumber: number; values: string[] }> = [];
   const appends: string[][] = [];
-  let duplicateRowCount = 0;
-  let obsoleteRowCount = 0;
 
   incomingByKey.forEach((incoming, key) => {
     const matches = existingByKey.get(key) || [];
@@ -79,24 +92,17 @@ export const buildSharedCheckMutationPlan = (
     }
     if (!checkRowsEqual(primary.values, incoming)) {
       updates.push({ rowNumber: primary.rowNumber, values: incoming });
+    } else {
+      unchanged.push({ rowNumber: primary.rowNumber, values: incoming });
     }
-    matches.slice(1).forEach((duplicate) => {
-      updates.push({ rowNumber: duplicate.rowNumber, values: ['', '', '', '', '', '', ''] });
-      duplicateRowCount += 1;
-    });
-  });
-
-  targetRows.forEach((existing) => {
-    if (incomingByKey.has(buildCheckLogicalKey(existing.values))) return;
-    updates.push({ rowNumber: existing.rowNumber, values: ['', '', '', '', '', '', ''] });
-    obsoleteRowCount += 1;
   });
 
   return {
     updates,
+    unchanged,
     appends,
     matchedRowCount: targetRows.length,
-    duplicateRowCount,
-    obsoleteRowCount
+    duplicateRowCount: 0,
+    obsoleteRowCount: 0
   };
 };

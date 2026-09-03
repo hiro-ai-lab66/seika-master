@@ -13,6 +13,8 @@ import { deriveOverallWeather, deriveTempBandFromHigh, fetchDailyWeatherSnapshot
 import { formatDisplayCodeWithCheckDigit } from '../utils/codeDisplay';
 import { normalizeCode } from '../utils/normalizeCode';
 import { runParallelInspectionSaves } from '../utils/inspectionSaveParallel';
+import { shouldShowInspectionSaveSuccess } from '../utils/inspectionSaveOutcome';
+import { createSerialTaskQueue } from '../utils/serialTaskQueue';
 
 interface Props {
     onSave: (entry: InspectionEntry) => void;
@@ -261,6 +263,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
     const formRef = useRef<HTMLFormElement>(null);
     const isSubmittingRef = useRef(false);
     const saveStatusTimerRef = useRef<number | null>(null);
+    const inspectionSaveQueueRef = useRef(createSerialTaskQueue());
     const veggieCsvInputRef = useRef<HTMLInputElement>(null);
     const fruitCsvInputRef = useRef<HTMLInputElement>(null);
     const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement | null>>({});
@@ -979,7 +982,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             Papa.parse(preprocessedText, {
                 header: true,
                 skipEmptyLines: true,
-                complete: (results) => {
+                complete: async (results) => {
                     console.log('[InspectionForm] csv parsed data', {
                         type,
                         currentDate,
@@ -1121,8 +1124,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                             code: record.code
                         })));
 
-                        void (async () => {
-                            try {
+                        try {
+                            await inspectionSaveQueueRef.current.run(async () => {
                                 await upsertSharedDailySalesForDateDepartment({
                                     date: currentDate,
                                     department: dept,
@@ -1132,13 +1135,13 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                                 updateProductMaster(sortedItems, 'csv-import', dept);
                                 const csvRows = buildSharedCsvRows(type, items);
                                 await upsertSharedCheckRowsForDateTimes(currentDate, [`csv-${type}`], csvRows);
-                                setSharedStatus(`取込完了（${items.length}件）`);
-                                setSharedError(null);
-                            } catch (error) {
-                                console.error('[InspectionForm] failed to sync csv import to shared_check', error);
-                                setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : 'CSV共有に失敗しました'}`);
-                            }
-                        })();
+                            });
+                            setSharedStatus(`取込完了（${items.length}件）`);
+                            setSharedError(null);
+                        } catch (error) {
+                            console.error('[InspectionForm] failed to sync csv import to shared_check', error);
+                            setSharedError(`Google Sheets接続エラー: ${error instanceof Error ? error.message : 'CSV共有に失敗しました'}`);
+                        }
                     } else {
                         alert('CSV形式が違います');
                     }
@@ -1247,7 +1250,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
         return result;
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         const handlerStartedAt = performance.now();
         const buttonToHandlerMs = saveButtonPressedAtRef.current === null
             ? null
@@ -1334,8 +1337,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             checkRowCount: saveSnapshot.rows.length
         });
 
-        // 以降の通信は保存開始時のスナップショットを使い、画面操作をブロックしない。
-        void (async () => {
+        // 保存開始時のスナップショットを使い、全保存・検証が完了するまで完了表示にしない。
+        try {
             const asyncSaveStartedAt = performance.now();
             let dailySalesMetadataMs = 0;
             let sharedCheckMs = 0;
@@ -1343,9 +1346,11 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
             let finalSalesHistoryMs = 0;
             let sharedSalesStatus: 'not-applicable' | 'success' | 'failed' | 'skipped-shared-check-failed' = 'not-applicable';
             let sharedSalesError: unknown;
-            const parallelResult = await runParallelInspectionSaves(
-                () => enrichSharedDailySalesByDate(saveSnapshot.dailySalesMetadata),
-                () => upsertSharedCheckRowsForDateTimes(saveSnapshot.date, [saveSnapshot.period], saveSnapshot.rows)
+            const parallelResult = await inspectionSaveQueueRef.current.run(() =>
+                runParallelInspectionSaves(
+                    () => enrichSharedDailySalesByDate(saveSnapshot.dailySalesMetadata),
+                    () => upsertSharedCheckRowsForDateTimes(saveSnapshot.date, [saveSnapshot.period], saveSnapshot.rows)
+                )
             );
             dailySalesMetadataMs = parallelResult.dailySales.durationMs;
             sharedCheckMs = parallelResult.sharedCheck.durationMs;
@@ -1427,7 +1432,8 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 ? '報告を保存し、共有データも更新しました'
                 : '保存に失敗しました。再試行してください';
 
-            if (saveFailures.length === 0) {
+            const saveSucceeded = shouldShowInspectionSaveSuccess(saveFailures);
+            if (saveSucceeded) {
                 setSharedError(null);
                 setSharedStatus(`報告を保存し、共有データも更新しました（シート: ${getSharedCheckSheetName()}）`);
             } else {
@@ -1435,7 +1441,7 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                 setSharedStatus(null);
             }
 
-            if (saveFailures.length > 0) {
+            if (!saveSucceeded) {
                 setSharedStatus(null);
                 setSaveStatus('error');
             } else {
@@ -1470,8 +1476,14 @@ export const InspectionForm: React.FC<Props> = ({ onSave, existingEntry, dailyBu
                     totalToPaintMs: Number((performance.now() - handlerStartedAt).toFixed(1))
                 });
             });
+        } catch (error) {
+            console.error('[InspectionForm] unexpected save failure', error);
+            setSharedStatus(null);
+            setSharedError(error instanceof Error ? error.message : '保存処理に失敗しました');
+            setSaveStatus('error');
+        } finally {
             isSubmittingRef.current = false;
-        })();
+        }
     };
 
     // 解析データ独立state
