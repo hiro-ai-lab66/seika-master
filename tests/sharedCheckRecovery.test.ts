@@ -40,3 +40,16 @@ test('復旧予定行は既存最終行より後ろのA:Gに割り当てる', ()
     'shared_check!A201:G201'
   ]);
 });
+
+test('A:G復旧後はG:M原本を残しても追加の復旧候補を作らない', () => {
+  const recovered = ['2026-09-01', '古沢店', '最終実績', '925', '入力済', '', 'final'];
+  const rows = [
+    ['日付', '店舗', '項目', '内容', '状態', '担当', '時間'],
+    recovered,
+    ['', '', '', '', '', '', ...recovered]
+  ];
+  const result = analyzeSharedCheckRecovery(rows, '2026-09-01', '2026-09-03');
+  assert.equal(result.summary.restoreCandidateCount, 0);
+  assert.equal(result.summary.alreadyPresentCount, 1);
+  assert.equal(result.summary.humanReviewCount, 0);
+});

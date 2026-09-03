@@ -182,13 +182,6 @@ const findSharedCheckRowsForDate = async (sheetName: string, date: string): Prom
   return indexedRows;
 };
 
-const findShiftedSharedCheckRowsForDate = async (sheetName: string, date: string): Promise<number[]> => {
-  const shiftedDateValues = await readGoogleSheetValues(sheetName, 'G2:G');
-  return shiftedDateValues
-    .map((row, index) => row[0] === date ? index + 2 : null)
-    .filter((rowNumber): rowNumber is number => rowNumber !== null);
-};
-
 const findLastSharedCheckUsedRow = async (sheetName: string): Promise<number> => {
   const results = await readGoogleSheetValueRanges(sheetName, ['A2:A', 'G2:G', 'M2:M']);
   return results.reduce((lastUsedRow, result) => {
@@ -348,13 +341,7 @@ async function handleCheckUpsertUnlocked(payload: unknown) {
   await ensureHeader(sheet.name, sheet.header);
   const headerMs = performance.now() - startedAt;
   const searchStartedAt = performance.now();
-  const [existingRowsForDate, shiftedRowsForDate] = await Promise.all([
-    findSharedCheckRowsForDate(sheet.name, date),
-    findShiftedSharedCheckRowsForDate(sheet.name, date)
-  ]);
-  if (shiftedRowsForDate.length > 0) {
-    throw new Error(`shared_check に復旧待ちの横ずれデータがあります: date=${date} rows=${shiftedRowsForDate.slice(0, 20).join(',')}`);
-  }
+  const existingRowsForDate = await findSharedCheckRowsForDate(sheet.name, date);
   const searchMs = performance.now() - searchStartedAt;
   const plan = buildSharedCheckMutationPlan(date, times, rows, existingRowsForDate);
   const writeStartedAt = performance.now();
