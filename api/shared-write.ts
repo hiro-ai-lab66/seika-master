@@ -1,6 +1,7 @@
-import { appendGoogleSheetValues, batchUpdateGoogleSheetValues, ensureGoogleSheetExists, formatServerError, readGoogleSheetValueRanges, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
+import { appendGoogleSheetValues, batchUpdateGoogleSheetValues, ensureGoogleSheetExists, ensureGoogleSheetRowCapacity, formatServerError, readGoogleSheetValueRanges, readGoogleSheetValues, writeGoogleSheetValues } from './_lib/googleServiceAccount.js';
 import { buildDailySalesMetadataUpdates, buildDailySalesMutationPlan, type DailySalesIndexedRow, type DailySalesInputRecord } from './_lib/dailySalesMutationPlan.js';
 import { buildSharedCheckMutationPlan, type SharedCheckIndexedRow, type SharedCheckInputRow } from './_lib/sharedCheckMutationPlan.js';
+import { assertSharedCheckReadback, assertSharedCheckUpdatedRanges, buildExplicitSharedCheckWrites, type SharedCheckExplicitWrite } from './_lib/sharedCheckWriteVerification.js';
 import { SHARED_CHECK_SHEET_NAME, SHARED_DAILY_SALES_SHEET_NAME, SHARED_MORNING_STATUS_SHEET_NAME, SHARED_NOTICE_SHEET_NAME, SHARED_SALES_SHEET_NAME } from '../sharedSheetNames.js';
 
 const nowIso = () => new Date().toISOString();
@@ -138,6 +139,22 @@ const sortCheckRows = (rows: string[][]) =>
 
 const CHECK_INDEX_BATCH_SIZE = 100;
 
+let sharedCheckWriteTail: Promise<void> = Promise.resolve();
+
+const runSharedCheckWriteExclusive = async <T>(task: () => Promise<T>): Promise<T> => {
+  const previous = sharedCheckWriteTail;
+  let release: () => void = () => undefined;
+  sharedCheckWriteTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+};
+
 const findSharedCheckRowsForDate = async (sheetName: string, date: string): Promise<SharedCheckIndexedRow[]> => {
   const dateColumnResult = await readGoogleSheetValueRanges(sheetName, ['A2:A']);
   const dateValues = dateColumnResult[0]?.values || [];
@@ -163,6 +180,43 @@ const findSharedCheckRowsForDate = async (sheetName: string, date: string): Prom
   }
 
   return indexedRows;
+};
+
+const findShiftedSharedCheckRowsForDate = async (sheetName: string, date: string): Promise<number[]> => {
+  const shiftedDateValues = await readGoogleSheetValues(sheetName, 'G2:G');
+  return shiftedDateValues
+    .map((row, index) => row[0] === date ? index + 2 : null)
+    .filter((rowNumber): rowNumber is number => rowNumber !== null);
+};
+
+const findLastSharedCheckUsedRow = async (sheetName: string): Promise<number> => {
+  const results = await readGoogleSheetValueRanges(sheetName, ['A2:A', 'G2:G', 'M2:M']);
+  return results.reduce((lastUsedRow, result) => {
+    const values = result.values || [];
+    for (let index = values.length - 1; index >= 0; index -= 1) {
+      if ((values[index] || []).some((cell) => cell?.toString().trim())) {
+        return Math.max(lastUsedRow, index + 2);
+      }
+    }
+    return lastUsedRow;
+  }, 1);
+};
+
+const readBackSharedCheckWrites = async (
+  sheetName: string,
+  writes: SharedCheckExplicitWrite[]
+): Promise<Map<number, string[]>> => {
+  const readbackByRow = new Map<number, string[]>();
+  for (let index = 0; index < writes.length; index += CHECK_INDEX_BATCH_SIZE) {
+    const batch = writes.slice(index, index + CHECK_INDEX_BATCH_SIZE);
+    const results = await readGoogleSheetValueRanges(sheetName, batch.map((write) => write.a1Range));
+    results.forEach((result) => {
+      const rowNumberMatch = (result.range || '').match(/![A-Z]+(\d+):[A-Z]+\d+$/);
+      const rowNumber = rowNumberMatch ? Number(rowNumberMatch[1]) : null;
+      if (rowNumber !== null) readbackByRow.set(rowNumber, result.values?.[0] || []);
+    });
+  }
+  return readbackByRow;
 };
 
 const DAILY_SALES_INDEX_BATCH_SIZE = 100;
@@ -280,7 +334,7 @@ const normalizeDailySalesDate = (raw: string): string => {
   return trimmed;
 };
 
-async function handleCheckUpsert(payload: any) {
+async function handleCheckUpsertUnlocked(payload: unknown) {
   const startedAt = performance.now();
   const { date, times, rows } = payload as { date: string; times: string[]; rows: SharedCheckInputRow[] };
   const sheet = SHEETS.check;
@@ -294,42 +348,71 @@ async function handleCheckUpsert(payload: any) {
   await ensureHeader(sheet.name, sheet.header);
   const headerMs = performance.now() - startedAt;
   const searchStartedAt = performance.now();
-  const existingRowsForDate = await findSharedCheckRowsForDate(sheet.name, date);
+  const [existingRowsForDate, shiftedRowsForDate] = await Promise.all([
+    findSharedCheckRowsForDate(sheet.name, date),
+    findShiftedSharedCheckRowsForDate(sheet.name, date)
+  ]);
+  if (shiftedRowsForDate.length > 0) {
+    throw new Error(`shared_check に復旧待ちの横ずれデータがあります: date=${date} rows=${shiftedRowsForDate.slice(0, 20).join(',')}`);
+  }
   const searchMs = performance.now() - searchStartedAt;
   const plan = buildSharedCheckMutationPlan(date, times, rows, existingRowsForDate);
   const writeStartedAt = performance.now();
-  await batchUpdateGoogleSheetValues(
-    sheet.name,
-    plan.updates.map((update) => ({
-      a1Range: `A${update.rowNumber}:G${update.rowNumber}`,
-      values: [update.values]
-    }))
-  );
-  if (plan.appends.length > 0) {
-    await appendGoogleSheetValues(sheet.name, 'A:G', plan.appends);
+  const lastUsedRow = await findLastSharedCheckUsedRow(sheet.name);
+  const writes = buildExplicitSharedCheckWrites(plan.updates, plan.appends, lastUsedRow + 1);
+  if (writes.length > 0) {
+    await ensureGoogleSheetRowCapacity(sheet.name, Math.max(...writes.map((write) => write.rowNumber)));
   }
+  const writeResult = await batchUpdateGoogleSheetValues(
+    sheet.name,
+    writes.map((write) => ({ a1Range: write.a1Range, values: [write.values] }))
+  );
+  assertSharedCheckUpdatedRanges(sheet.name, writes, writeResult.responses || []);
+
+  const unchangedWrites: SharedCheckExplicitWrite[] = plan.unchanged.map((row) => ({
+    rowNumber: row.rowNumber,
+    a1Range: `A${row.rowNumber}:G${row.rowNumber}`,
+    values: row.values
+  }));
+  const verificationWrites = [...writes, ...unchangedWrites];
+  const readbackByRow = await readBackSharedCheckWrites(sheet.name, verificationWrites);
+  assertSharedCheckReadback(verificationWrites, readbackByRow);
   const writeMs = performance.now() - writeStartedAt;
   console.log('[shared-write] handleCheckUpsert completed', {
     targetSheet: sheet.name,
     matchedDateRowCount: existingRowsForDate.length,
     matchedTargetRowCount: plan.matchedRowCount,
-    updatedOrBlankedRowCount: plan.updates.length,
+    updatedRowCount: plan.updates.length,
     appendedRowCount: plan.appends.length,
+    unchangedRowCount: plan.unchanged.length,
     duplicateRowCount: plan.duplicateRowCount,
-    obsoleteRowCount: plan.obsoleteRowCount
+    obsoleteRowCount: plan.obsoleteRowCount,
+    updatedRanges: (writeResult.responses || []).map((response) => response.updatedRange || ''),
+    verifiedRowCount: verificationWrites.length
   });
   console.log('[Save Performance][Vercel API] shared_check targeted upsert', {
     legacyFullReadBaselineMs: '23236-30067',
     matchedDateRowCount: existingRowsForDate.length,
     matchedTargetRowCount: plan.matchedRowCount,
-    updatedOrBlankedRowCount: plan.updates.length,
+    updatedRowCount: plan.updates.length,
     appendedRowCount: plan.appends.length,
     ensureHeaderMs: Number(headerMs.toFixed(1)),
     targetRowSearchMs: Number(searchMs.toFixed(1)),
     targetRowWriteMs: Number(writeMs.toFixed(1)),
     totalMs: Number((performance.now() - startedAt).toFixed(1))
   });
-  return { ok: true };
+  return {
+    ok: true,
+    updatedRanges: (writeResult.responses || []).map((response) => response.updatedRange || ''),
+    verifiedRowCount: verificationWrites.length,
+    updatedRowCount: plan.updates.length,
+    appendedRowCount: plan.appends.length,
+    unchangedRowCount: plan.unchanged.length
+  };
+}
+
+async function handleCheckUpsert(payload: unknown) {
+  return runSharedCheckWriteExclusive(() => handleCheckUpsertUnlocked(payload));
 }
 
 async function handleCheckRestoreFromBackup() {

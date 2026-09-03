@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:vercel": "vercel dev",
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "recovery:dry-run": "node --experimental-strip-types scripts/shared-check-recovery-dry-run.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -58,6 +58,22 @@ type TokenCache = {
   expiresAt: number;
 };
 
+export type GoogleSheetValueWriteResponse = {
+  spreadsheetId?: string;
+  updatedRange?: string;
+  updatedRows?: number;
+  updatedColumns?: number;
+  updatedCells?: number;
+};
+
+export type GoogleSheetBatchValueWriteResponse = {
+  spreadsheetId?: string;
+  totalUpdatedRows?: number;
+  totalUpdatedColumns?: number;
+  totalUpdatedCells?: number;
+  responses?: GoogleSheetValueWriteResponse[];
+};
+
 let tokenCache: TokenCache | null = null;
 
 const getRequiredEnv = (name: string) => {
@@ -331,6 +347,14 @@ const writeValues = async (
   }
 
   const responseText = await response.text();
+  let responseBody: GoogleSheetValueWriteResponse = {};
+  if (responseText) {
+    try {
+      responseBody = JSON.parse(responseText) as GoogleSheetValueWriteResponse;
+    } catch {
+      throw new Error('Google Sheets 書込結果のJSON解析に失敗しました');
+    }
+  }
   console.log('[googleServiceAccount] write succeeded', {
     method,
     url,
@@ -342,13 +366,15 @@ const writeValues = async (
     rowCount: values.length,
     durationMs: Number((performance.now() - startedAt).toFixed(1))
   });
+  return responseBody;
 };
 
 export const readGoogleSpreadsheetMetadata = async () => {
   const startedAt = performance.now();
   const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const accessToken = await getGoogleAccessToken();
-  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title`;
+  const fields = 'sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))';
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}?fields=${encodeURIComponent(fields)}`;
 
   const response = await fetch(url, {
     headers: {
@@ -366,7 +392,15 @@ export const readGoogleSpreadsheetMetadata = async () => {
     throw new Error(`Google Sheets メタデータ取得に失敗しました: ${errorText}`);
   }
 
-  const result = await response.json() as { sheets?: Array<{ properties?: { title?: string } }> };
+  const result = await response.json() as {
+    sheets?: Array<{
+      properties?: {
+        sheetId?: number;
+        title?: string;
+        gridProperties?: { rowCount?: number; columnCount?: number };
+      };
+    }>;
+  };
   console.log('[Save Performance][Google Sheets] metadata read', {
     sheetCount: result.sheets?.length || 0,
     durationMs: Number((performance.now() - startedAt).toFixed(1))
@@ -437,25 +471,65 @@ export const ensureGoogleSheetExists = async (sheetName: string) => {
   });
 };
 
+export const ensureGoogleSheetRowCapacity = async (sheetName: string, requiredLastRow: number) => {
+  const metadata = await readGoogleSpreadsheetMetadata();
+  const properties = (metadata.sheets || [])
+    .map((sheet) => sheet.properties)
+    .find((candidate) => candidate?.title === sheetName);
+  if (properties?.sheetId === undefined) {
+    throw new Error(`シート "${sheetName}" のsheetIdを取得できません`);
+  }
+
+  const currentRowCount = properties.gridProperties?.rowCount || 0;
+  if (requiredLastRow <= currentRowCount) return currentRowCount;
+
+  const { spreadsheetId } = getConfiguredSpreadsheetInfo();
+  const accessToken = await getGoogleAccessToken();
+  const appendLength = Math.max(requiredLastRow - currentRowCount, 100);
+  const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}:batchUpdate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      requests: [{
+        appendDimension: {
+          sheetId: properties.sheetId,
+          dimension: 'ROWS',
+          length: appendLength
+        }
+      }]
+    })
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google Sheets 行追加に失敗しました: ${errorText}`);
+  }
+  await response.text();
+  return currentRowCount + appendLength;
+};
+
 export const writeGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
   const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
-  await writeValues('PUT', url, values);
+  return writeValues('PUT', url, values);
 };
 
 export const appendGoogleSheetValues = async (sheetName: string, a1Range: string, values: string[][]) => {
   const { spreadsheetId } = getConfiguredSpreadsheetInfo();
   const range = `'${sheetName.replace(/'/g, "''")}'!${a1Range}`;
   const url = `${GOOGLE_SHEETS_API_BASE}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-  await writeValues('POST', url, values);
+  return writeValues('POST', url, values);
 };
 
 export const batchUpdateGoogleSheetValues = async (
   sheetName: string,
   updates: Array<{ a1Range: string; values: string[][] }>
 ) => {
-  if (updates.length === 0) return;
+  if (updates.length === 0) return { responses: [] } satisfies GoogleSheetBatchValueWriteResponse;
 
   const startedAt = performance.now();
   const { spreadsheetId } = getConfiguredSpreadsheetInfo();
@@ -482,13 +556,14 @@ export const batchUpdateGoogleSheetValues = async (
     throw new Error(`Google Sheets 複数範囲の更新に失敗しました: ${errorText}`);
   }
 
-  await response.text();
+  const result = await response.json() as GoogleSheetBatchValueWriteResponse;
   console.log('[Save Performance][Google Sheets] batch update', {
     sheetName,
     rangeCount: updates.length,
     rowCount: updates.reduce((count, update) => count + update.values.length, 0),
     durationMs: Number((performance.now() - startedAt).toFixed(1))
   });
+  return result;
 };
 
 export const formatServerError = (error: unknown) => serializeError(error);
