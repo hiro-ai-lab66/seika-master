@@ -1,10 +1,11 @@
-import { buildCheckLogicalKey } from './sharedCheckMutationPlan.ts';
-
 export type SharedCheckExplicitWrite = {
   rowNumber: number;
   a1Range: string;
   values: string[];
 };
+
+const buildCheckLogicalKey = (values: string[]) =>
+  [values[0] || '', values[1] || '', values[6] || '', values[2] || ''].join('\u241f');
 
 export type GoogleValueUpdateResponse = {
   updatedRange?: string;
