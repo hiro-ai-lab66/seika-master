@@ -213,7 +213,8 @@ export const fetchSharedReadResource = async <T>(
 export const postSharedWriteAction = async <T>(
   resource: SharedWriteResource,
   action: string,
-  payload: unknown
+  payload: unknown,
+  options: { signal?: AbortSignal } = {}
 ): Promise<T> => {
   const requestStartedAt = performance.now();
   const serializeStartedAt = performance.now();
@@ -234,7 +235,8 @@ export const postSharedWriteAction = async <T>(
       'Content-Type': 'application/json',
       Accept: 'application/json'
     },
-    body: requestBody
+    body: requestBody,
+    signal: options.signal
   });
   const responseReceivedAt = performance.now();
   console.log('[sharedDataApi] write response', {

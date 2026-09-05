@@ -18,6 +18,7 @@ const SHEETS_SCOPE = [
 ].join(' ');
 const TOKEN_STORAGE_KEY = 'seika_sheets_access_token';
 const TOKEN_EXPIRY_STORAGE_KEY = 'seika_sheets_access_token_expiry';
+const OAUTH_REQUEST_TIMEOUT_MS = 25_000;
 const MIGRATION_KEY = 'seika_inventory_sheet_migrated_v1';
 const HEADER_ROW = ['日付', '店舗', '品目', '規格', '数量', '単価', '売価'];
 const INVENTORY_PHASE1_HEADER_ROW = [
@@ -85,6 +86,7 @@ let tokenResponseHandler: ((resp: TokenResponse) => void) | null = null;
 let pendingTokenRequest: Promise<string> | null = null;
 let pendingTokenResolve: ((token: string) => void) | null = null;
 let pendingTokenReject: ((error: Error) => void) | null = null;
+let pendingTokenTimeout: ReturnType<typeof setTimeout> | null = null;
 let resolvedSheetNameCache: string | null = null;
 let pendingSheetNameResolution: Promise<string> | null = null;
 
@@ -195,13 +197,26 @@ const storeAccessToken = (resp: TokenResponse) => {
     }
 };
 
+const clearPendingTokenState = () => {
+    if (pendingTokenTimeout) {
+        clearTimeout(pendingTokenTimeout);
+    }
+    pendingTokenTimeout = null;
+    pendingTokenResolve = null;
+    pendingTokenReject = null;
+    pendingTokenRequest = null;
+};
+
+const rejectPendingTokenRequest = (error: Error) => {
+    const reject = pendingTokenReject;
+    clearPendingTokenState();
+    reject?.(error);
+};
+
 const handleTokenError = (resp: TokenResponse) => {
     const error = new Error(resp.error_description || resp.error || 'Google Sheets の認証に失敗しました');
     clearStoredAccessToken();
-    pendingTokenReject?.(error);
-    pendingTokenReject = null;
-    pendingTokenResolve = null;
-    pendingTokenRequest = null;
+    rejectPendingTokenRequest(error);
     tokenResponseHandler?.(resp);
 };
 
@@ -218,23 +233,33 @@ const ensureSheetsAccessToken = async (interactive: boolean): Promise<string> =>
         return pendingTokenRequest;
     }
 
-    pendingTokenRequest = new Promise<string>((resolve, reject) => {
+    const request = new Promise<string>((resolve, reject) => {
         pendingTokenResolve = resolve;
         pendingTokenReject = reject;
-
-        try {
-            tokenClient.requestAccessToken({
-                prompt: interactive ? 'select_account consent' : ''
-            });
-        } catch (error) {
-            pendingTokenRequest = null;
-            pendingTokenResolve = null;
-            pendingTokenReject = null;
-            reject(error instanceof Error ? error : new Error('Google Sheets の認証開始に失敗しました'));
-        }
     });
+    pendingTokenRequest = request;
+    pendingTokenTimeout = setTimeout(() => {
+        console.error('[SharedSheets] OAuth request timed out', {
+            timeoutMs: OAUTH_REQUEST_TIMEOUT_MS,
+            interactive
+        });
+        handleTokenError({
+            error: 'oauth_timeout',
+            error_description: `Google 認証が${OAUTH_REQUEST_TIMEOUT_MS / 1000}秒以内に完了しませんでした`
+        });
+    }, OAUTH_REQUEST_TIMEOUT_MS);
 
-    return pendingTokenRequest;
+    try {
+        tokenClient.requestAccessToken({
+            prompt: interactive ? 'select_account consent' : ''
+        });
+    } catch (error) {
+        rejectPendingTokenRequest(
+            error instanceof Error ? error : new Error('Google Sheets の認証開始に失敗しました')
+        );
+    }
+
+    return request;
 };
 
 const authorizedSheetsFetch = async (url: string, init?: RequestInit) => {
@@ -627,20 +652,28 @@ export const initSheetsTokenClient = (onTokenResponse: (resp: TokenResponse) => 
 
             try {
                 storeAccessToken(resp);
-                pendingTokenResolve?.(accessToken!);
+                const resolve = pendingTokenResolve;
+                clearPendingTokenState();
+                resolve?.(accessToken!);
             } catch (error) {
                 handleTokenError({
                     error: 'token_store_failed',
                     error_description: error instanceof Error ? error.message : 'Google Sheets のトークン保存に失敗しました'
                 });
                 return;
-            } finally {
-                pendingTokenResolve = null;
-                pendingTokenReject = null;
-                pendingTokenRequest = null;
             }
 
             tokenResponseHandler?.(resp);
+        },
+        error_callback: (error: { type?: string }) => {
+            const errorType = error?.type || 'oauth_popup_error';
+            console.error('[SharedSheets] OAuth popup error', { type: errorType });
+            handleTokenError({
+                error: errorType,
+                error_description: errorType === 'popup_closed'
+                    ? 'Google 認証画面が閉じられました'
+                    : 'Google 認証を開始または完了できませんでした'
+            });
         }
     });
 };

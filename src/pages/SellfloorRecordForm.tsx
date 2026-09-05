@@ -2,12 +2,19 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Save, CheckCircle, RefreshCw, Image as ImageIcon, Images } from 'lucide-react';
 import type { SellfloorRecord, PopItem } from '../types';
 import { getLocalTodayDateString } from '../utils/calculations';
-import { uploadImageFileToGoogleDrive } from '../services/googleDriveImageService';
+import {
+  DriveImageUploadError,
+  uploadSellfloorImageFileToGoogleDrive
+} from '../services/googleDriveImageService';
 import { isRemoteImageUrl, normalizeDriveImageUrl } from '../services/storageService';
 import { createCompatId } from '../utils/ids';
 
 interface SellfloorRecordFormProps {
-  onSave: (record: SellfloorRecord) => Promise<{ message: string }>;
+  onSave: (record: SellfloorRecord) => Promise<{
+    message: string;
+    sharedSaved?: boolean;
+    sharedResultUnknown?: boolean;
+  }>;
   currentDate: string;
   savedPops?: PopItem[];
   defaultAuthor?: string;
@@ -17,6 +24,23 @@ interface SellfloorRecordFormProps {
   isSharedLoading?: boolean;
   onBack?: () => void;
 }
+
+type PendingSaveAttempt = {
+  recordId: string;
+  createdAt: string;
+  driveFileId?: string;
+  uploadedPhoto?: {
+    fileKey: string;
+    url: string;
+    fileId: string;
+  };
+};
+
+const getPhotoFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
+
+const SAVE_FAILED_MESSAGE = '保存できませんでした。もう一度お試しください。';
+const PHOTO_ONLY_SAVED_MESSAGE = '写真は保存されましたが、売り場記録の保存を完了できませんでした。';
+const SAVE_RESULT_UNKNOWN_MESSAGE = '保存結果を確認できませんでした。再保存する前に履歴を確認してください。';
 
 export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   onSave,
@@ -46,6 +70,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
+  const pendingSaveAttemptRef = useRef<PendingSaveAttempt | null>(null);
   const isEditMode = Boolean(existingRecord);
 
   const appendDebugLog = (message: string, info?: Record<string, unknown>) => {
@@ -89,6 +114,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveMessage('');
     setSaveError('');
     setDebugLogs([]);
+    pendingSaveAttemptRef.current = null;
     resetFileInputs();
   }, [existingRecord, defaultAuthor]);
 
@@ -96,12 +122,16 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       appendDebugLog('写真選択 onChange 発火', {
-        fileName: file.name,
         fileType: file.type || 'unknown',
         fileSize: file.size,
         fileObjectReceived: true
       });
       setPhotoFile(file);
+      if (pendingSaveAttemptRef.current?.uploadedPhoto?.fileKey !== getPhotoFileKey(file)) {
+        pendingSaveAttemptRef.current = pendingSaveAttemptRef.current
+          ? { ...pendingSaveAttemptRef.current, driveFileId: undefined, uploadedPhoto: undefined }
+          : null;
+      }
       
       // Free memory if there was a previous preview
       if (photoPreview) {
@@ -140,6 +170,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     setSaveError('');
     setDebugLogs([]);
     setSelectedPopId('');
+    pendingSaveAttemptRef.current = null;
     resetFileInputs();
   };
 
@@ -153,7 +184,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     }
     
     console.log("save start");
-    console.log("imageUrl:", normalizedImageUrl);
+    console.log('[SellfloorRecordForm] image selected', { hasImageUrl: Boolean(normalizedImageUrl) });
     setIsSaving(true);
     setSaveSuccess(false);
     setSaveError('');
@@ -164,10 +195,20 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
       apiHost: window.location.origin,
       path: window.location.pathname
     });
+    const isRetry = Boolean(pendingSaveAttemptRef.current);
+    const pendingAttempt = pendingSaveAttemptRef.current || {
+      recordId: existingRecord?.id || createCompatId(),
+      createdAt: existingRecord?.createdAt || new Date().toISOString()
+    };
+    pendingSaveAttemptRef.current = pendingAttempt;
+    appendDebugLog('保存対象ID確定', {
+      recordId: pendingAttempt.recordId,
+      isRetry
+    });
     try {
         if (normalizedImageUrl && !isRemoteImageUrl(normalizedImageUrl)) {
-            console.log('[SellfloorRecordForm] invalid imageUrl provided', { imageUrl: normalizedImageUrl });
-            appendDebugLog('保存中断 - 画像URL形式不正', { imageUrl: normalizedImageUrl });
+            console.log('[SellfloorRecordForm] invalid imageUrl provided');
+            appendDebugLog('保存中断 - 画像URL形式不正');
             alert("画像URL は http(s) URL を入力してください");
             setSaveError('画像URL の形式が不正です');
             return;
@@ -176,34 +217,47 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         let photoUrl = '';
         if (normalizedImageUrl) {
           console.log('[SellfloorRecordForm] using manual imageUrl and skipping drive upload', {
-            imageUrl: normalizedImageUrl,
             hasPhotoFile: Boolean(photoFile)
           });
-          appendDebugLog('手入力URLを使用 - Driveアップロード省略', {
-            imageUrl: normalizedImageUrl
-          });
+          appendDebugLog('手入力URLを使用 - Driveアップロード省略');
           photoUrl = normalizedImageUrl;
         } else {
-          console.log('[SellfloorRecordForm] uploading image file to drive', {
-            fileName: photoFile?.name || null
-          });
-          appendDebugLog('Driveアップロード開始', {
-            fileName: photoFile?.name || '',
-            fileType: photoFile?.type || 'unknown',
-            fileSize: photoFile?.size || 0
-          });
-          photoUrl = await uploadImageFileToGoogleDrive(photoFile!, {
-            fileNamePrefix: 'sellfloor',
-            maxWidth: 800,
-            maxHeight: 800,
-            quality: 0.65,
-            onDebug: appendDebugLog
-          });
+          const currentFileKey = getPhotoFileKey(photoFile!);
+          if (pendingAttempt.uploadedPhoto?.fileKey === currentFileKey) {
+            photoUrl = pendingAttempt.uploadedPhoto.url;
+            appendDebugLog('保存済みDrive写真を再利用', {
+              fileId: pendingAttempt.uploadedPhoto.fileId,
+              recordId: pendingAttempt.recordId
+            });
+          } else {
+            console.log('[SellfloorRecordForm] uploading image file to drive');
+            appendDebugLog('Driveアップロード開始', {
+              fileType: photoFile?.type || 'unknown',
+              fileSize: photoFile?.size || 0
+            });
+            const uploadResult = await uploadSellfloorImageFileToGoogleDrive(photoFile!, {
+              fileNamePrefix: 'sellfloor',
+              maxWidth: 800,
+              maxHeight: 800,
+              quality: 0.65,
+              onDebug: appendDebugLog
+            });
+            photoUrl = uploadResult.url;
+            pendingAttempt.driveFileId = uploadResult.fileId;
+            pendingAttempt.uploadedPhoto = {
+              fileKey: currentFileKey,
+              url: uploadResult.url,
+              fileId: uploadResult.fileId
+            };
+          }
         }
-        appendDebugLog('写真URL確定', { photoUrl });
+        appendDebugLog('写真URL確定', {
+          hasPhotoUrl: Boolean(photoUrl),
+          driveFileId: pendingAttempt.driveFileId || null
+        });
         
         const newRecord: SellfloorRecord = {
-            id: existingRecord?.id || createCompatId(),
+            id: pendingAttempt.recordId,
             date: existingRecord?.date || currentDate || getLocalTodayDateString(),
             product,
             location,
@@ -211,22 +265,43 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             photoUrl,
             popId: selectedPopId,
             author: author.trim(),
-            createdAt: existingRecord?.createdAt || new Date().toISOString(),
+            createdAt: pendingAttempt.createdAt,
             updatedAt: new Date().toISOString()
         };
-        console.log("payload:", newRecord);
-        appendDebugLog('売場記録保存API呼び出し開始', {
+        console.log('[SellfloorRecordForm] record payload ready', {
           recordId: newRecord.id,
-          photoUrl: newRecord.photoUrl
+          date: newRecord.date,
+          hasPhotoUrl: Boolean(newRecord.photoUrl)
+        });
+        appendDebugLog('売り場記録保存中', {
+          recordId: newRecord.id,
+          driveFileId: pendingAttempt.driveFileId || null
         });
         
         const result = await onSave(newRecord);
         console.log("save success", result);
-        appendDebugLog('売場記録保存処理完了', {
+        appendDebugLog('売場記録保存API応答', {
           message: result.message || ''
         });
+        if (result.sharedSaved === false) {
+          const failureMessage = result.sharedResultUnknown
+            ? SAVE_RESULT_UNKNOWN_MESSAGE
+            : pendingAttempt.driveFileId
+              ? PHOTO_ONLY_SAVED_MESSAGE
+              : SAVE_FAILED_MESSAGE;
+          appendDebugLog(result.sharedResultUnknown ? '保存結果不明' : '売り場記録保存失敗', {
+            recordId: pendingAttempt.recordId,
+            driveFileId: pendingAttempt.driveFileId || null
+          });
+          setSaveError(failureMessage);
+          return;
+        }
+        appendDebugLog('保存完了', {
+          recordId: pendingAttempt.recordId,
+          driveFileId: pendingAttempt.driveFileId || null
+        });
         setSaveSuccess(true);
-        setSaveMessage(result.message || (isEditMode ? '更新しました' : '保存しました'));
+        setSaveMessage('保存しました ✓');
         if (result.message) {
           console.log('[SellfloorRecordForm] save result', result.message);
         }
@@ -237,12 +312,25 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
     } catch (error) {
         console.log("save fail", error);
         console.error("Failed to save sellfloor record", error);
-        appendDebugLog('保存失敗', {
+        const driveError = error instanceof DriveImageUploadError ? error : null;
+        if (driveError?.fileId) {
+          pendingAttempt.driveFileId = driveError.fileId;
+        }
+        const failureMessage = driveError?.resultUnknown
+          ? SAVE_RESULT_UNKNOWN_MESSAGE
+          : driveError?.fileId || pendingAttempt.uploadedPhoto
+            ? PHOTO_ONLY_SAVED_MESSAGE
+            : SAVE_FAILED_MESSAGE;
+        appendDebugLog(driveError?.resultUnknown ? '保存結果不明' : '保存失敗', {
+          stage: driveError?.stage || '売り場記録保存',
+          timedOut: driveError?.timedOut || false,
+          recordId: pendingAttempt.recordId,
+          driveFileId: driveError?.fileId || pendingAttempt.driveFileId || null,
           error: error instanceof Error ? error.message : String(error)
         });
-        setSaveError(error instanceof Error ? error.message : "保存に失敗しました");
-        alert(error instanceof Error ? error.message : "保存に失敗しました");
+        setSaveError(failureMessage);
     } finally {
+        appendDebugLog('保存処理終了 - isSaving解除');
         setIsSaving(false);
     }
   }
@@ -280,7 +368,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
         {debugLogs.length > 0 && (
           <details open style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
             <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 800, color: '#334155' }}>
-              Android確認ログ
+              保存診断ログ
             </summary>
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem', color: '#475569', lineHeight: 1.5, wordBreak: 'break-word' }}>
               {debugLogs.map((log, index) => (
@@ -508,7 +596,7 @@ export const SellfloorRecordForm: React.FC<SellfloorRecordFormProps> = ({
             {isSaving ? (
                 <>{isEditMode ? '更新中...' : '保存中...'}</>
             ) : saveSuccess ? (
-                <><CheckCircle size={22} /> {isEditMode ? '更新しました！' : '保存しました！'}</>
+                <><CheckCircle size={22} /> 保存しました ✓</>
             ) : (
                 <><Save size={22} /> {isEditMode ? '売場記録を更新' : '売場記録を保存'}</>
             )}

@@ -1158,7 +1158,11 @@ function App() {
   };
 
   const saveSellfloorRecord = async (record: SellfloorRecord) => {
-    console.log('[App] saveSellfloorRecord start', record);
+    console.log('[App] saveSellfloorRecord start', {
+      recordId: record.id,
+      date: record.date,
+      hasPhotoUrl: Boolean(record.photoUrl)
+    });
     const isEditing = Boolean(editingSellfloorRecord && editingSellfloorRecord.id === record.id);
     const updatedRecord = {
       ...record,
@@ -1183,12 +1187,28 @@ function App() {
       setNeedsSellfloorSheetsLogin(false);
       void loadSellfloorRecordsFromSheets(false);
       showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
-      return { message: isEditing ? '更新しました' : 'Google Sheets に共有保存しました' };
+      return {
+        message: isEditing ? '更新しました' : 'Google Sheets に共有保存しました',
+        sharedSaved: true,
+        sharedResultUnknown: false
+      };
     } catch (error) {
       console.error('[App] failed to sync sellfloor record', error);
       setSellfloorSharedError(buildSharedUiError('共有保存エラー', error));
-      showToast(isEditing ? '売場記録を更新しました' : '売場記録を保存しました');
-      return { message: isEditing ? 'ローカル更新は完了、共有更新は失敗しました' : 'ローカル保存は完了、共有保存は失敗しました' };
+      const sharedResultUnknown = error instanceof Error && (
+        error.name === 'SellfloorSharedWriteTimeoutError' ||
+        error.name === 'SellfloorSharedWriteUnknownError'
+      );
+      showToast(
+        sharedResultUnknown
+          ? '売場記録の保存結果を確認できませんでした'
+          : '売場記録の共有保存に失敗しました'
+      );
+      return {
+        message: isEditing ? 'ローカル更新は完了、共有更新は失敗しました' : 'ローカル保存は完了、共有保存は失敗しました',
+        sharedSaved: false,
+        sharedResultUnknown
+      };
     }
   };
 

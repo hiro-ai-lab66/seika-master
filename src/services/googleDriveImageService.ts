@@ -47,6 +47,86 @@ type DriveUploadOptions = {
   onDebug?: DriveUploadDebugLogger;
 };
 
+type DriveUploadStage = 'oauth' | 'compression' | 'upload' | 'permission';
+
+export type DriveImageUploadResult = {
+  url: string;
+  fileId: string;
+};
+
+export class DriveImageUploadError extends Error {
+  readonly stage: DriveUploadStage;
+  readonly timedOut: boolean;
+  readonly resultUnknown: boolean;
+  readonly fileId?: string;
+
+  constructor(
+    message: string,
+    options: {
+      stage: DriveUploadStage;
+      timedOut?: boolean;
+      resultUnknown?: boolean;
+      fileId?: string;
+    }
+  ) {
+    super(message);
+    this.name = 'DriveImageUploadError';
+    this.stage = options.stage;
+    this.timedOut = Boolean(options.timedOut);
+    this.resultUnknown = Boolean(options.resultUnknown);
+    this.fileId = options.fileId;
+  }
+}
+
+const SELLFLOOR_COMPRESSION_TIMEOUT_MS = 25_000;
+const SELLFLOOR_DRIVE_REQUEST_TIMEOUT_MS = 30_000;
+
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
+
+const isTimeoutLikeError = (error: unknown) =>
+  error instanceof Error && (
+    error.name === 'AbortError' ||
+    /time(?:d)?\s*out|timeout|\d+秒以内に完了しません/i.test(error.message)
+  );
+
+export const runDriveOperationWithTimeout = async <T>(
+  timeoutMs: number | undefined,
+  createTimeoutError: () => DriveImageUploadError,
+  operation: (signal?: AbortSignal) => Promise<T>
+): Promise<T> => {
+  if (!timeoutMs) {
+    return operation();
+  }
+
+  const controller = new AbortController();
+  let didTimeout = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+      reject(createTimeoutError());
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeoutPromise]);
+  } catch (error) {
+    if (didTimeout || controller.signal.aborted) {
+      if (error instanceof DriveImageUploadError) {
+        throw error;
+      }
+      throw createTimeoutError();
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
 const resizeImageBlob = (
   source: string,
   options: { maxWidth: number; maxHeight: number; quality: number },
@@ -131,7 +211,6 @@ const compressImageForDrive = async (
       lastModified: Date.now()
     });
     onDebug?.('画像圧縮成功', {
-      compressedName: compressedFile.name,
       compressedType: compressedFile.type,
       compressedSize: compressedFile.size
     });
@@ -167,16 +246,25 @@ const ensureDriveSession = async () => {
 
 const createDriveImageUrl = (fileId: string) => `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
 
-export const uploadImageFileToGoogleDrive = async (
+const uploadImageFileToGoogleDriveInternal = async (
   file: File,
-  options: DriveUploadOptions
-): Promise<string> => {
+  options: DriveUploadOptions,
+  requestTimeoutMs?: number,
+  compressionTimeoutMs?: number
+): Promise<DriveImageUploadResult> => {
   options.onDebug?.('Drive認証確認開始', {
-    fileName: file.name,
     fileType: file.type || 'unknown',
     fileSize: file.size
   });
-  await ensureDriveSession();
+  options.onDebug?.('OAuth待機中');
+  try {
+    await ensureDriveSession();
+  } catch (error) {
+    throw new DriveImageUploadError(
+      errorMessage(error, 'Google Drive の認証に失敗しました'),
+      { stage: 'oauth', timedOut: isTimeoutLikeError(error) }
+    );
+  }
   options.onDebug?.('Drive認証確認成功');
 
   const folderId = getDriveFolderId();
@@ -195,11 +283,27 @@ export const uploadImageFileToGoogleDrive = async (
     throw new Error('VITE_GOOGLE_DRIVE_FOLDER_ID が未設定です');
   }
 
-  const compressedFile = await compressImageForDrive(file, {
-    maxWidth: options.maxWidth,
-    maxHeight: options.maxHeight,
-    quality: options.quality
-  }, options.onDebug);
+  options.onDebug?.('写真圧縮中');
+  let compressedFile: File;
+  try {
+    compressedFile = await runDriveOperationWithTimeout(
+      compressionTimeoutMs,
+      () => new DriveImageUploadError('写真の圧縮が時間内に完了しませんでした', {
+        stage: 'compression',
+        timedOut: true
+      }),
+      () => compressImageForDrive(file, {
+        maxWidth: options.maxWidth,
+        maxHeight: options.maxHeight,
+        quality: options.quality
+      }, options.onDebug)
+    );
+  } catch (error) {
+    if (error instanceof DriveImageUploadError) throw error;
+    throw new DriveImageUploadError(errorMessage(error, '写真の圧縮に失敗しました'), {
+      stage: 'compression'
+    });
+  }
 
   const metadata: Record<string, unknown> = {
     name: `${options.fileNamePrefix}_${Date.now()}.jpg`,
@@ -218,61 +322,104 @@ export const uploadImageFileToGoogleDrive = async (
     fileName: metadata.name
   });
 
-  const uploadResponse = await authorizedGoogleApiFetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,parents&supportsAllDrives=false',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': `multipart/related; boundary=${boundary}`
-      },
-      body
-    }
-  );
-  options.onDebug?.('Driveアップロード応答', {
-    status: uploadResponse.status,
-    ok: uploadResponse.ok
-  });
+  options.onDebug?.('Driveアップロード中');
+  let uploadPayload: { id?: string; parents?: string[] };
+  try {
+    uploadPayload = await runDriveOperationWithTimeout(
+      requestTimeoutMs,
+      () => new DriveImageUploadError('Google Drive への写真保存結果を確認できませんでした', {
+        stage: 'upload',
+        timedOut: true,
+        resultUnknown: true
+      }),
+      async (signal) => {
+        const uploadResponse = await authorizedGoogleApiFetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,parents&supportsAllDrives=false',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': `multipart/related; boundary=${boundary}`
+            },
+            body,
+            signal
+          }
+        );
+        options.onDebug?.('Driveアップロード応答', {
+          status: uploadResponse.status,
+          ok: uploadResponse.ok
+        });
 
-  if (!uploadResponse.ok) {
-    const detail = await uploadResponse.text().catch(() => '');
-    options.onDebug?.('Driveアップロード失敗', {
-      status: uploadResponse.status,
-      errorBody: detail.slice(0, 500)
+        if (!uploadResponse.ok) {
+          const detail = await uploadResponse.text().catch(() => '');
+          options.onDebug?.('Driveアップロード失敗', {
+            status: uploadResponse.status,
+            errorBody: detail.slice(0, 500)
+          });
+          throw new Error(buildDriveOauthError(detail));
+        }
+        return uploadResponse.json() as Promise<{ id?: string; parents?: string[] }>;
+      }
+    );
+  } catch (error) {
+    if (error instanceof DriveImageUploadError) throw error;
+    throw new DriveImageUploadError(errorMessage(error, 'Google Drive への画像アップロードに失敗しました'), {
+      stage: 'upload'
     });
-    throw new Error(buildDriveOauthError(detail));
   }
-
-  const uploadPayload = await uploadResponse.json() as { id?: string; parents?: string[] };
   const fileId = uploadPayload.id;
   if (!fileId) {
-    throw new Error('Google Drive のファイルIDを取得できませんでした');
+    throw new DriveImageUploadError('Google Drive のファイルIDを取得できませんでした', {
+      stage: 'upload',
+      resultUnknown: true
+    });
   }
 
-  const permissionResponse = await authorizedGoogleApiFetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=false`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        role: 'reader',
-        type: 'anyone'
-      })
-    }
-  );
-  options.onDebug?.('Drive権限設定応答', {
-    status: permissionResponse.status,
-    ok: permissionResponse.ok
-  });
+  options.onDebug?.('Drive権限設定中', { fileId });
+  try {
+    await runDriveOperationWithTimeout(
+      requestTimeoutMs,
+      () => new DriveImageUploadError('Google Drive の権限設定結果を確認できませんでした', {
+        stage: 'permission',
+        timedOut: true,
+        resultUnknown: true,
+        fileId
+      }),
+      async (signal) => {
+        const permissionResponse = await authorizedGoogleApiFetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=false`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              role: 'reader',
+              type: 'anyone'
+            }),
+            signal
+          }
+        );
+        options.onDebug?.('Drive権限設定応答', {
+          status: permissionResponse.status,
+          ok: permissionResponse.ok
+        });
 
-  if (!permissionResponse.ok) {
-    const detail = await permissionResponse.text().catch(() => '');
-    options.onDebug?.('Drive権限設定失敗', {
-      status: permissionResponse.status,
-      errorBody: detail.slice(0, 500)
+        if (!permissionResponse.ok) {
+          const detail = await permissionResponse.text().catch(() => '');
+          options.onDebug?.('Drive権限設定失敗', {
+            status: permissionResponse.status,
+            errorBody: detail.slice(0, 500)
+          });
+          throw new Error(buildDriveOauthError(detail || 'Google Drive の共有権限設定に失敗しました'));
+        }
+      }
+    );
+  } catch (error) {
+    if (error instanceof DriveImageUploadError) throw error;
+    throw new DriveImageUploadError(errorMessage(error, 'Google Drive の共有権限設定に失敗しました'), {
+      stage: 'permission',
+      fileId
     });
-    throw new Error(buildDriveOauthError(detail || 'Google Drive の共有権限設定に失敗しました'));
   }
 
   console.log('[googleDriveImageService] user oauth upload success', {
@@ -286,5 +433,25 @@ export const uploadImageFileToGoogleDrive = async (
     fileId,
     driveUrl
   });
-  return driveUrl;
+  return { url: driveUrl, fileId };
+};
+
+export const uploadImageFileToGoogleDrive = async (
+  file: File,
+  options: DriveUploadOptions
+): Promise<string> => {
+  const result = await uploadImageFileToGoogleDriveInternal(file, options);
+  return result.url;
+};
+
+export const uploadSellfloorImageFileToGoogleDrive = async (
+  file: File,
+  options: DriveUploadOptions
+): Promise<DriveImageUploadResult> => {
+  return uploadImageFileToGoogleDriveInternal(
+    file,
+    options,
+    SELLFLOOR_DRIVE_REQUEST_TIMEOUT_MS,
+    SELLFLOOR_COMPRESSION_TIMEOUT_MS
+  );
 };
