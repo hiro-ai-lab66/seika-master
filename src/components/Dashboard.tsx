@@ -10,6 +10,8 @@ import { fetchSharedCheckRows, type SharedCheckRow } from '../services/googleShe
 import { fetchSharedDailyNotes } from '../services/googleSheetsDailyNotesService';
 import { fetchSharedNotices } from '../services/googleSheetsNoticeService';
 import { fetchSharedShiftRows } from '../services/googleSheetsShiftService';
+import { fetchSharedDailySales } from '../services/googleSheetsDailySalesService';
+import { selectDailySalesTop5 } from '../utils/dailySalesRanking';
 
 interface Props {
   state: AppState;
@@ -460,16 +462,6 @@ const getDayDiff = (baseDate: string, targetDate: string) => {
   const target = new Date(Number(targetMatch[1]), Number(targetMatch[2]) - 1, Number(targetMatch[3]));
   const diffMs = base.getTime() - target.getTime();
   return Math.floor(diffMs / 86400000);
-};
-
-const normalizeDepartmentLabel = (value: string) => normalizeCheckText(value).toLowerCase();
-const isVegetableDepartment = (value: string) => {
-  const normalized = normalizeDepartmentLabel(value);
-  return normalized.includes('野菜') || normalized.includes('やさい') || normalized.includes('veg');
-};
-const isFruitDepartment = (value: string) => {
-  const normalized = normalizeDepartmentLabel(value);
-  return normalized.includes('果物') || normalized.includes('くだもの') || normalized.includes('フルーツ') || normalized.includes('fruit');
 };
 
 const normalizeCheckTime = (value: string) => {
@@ -983,6 +975,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
   const [zoomImageTitle, setZoomImageTitle] = useState('');
   const [briefingStatus, setBriefingStatus] = useState('');
   const [sharedCheckRows, setSharedCheckRows] = useState<SharedCheckRow[]>([]);
+  const [sharedDailySales, setSharedDailySales] = useState<DailySalesRecord[]>([]);
   const [sharedDailyNotes, setSharedDailyNotes] = useState<SharedDailyNotesEntry[]>([]);
   const [sharedNotices, setSharedNotices] = useState<SharedNoticeEntry[]>([]);
   const [sharedShiftRows, setSharedShiftRows] = useState<SharedShiftMasterRow[]>([]);
@@ -1161,12 +1154,13 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const loadDashboardData = async () => {
       try {
         console.log('[Dashboard] starting advertisement fetch');
-        const [advertisementResult, inspectionResult, dailyNotesResult, noticeResult, shiftResult] = await Promise.allSettled([
+        const [advertisementResult, inspectionResult, dailyNotesResult, noticeResult, shiftResult, dailySalesResult] = await Promise.allSettled([
           fetchAdvertisementsWithRetry(),
           fetchSharedCheckRows(),
           fetchSharedDailyNotes(),
           fetchSharedNotices(),
-          fetchSharedShiftRows()
+          fetchSharedShiftRows(),
+          fetchSharedDailySales()
         ]);
         if (!isMounted) return;
 
@@ -1369,6 +1363,20 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         } else {
           console.error('[Dashboard] failed to load shift data', shiftResult.reason);
           setSharedShiftRows([]);
+        }
+
+        if (dailySalesResult.status === 'fulfilled') {
+          setSharedDailySales(dailySalesResult.value);
+          console.log('[Dashboard] loaded shared daily sales for rankings', {
+            recordCount: dailySalesResult.value.length,
+            targetPreviousDate: getPreviousDate(currentDate),
+            targetRecordCount: dailySalesResult.value.filter(
+              (row) => normalizeDateKey(row.date) === normalizeDateKey(getPreviousDate(currentDate))
+            ).length
+          });
+        } else {
+          // A transient read error must not replace a previously loaded, valid ranking dataset.
+          console.error('[Dashboard] failed to load shared daily sales for rankings', dailySalesResult.reason);
         }
 
       } catch (error) {
@@ -1588,36 +1596,37 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
     const normalizedPreviousDate = normalizeDateKey(previousDate);
     const sharedVegetables = parseSharedRankingRows(sharedCheckRows, normalizedPreviousDate, 'veggie');
     const sharedFruits = parseSharedRankingRows(sharedCheckRows, normalizedPreviousDate, 'fruit');
-    const hasSharedRanking = sharedVegetables.length > 0 || sharedFruits.length > 0;
-    const matchedPreviousDateRecords = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate);
+    const matchedSharedDailySales = sharedDailySales.filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate);
+    const matchedLocalDailySales = allDailySales.filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate);
+    const canonicalRows = matchedSharedDailySales.length > 0
+      ? matchedSharedDailySales
+      : matchedLocalDailySales;
+    const hasCanonicalDailySales = canonicalRows.length > 0;
+    const vegetables = hasCanonicalDailySales
+      ? selectDailySalesTop5(canonicalRows, normalizedPreviousDate, '野菜')
+      : sharedVegetables;
+    const fruits = hasCanonicalDailySales
+      ? selectDailySalesTop5(canonicalRows, normalizedPreviousDate, '果物')
+      : sharedFruits;
 
     console.log('[Dashboard] top5 ranking source selection', {
       currentDate,
       targetPreviousDate: normalizedPreviousDate,
       dailySalesCount: allDailySales.length,
-      matchedPreviousDateRecordsCount: matchedPreviousDateRecords.length,
-      veggieBestCount: hasSharedRanking ? sharedVegetables.length : matchedPreviousDateRecords.filter((row) => isVegetableDepartment(row.department)).slice(0, 5).length,
-      fruitBestCount: hasSharedRanking ? sharedFruits.length : matchedPreviousDateRecords.filter((row) => isFruitDepartment(row.department)).slice(0, 5).length,
+      sharedDailySalesCount: sharedDailySales.length,
+      matchedSharedDailySalesCount: matchedSharedDailySales.length,
+      matchedLocalDailySalesCount: matchedLocalDailySales.length,
+      veggieBestCount: vegetables.length,
+      fruitBestCount: fruits.length,
       sharedCheckRowCount: sharedCheckRows.length,
       sharedVegetableCount: sharedVegetables.length,
       sharedFruitCount: sharedFruits.length,
-      using: hasSharedRanking ? 'shared_check' : 'local_daily_sales_fallback'
+      using: matchedSharedDailySales.length > 0
+        ? 'shared_daily_sales'
+        : matchedLocalDailySales.length > 0
+          ? 'local_daily_sales'
+          : 'legacy_shared_check_fallback'
     });
-
-    const fallbackRows = matchedPreviousDateRecords;
-    const buildFallbackRanking = (department: '野菜' | '果物') =>
-      fallbackRows
-        .filter((row) => {
-          if (!Number.isFinite(Number(row.salesAmt)) || !Number.isFinite(Number(row.salesQty))) return false;
-          return department === '野菜'
-            ? isVegetableDepartment(row.department)
-            : isFruitDepartment(row.department);
-        })
-        .sort((a, b) => Number(b.salesAmt) - Number(a.salesAmt))
-        .slice(0, 5);
-
-    const vegetables = hasSharedRanking ? sharedVegetables : buildFallbackRanking('野菜');
-    const fruits = hasSharedRanking ? sharedFruits : buildFallbackRanking('果物');
 
     console.log('[Dashboard] ranking source shared rows', {
       targetDate: normalizedPreviousDate,
@@ -1625,17 +1634,18 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
         .filter((row) => normalizeDateKey(row.date) === normalizedPreviousDate && (row.time === 'csv-veggie' || row.time === 'csv-fruit'))
         .map((row) => ({ date: row.date, item: row.item, time: row.time, owner: row.owner }))
     });
-    console.log('[Dashboard] ranking source local fallback rows', fallbackRows);
     console.log('[Dashboard] top5 source before render', {
       currentDate,
       targetPreviousDate: normalizedPreviousDate,
       dailySalesCount: allDailySales.length,
-      matchedPreviousDateRecordsCount: fallbackRows.length,
+      sharedDailySalesCount: sharedDailySales.length,
+      matchedSharedDailySalesCount: matchedSharedDailySales.length,
+      matchedLocalDailySalesCount: matchedLocalDailySales.length,
       veggieBestCount: vegetables.length,
       fruitBestCount: fruits.length,
       sharedVegetables,
       sharedFruits,
-      fallbackRowsCount: fallbackRows.length,
+      canonicalRowsCount: canonicalRows.length,
       vegetablesCount: vegetables.length,
       fruitsCount: fruits.length,
       vegetables,
@@ -1648,7 +1658,7 @@ export const Dashboard: React.FC<Props> = ({ state, currentDate, onChangeDate, r
       vegetableComment: buildDepartmentTrendComment('野菜', vegetables),
       fruitComment: buildDepartmentTrendComment('果物', fruits)
     };
-  }, [allDailySales, previousDate, currentDate, sharedCheckRows]);
+  }, [allDailySales, previousDate, currentDate, sharedCheckRows, sharedDailySales]);
 
   const morningBriefingLines = useMemo(() => {
     return [
