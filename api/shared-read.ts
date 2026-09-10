@@ -738,8 +738,9 @@ export default async function handler(req: any, res: any) {
 
   try {
     const spreadsheetInfo = getConfiguredSpreadsheetInfo();
-    const availableSheetNames = await assertGoogleSheetExists(config.sheetName);
     if (resource === 'products') {
+      // products は旧シート名へのフォールバックがあるため、一覧取得が必要。
+      const availableSheetNames = await assertGoogleSheetExists(config.sheetName);
       const productResult = await readProductsWithFallback(availableSheetNames);
       const uniqueCategories = Array.from(new Set((productResult.items as Array<{ category?: string }>).map((item) => item.category).filter(Boolean)));
       console.log('[shared-read] products response status:', 200);
@@ -761,6 +762,10 @@ export default async function handler(req: any, res: any) {
       });
       return;
     }
+
+    // 固定シートは値取得自体で存在確認できる。全リソースで事前にメタデータを
+    // 読むと1画面の取得回数が倍増し、Sheets APIの毎分読取上限に達するため省く。
+    const availableSheetNames = [config.sheetName];
 
     console.log('[shared-read] target sheet:', {
       resource,

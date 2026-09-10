@@ -44,7 +44,7 @@ export const DailySalesView: React.FC<Props> = ({ inspections, dailyBudgets }) =
         } catch (error) {
             console.error('[DailySalesView] failed to load shared daily sales', error);
             setDailySalesError(error instanceof Error ? error.message : `${getSharedDailySalesSheetName()} を取得できませんでした`);
-            setAllRecords([]);
+            // 定期再取得の一時エラーで、直前に正常表示できた単品データを消さない。
         } finally {
             setIsDailySalesLoading(false);
         }
